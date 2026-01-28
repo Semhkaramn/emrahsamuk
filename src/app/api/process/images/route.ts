@@ -45,17 +45,46 @@ export async function POST(request: NextRequest) {
         message: "İşlenecek resim kalmadı",
         processed: 0,
         failed: 0,
+        details: [],
       });
     }
 
     let processed = 0;
     let failed = 0;
     const errors: string[] = [];
+    const details: Array<{
+      urunKodu: string;
+      sira: number;
+      eskiUrl: string;
+      yeniDosyaAdi: string;
+      success: boolean;
+      error?: string;
+    }> = [];
 
     for (const image of images) {
       try {
         if (!image.eskiUrl) {
           failed++;
+
+          // Log empty URL error
+          await prisma.processingLog.create({
+            data: {
+              urunKodu: image.urunKodu,
+              islemTipi: "image",
+              durum: "error",
+              mesaj: `Resim ${image.sira}: URL boş`,
+            },
+          });
+
+          details.push({
+            urunKodu: image.urunKodu,
+            sira: image.sira,
+            eskiUrl: "",
+            yeniDosyaAdi: "",
+            success: false,
+            error: "URL boş",
+          });
+
           continue;
         }
 
@@ -84,8 +113,29 @@ export async function POST(request: NextRequest) {
               errorMessage: downloadResult.error,
             },
           });
+
+          // Log download error
+          await prisma.processingLog.create({
+            data: {
+              urunKodu: image.urunKodu,
+              islemTipi: "image",
+              durum: "error",
+              mesaj: `Resim ${image.sira}: ${downloadResult.error}`,
+            },
+          });
+
           failed++;
           errors.push(`${image.urunKodu} Resim ${image.sira}: ${downloadResult.error}`);
+
+          details.push({
+            urunKodu: image.urunKodu,
+            sira: image.sira,
+            eskiUrl: image.eskiUrl,
+            yeniDosyaAdi: "",
+            success: false,
+            error: downloadResult.error,
+          });
+
           continue;
         }
 
@@ -110,34 +160,61 @@ export async function POST(request: NextRequest) {
           },
         });
 
+        // Log success
+        await prisma.processingLog.create({
+          data: {
+            urunKodu: image.urunKodu,
+            islemTipi: "image",
+            durum: "success",
+            mesaj: `Resim ${image.sira}: ${fileName}`,
+          },
+        });
+
+        details.push({
+          urunKodu: image.urunKodu,
+          sira: image.sira,
+          eskiUrl: image.eskiUrl,
+          yeniDosyaAdi: fileName,
+          success: true,
+        });
+
         processed++;
       } catch (err) {
         failed++;
-        errors.push(
-          `${image.urunKodu} Resim ${image.sira}: ${err instanceof Error ? err.message : "Bilinmeyen hata"}`
-        );
+        const errorMsg = err instanceof Error ? err.message : "Bilinmeyen hata";
+        errors.push(`${image.urunKodu} Resim ${image.sira}: ${errorMsg}`);
+
+        // Log error
+        await prisma.processingLog.create({
+          data: {
+            urunKodu: image.urunKodu,
+            islemTipi: "image",
+            durum: "error",
+            mesaj: `Resim ${image.sira}: ${errorMsg}`,
+          },
+        });
 
         await prisma.productImage.update({
           where: { id: image.id },
           data: {
             status: "error",
-            errorMessage: err instanceof Error ? err.message : "Bilinmeyen hata",
+            errorMessage: errorMsg,
           },
+        });
+
+        details.push({
+          urunKodu: image.urunKodu,
+          sira: image.sira,
+          eskiUrl: image.eskiUrl || "",
+          yeniDosyaAdi: "",
+          success: false,
+          error: errorMsg,
         });
       }
 
       // Small delay to avoid overwhelming external servers
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
-
-    // Log the processing
-    await prisma.processingLog.create({
-      data: {
-        islemTipi: "image",
-        durum: failed > 0 ? "partial" : "success",
-        mesaj: `Resim işleme: ${processed} başarılı, ${failed} hatalı`,
-      },
-    });
 
     // Get remaining count
     const remainingCount = await prisma.productImage.count({
@@ -151,6 +228,7 @@ export async function POST(request: NextRequest) {
       failed,
       remaining: remainingCount,
       errors: errors.slice(0, 5),
+      details,
     });
   } catch (error) {
     console.error("Image batch processing error:", error);
