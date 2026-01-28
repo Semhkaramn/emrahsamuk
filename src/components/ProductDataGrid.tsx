@@ -47,7 +47,7 @@ interface Product {
   durum: string | null;
   processingStatus: string | null;
   stok: number | null;
-  images: { id: number; sira: number; status: string }[];
+  images: { id: number; sira: number; status: string; eskiUrl: string | null; yeniDosyaAdi: string | null }[];
   categories: { anaKategori: string | null } | null;
   seo: { seoBaslik: string | null } | null;
 }
@@ -272,8 +272,10 @@ export function ProductDataGrid({ onProductSelect, onProductEdit }: ProductDataG
                       <TableCell className="font-mono text-sm text-emerald-400">
                         {product.urunKodu}
                       </TableCell>
-                      <TableCell className="max-w-xs truncate">
-                        {product.yeniAdi || product.eskiAdi || "-"}
+                      <TableCell className="min-w-[200px]">
+                        <span className="block text-sm leading-relaxed">
+                          {product.yeniAdi || product.eskiAdi || "-"}
+                        </span>
                       </TableCell>
                       <TableCell className="text-zinc-400">
                         {product.marka || "-"}
@@ -283,8 +285,33 @@ export function ProductDataGrid({ onProductSelect, onProductEdit }: ProductDataG
                       </TableCell>
                       <TableCell className="text-center">
                         <div className="flex items-center justify-center gap-1">
-                          <ImageIcon className="h-4 w-4 text-zinc-500" />
-                          <span className="text-sm">{product.images.length}</span>
+                          {product.images.length > 0 && product.images[0]?.eskiUrl ? (
+                            <div className="relative group">
+                              <img
+                                src={product.images[0].eskiUrl}
+                                alt={product.yeniAdi || product.eskiAdi || "Ürün"}
+                                className="w-10 h-10 object-cover rounded border border-zinc-700 cursor-pointer transition-transform duration-200"
+                              />
+                              {/* Hover'da büyük resim */}
+                              <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 hidden group-hover:block z-50">
+                                <div className="bg-zinc-900 border border-zinc-700 rounded-lg p-1 shadow-xl">
+                                  <img
+                                    src={product.images[0].eskiUrl}
+                                    alt={product.yeniAdi || product.eskiAdi || "Ürün"}
+                                    className="w-48 h-48 object-contain rounded"
+                                  />
+                                  <div className="text-xs text-zinc-400 text-center mt-1">
+                                    {product.images.length} resim
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-1 text-zinc-500">
+                              <ImageIcon className="h-4 w-4" />
+                              <span className="text-sm">{product.images.length}</span>
+                            </div>
+                          )}
                         </div>
                       </TableCell>
                       <TableCell className="text-center">
