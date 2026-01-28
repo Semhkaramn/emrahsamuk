@@ -5,8 +5,13 @@ import * as XLSX from "xlsx";
 interface UrunBilgisiRow {
   ID: number;
   URUNKODU?: string;
+  BARKODNO?: string;
   DURUM?: string;
   ADI?: string;
+  FATURAADI?: string;
+  SEOBASLIK?: string;
+  SEOANAHTARKELIME?: string;
+  SEOACIKLAMA?: string;
   URL?: string;
   KARGOODEME?: string;
   PIYASAFIYAT?: number;
@@ -39,12 +44,23 @@ interface UrunBilgisiRow {
   KDV?: number;
   DESI?: number;
   STOK?: string | number;
+  ONDETAY?: string;
   SIRA?: string | number;
+  OZELKOD1?: string;
+  OZELKOD2?: string;
+  OZELKOD3?: string;
   KATEGORIID?: string | number;
+  DEPOYERKODU?: string;
   MARKA?: string;
+  BAYIFIYATI1?: number;
+  BAYIFIYATI2?: number;
+  BAYIFIYATI3?: number;
+  BAYIFIYATI4?: number;
   ACIKLAMA?: string;
+  URETICIKODU?: string;
+  GTIP?: string;
+  MODELKODU?: string;
   VITRINDURUMU?: string;
-  BARKOD?: string;
 }
 
 export async function POST(request: NextRequest) {
@@ -69,12 +85,14 @@ export async function POST(request: NextRequest) {
     let updated = 0;
     let failed = 0;
     const errors: string[] = [];
+    const total = data.length;
 
-    for (const row of data) {
+    for (let i = 0; i < data.length; i++) {
+      const row = data[i];
       // ID zorunlu - urunId olarak kullanılacak
       if (!row.ID) {
         failed++;
-        errors.push(`Satır atlandı: ID boş`);
+        errors.push(`Satır ${i + 2} atlandı: ID boş`);
         continue;
       }
 
@@ -90,9 +108,11 @@ export async function POST(request: NextRequest) {
         const productData = {
           urunId,
           urunKodu,
-          barkod: row.BARKOD || null,
+          barkodNo: row.BARKODNO || null,
           eskiAdi: row.ADI || null,
+          faturaAdi: row.FATURAADI || null,
           url: row.URL || null,
+          kargoOdeme: row.KARGOODEME || null,
           marka: row.MARKA || null,
           aciklama: row.ACIKLAMA || null,
           durum: row.DURUM || "AKTIF",
@@ -100,8 +120,16 @@ export async function POST(request: NextRequest) {
           kdv: row.KDV ? Number(row.KDV) : null,
           desi: row.DESI ? Number(row.DESI) : null,
           stok: row.STOK ? Number(row.STOK) : 0,
+          onDetay: row.ONDETAY || null,
           sira: row.SIRA ? Number(row.SIRA) : 0,
+          ozelKod1: row.OZELKOD1 || null,
+          ozelKod2: row.OZELKOD2 || null,
+          ozelKod3: row.OZELKOD3 || null,
           kategoriId: row.KATEGORIID ? Number(row.KATEGORIID) : null,
+          depoYerKodu: row.DEPOYERKODU || null,
+          ureticiKodu: row.URETICIKODU || null,
+          gtip: row.GTIP || null,
+          modelKodu: row.MODELKODU || null,
           uploadedAt: new Date(),
         };
 
@@ -147,6 +175,10 @@ export async function POST(request: NextRequest) {
           idefixDoviz: row.IDEFIXDOVIZ || "TL",
           lcwFiyat: row.LCWFIYAT || null,
           lcwDoviz: row.LCWDOVIZ || "TL",
+          bayiFiyati1: row.BAYIFIYATI1 || null,
+          bayiFiyati2: row.BAYIFIYATI2 || null,
+          bayiFiyati3: row.BAYIFIYATI3 || null,
+          bayiFiyati4: row.BAYIFIYATI4 || null,
         };
 
         await prisma.productPrice.upsert({
@@ -154,6 +186,22 @@ export async function POST(request: NextRequest) {
           update: priceData,
           create: { urunId, ...priceData },
         });
+
+        // SEO bilgilerini kaydet (Excel'den gelen varsa)
+        if (row.SEOBASLIK || row.SEOANAHTARKELIME || row.SEOACIKLAMA) {
+          const seoData = {
+            seoBaslik: row.SEOBASLIK || null,
+            seoKeywords: row.SEOANAHTARKELIME || null,
+            seoAciklama: row.SEOACIKLAMA || null,
+            seoUrl: row.URL || null,
+          };
+
+          await prisma.productSeo.upsert({
+            where: { urunId },
+            update: seoData,
+            create: { urunId, ...seoData },
+          });
+        }
 
       } catch (err) {
         failed++;
@@ -176,7 +224,7 @@ export async function POST(request: NextRequest) {
       success: true,
       message: "Ürün bilgileri başarıyla yüklendi",
       stats: {
-        total: data.length,
+        total,
         created,
         updated,
         failed,
