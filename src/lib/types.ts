@@ -3,6 +3,11 @@ export interface AISettings {
   enableSeoOptimization: boolean;
   enableImageEnhancement: boolean;
   imageStyle: 'professional' | 'lifestyle' | 'minimal' | 'luxury';
+  // Cloudinary ayarları
+  cloudinaryCloudName: string;
+  cloudinaryApiKey: string;
+  cloudinaryApiSecret: string;
+  cloudinaryFolder: string;
 }
 
 export interface SEOData {
