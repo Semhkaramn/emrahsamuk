@@ -32,6 +32,7 @@ export async function POST(request: NextRequest) {
       take: batchSize,
       orderBy: { id: "asc" },
       select: {
+        urunId: true,
         urunKodu: true,
         eskiAdi: true,
         images: {
@@ -55,8 +56,8 @@ export async function POST(request: NextRequest) {
     let failed = 0;
     const errors: string[] = [];
     const details: Array<{
-      urunKodu: string;
-      eskiAdi: string;
+      urunKodu: string | null;
+      eskiAdi: string | null;
       yeniAdi: string;
       success: boolean;
       error?: string;
@@ -64,16 +65,23 @@ export async function POST(request: NextRequest) {
 
     for (const product of products) {
       try {
-        const productName = product.eskiAdi || product.urunKodu;
+        const productName = product.eskiAdi || product.urunKodu || "";
         const imageUrl = product.images[0]?.eskiUrl || undefined;
+
+        if (!productName) {
+          failed++;
+          const errorMsg = "Ürün adı bulunamadı";
+          errors.push(`${product.urunKodu}: ${errorMsg}`);
+          continue;
+        }
 
         // Call OpenAI for SEO optimization
         const seoResult = await optimizeSEO(productName, imageUrl, apiKey);
 
         if (seoResult) {
-          // Save to database
+          // Save to database using urunId
           await prisma.productSeo.upsert({
-            where: { urunKodu: product.urunKodu },
+            where: { urunId: product.urunId },
             update: {
               seoBaslik: seoResult.seoTitle,
               seoAciklama: seoResult.seoDescription,
@@ -81,7 +89,7 @@ export async function POST(request: NextRequest) {
               seoUrl: seoResult.seoUrl,
             },
             create: {
-              urunKodu: product.urunKodu,
+              urunId: product.urunId,
               seoBaslik: seoResult.seoTitle,
               seoAciklama: seoResult.seoDescription,
               seoKeywords: seoResult.seoKeywords,
@@ -91,21 +99,21 @@ export async function POST(request: NextRequest) {
 
           // Update product's yeniAdi with SEO title and processedAt
           await prisma.product.update({
-            where: { urunKodu: product.urunKodu },
+            where: { urunId: product.urunId },
             data: {
               yeniAdi: seoResult.seoTitle,
               processingStatus: "done",
-              processedAt: new Date(), // İşlem tamamlandığında tarih kaydet
+              processedAt: new Date(),
             },
           });
 
           // Update category if detected
           if (seoResult.category) {
             await prisma.productCategory.upsert({
-              where: { urunKodu: product.urunKodu },
+              where: { urunId: product.urunId },
               update: { aiKategori: seoResult.category },
               create: {
-                urunKodu: product.urunKodu,
+                urunId: product.urunId,
                 aiKategori: seoResult.category,
               },
             });
@@ -114,10 +122,13 @@ export async function POST(request: NextRequest) {
           // Log individual success with details
           await prisma.processingLog.create({
             data: {
+              urunId: product.urunId,
               urunKodu: product.urunKodu,
               islemTipi: "seo",
               durum: "success",
-              mesaj: `"${productName}" → "${seoResult.seoTitle}"`,
+              mesaj: `SEO optimizasyonu tamamlandı`,
+              eskiDeger: productName,
+              yeniDeger: seoResult.seoTitle,
             },
           });
 
@@ -137,10 +148,12 @@ export async function POST(request: NextRequest) {
           // Log individual failure
           await prisma.processingLog.create({
             data: {
+              urunId: product.urunId,
               urunKodu: product.urunKodu,
               islemTipi: "seo",
               durum: "error",
               mesaj: errorMsg,
+              eskiDeger: productName,
             },
           });
 
@@ -160,6 +173,7 @@ export async function POST(request: NextRequest) {
         // Log individual failure
         await prisma.processingLog.create({
           data: {
+            urunId: product.urunId,
             urunKodu: product.urunKodu,
             islemTipi: "seo",
             durum: "error",
@@ -169,7 +183,7 @@ export async function POST(request: NextRequest) {
 
         // Update status to error
         await prisma.product.update({
-          where: { urunKodu: product.urunKodu },
+          where: { urunId: product.urunId },
           data: { processingStatus: "error" },
         });
 
