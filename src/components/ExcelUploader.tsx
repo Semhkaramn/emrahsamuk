@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Progress } from "@/components/ui/progress";
 import {
   Upload,
   FileSpreadsheet,
@@ -23,8 +24,18 @@ interface UploadResult {
     updated?: number;
     skipped?: number;
     failed?: number;
+    productsProcessed?: number;
+    imagesCreated?: number;
+    imagesUpdated?: number;
   };
   errors?: string[];
+}
+
+interface UploadState {
+  loading: boolean;
+  result: UploadResult | null;
+  progress: number;
+  fileName: string;
 }
 
 interface FileTypeConfig {
@@ -68,31 +79,76 @@ const fileTypes: FileTypeConfig[] = [
 ];
 
 export function ExcelUploader() {
-  const [uploadStates, setUploadStates] = useState<
-    Record<string, { loading: boolean; result: UploadResult | null }>
-  >({});
+  const [uploadStates, setUploadStates] = useState<Record<string, UploadState>>({});
+  const xhrRefs = useRef<Record<string, XMLHttpRequest>>({});
 
   const handleFileUpload = useCallback(
     async (fileType: FileTypeConfig, file: File) => {
       setUploadStates((prev) => ({
         ...prev,
-        [fileType.id]: { loading: true, result: null },
+        [fileType.id]: {
+          loading: true,
+          result: null,
+          progress: 0,
+          fileName: file.name
+        },
       }));
 
       try {
         const formData = new FormData();
         formData.append("file", file);
 
-        const response = await fetch(fileType.endpoint, {
-          method: "POST",
-          body: formData,
-        });
+        // Use XMLHttpRequest for progress tracking
+        const xhr = new XMLHttpRequest();
+        xhrRefs.current[fileType.id] = xhr;
 
-        const result = await response.json();
+        const result = await new Promise<UploadResult>((resolve, reject) => {
+          xhr.upload.addEventListener("progress", (event) => {
+            if (event.lengthComputable) {
+              const percentComplete = Math.round((event.loaded / event.total) * 100);
+              setUploadStates((prev) => ({
+                ...prev,
+                [fileType.id]: {
+                  ...prev[fileType.id],
+                  progress: percentComplete
+                },
+              }));
+            }
+          });
+
+          xhr.addEventListener("load", () => {
+            if (xhr.status >= 200 && xhr.status < 300) {
+              try {
+                const response = JSON.parse(xhr.responseText);
+                resolve(response);
+              } catch {
+                reject(new Error("Yanıt işlenemedi"));
+              }
+            } else {
+              reject(new Error(`HTTP ${xhr.status}: ${xhr.statusText}`));
+            }
+          });
+
+          xhr.addEventListener("error", () => {
+            reject(new Error("Ağ hatası oluştu"));
+          });
+
+          xhr.addEventListener("abort", () => {
+            reject(new Error("Yükleme iptal edildi"));
+          });
+
+          xhr.open("POST", fileType.endpoint);
+          xhr.send(formData);
+        });
 
         setUploadStates((prev) => ({
           ...prev,
-          [fileType.id]: { loading: false, result },
+          [fileType.id]: {
+            loading: false,
+            result,
+            progress: 100,
+            fileName: file.name
+          },
         }));
       } catch (error) {
         setUploadStates((prev) => ({
@@ -103,12 +159,23 @@ export function ExcelUploader() {
               success: false,
               message: error instanceof Error ? error.message : "Yükleme hatası",
             },
+            progress: 0,
+            fileName: file.name,
           },
         }));
+      } finally {
+        delete xhrRefs.current[fileType.id];
       }
     },
     []
   );
+
+  const handleCancelUpload = useCallback((fileTypeId: string) => {
+    const xhr = xhrRefs.current[fileTypeId];
+    if (xhr) {
+      xhr.abort();
+    }
+  }, []);
 
   const handleDrop = useCallback(
     (fileType: FileTypeConfig) => (e: React.DragEvent<HTMLDivElement>) => {
@@ -131,10 +198,17 @@ export function ExcelUploader() {
     [handleFileUpload]
   );
 
+  const resetState = useCallback((fileTypeId: string) => {
+    setUploadStates((prev) => ({
+      ...prev,
+      [fileTypeId]: { loading: false, result: null, progress: 0, fileName: "" },
+    }));
+  }, []);
+
   return (
     <div className="grid gap-4 md:grid-cols-3">
       {fileTypes.map((fileType) => {
-        const state = uploadStates[fileType.id];
+        const state = uploadStates[fileType.id] || { loading: false, result: null, progress: 0, fileName: "" };
         const Icon = fileType.icon;
 
         return (
@@ -158,28 +232,81 @@ export function ExcelUploader() {
                 onDragOver={(e) => e.preventDefault()}
                 className="border-2 border-dashed border-zinc-700 rounded-lg p-6 text-center hover:border-zinc-600 transition-colors cursor-pointer"
               >
-                {state?.loading ? (
-                  <div className="flex flex-col items-center gap-2">
+                {state.loading ? (
+                  <div className="flex flex-col items-center gap-3">
                     <Loader2 className="h-8 w-8 text-amber-400 animate-spin" />
-                    <p className="text-sm text-zinc-400">Yükleniyor...</p>
+                    <div className="w-full space-y-2">
+                      <div className="flex justify-between text-xs text-zinc-400">
+                        <span className="truncate max-w-[150px]">{state.fileName}</span>
+                        <span className="font-medium text-amber-400">{state.progress}%</span>
+                      </div>
+                      <Progress value={state.progress} className="h-2" />
+                    </div>
+                    <p className="text-sm text-zinc-400">
+                      {state.progress < 100 ? "Dosya yükleniyor..." : "İşleniyor..."}
+                    </p>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleCancelUpload(fileType.id)}
+                      className="mt-1"
+                    >
+                      İptal
+                    </Button>
                   </div>
-                ) : state?.result ? (
+                ) : state.result ? (
                   <div className="flex flex-col items-center gap-2">
                     {state.result.success ? (
                       <>
                         <CheckCircle2 className="h-8 w-8 text-emerald-400" />
                         <p className="text-sm text-emerald-400">{state.result.message}</p>
                         {state.result.stats && (
-                          <div className="text-xs text-zinc-500 space-y-1">
-                            <p>Toplam: {state.result.stats.total}</p>
+                          <div className="text-xs text-zinc-500 space-y-1 mt-2 p-2 bg-zinc-800/50 rounded-lg w-full">
+                            <div className="flex justify-between">
+                              <span>Toplam:</span>
+                              <span className="font-medium text-zinc-300">{state.result.stats.total}</span>
+                            </div>
                             {state.result.stats.created !== undefined && (
-                              <p>Oluşturulan: {state.result.stats.created}</p>
+                              <div className="flex justify-between">
+                                <span>Oluşturulan:</span>
+                                <span className="font-medium text-emerald-400">{state.result.stats.created}</span>
+                              </div>
                             )}
                             {state.result.stats.updated !== undefined && (
-                              <p>Güncellenen: {state.result.stats.updated}</p>
+                              <div className="flex justify-between">
+                                <span>Güncellenen:</span>
+                                <span className="font-medium text-blue-400">{state.result.stats.updated}</span>
+                              </div>
+                            )}
+                            {state.result.stats.skipped !== undefined && state.result.stats.skipped > 0 && (
+                              <div className="flex justify-between">
+                                <span>Atlanan:</span>
+                                <span className="font-medium text-amber-400">{state.result.stats.skipped}</span>
+                              </div>
                             )}
                             {state.result.stats.failed !== undefined && state.result.stats.failed > 0 && (
-                              <p className="text-red-400">Hatalı: {state.result.stats.failed}</p>
+                              <div className="flex justify-between">
+                                <span>Hatalı:</span>
+                                <span className="font-medium text-red-400">{state.result.stats.failed}</span>
+                              </div>
+                            )}
+                            {state.result.stats.productsProcessed !== undefined && (
+                              <div className="flex justify-between">
+                                <span>İşlenen Ürün:</span>
+                                <span className="font-medium text-zinc-300">{state.result.stats.productsProcessed}</span>
+                              </div>
+                            )}
+                            {state.result.stats.imagesCreated !== undefined && (
+                              <div className="flex justify-between">
+                                <span>Yeni Resim:</span>
+                                <span className="font-medium text-emerald-400">{state.result.stats.imagesCreated}</span>
+                              </div>
+                            )}
+                            {state.result.stats.imagesUpdated !== undefined && (
+                              <div className="flex justify-between">
+                                <span>Güncellenen Resim:</span>
+                                <span className="font-medium text-blue-400">{state.result.stats.imagesUpdated}</span>
+                              </div>
                             )}
                           </div>
                         )}
@@ -194,12 +321,7 @@ export function ExcelUploader() {
                       variant="outline"
                       size="sm"
                       className="mt-2"
-                      onClick={() =>
-                        setUploadStates((prev) => ({
-                          ...prev,
-                          [fileType.id]: { loading: false, result: null },
-                        }))
-                      }
+                      onClick={() => resetState(fileType.id)}
                     >
                       Tekrar Yükle
                     </Button>
