@@ -86,7 +86,7 @@ export async function POST(request: NextRequest) {
     const {
       urunId,
       urunKodu,
-      barkod,
+      barkodNo,
       eskiAdi,
       yeniAdi,
       url,
@@ -129,7 +129,7 @@ export async function POST(request: NextRequest) {
       data: {
         urunId: Number(urunId),
         urunKodu,
-        barkod,
+        barkodNo,
         eskiAdi,
         yeniAdi,
         url,
