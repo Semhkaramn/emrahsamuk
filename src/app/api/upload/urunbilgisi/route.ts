@@ -108,6 +108,7 @@ export async function POST(request: NextRequest) {
             where: { urunKodu: String(row.URUNKODU) },
             data: {
               ...productData,
+              uploadedAt: new Date(), // Son yükleme zamanı güncelle
               updatedAt: new Date(),
             },
           });
@@ -125,6 +126,7 @@ export async function POST(request: NextRequest) {
           await prisma.product.create({
             data: {
               ...productData,
+              uploadedAt: new Date(), // Yükleme zamanı kaydet
               prices: {
                 create: priceData,
               },
