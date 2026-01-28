@@ -3,8 +3,9 @@ import prisma from "@/lib/db";
 import * as XLSX from "xlsx";
 
 interface UrunKategoriRow {
-  URUNID?: number;
+  URUNID: number;
   URUNKODU?: string;
+  URUNADI?: string;
   ANA_KATEGORI?: string;
   ALT_KATEGORI_1?: string;
   ALT_KATEGORI_2?: string;
@@ -36,18 +37,19 @@ export async function POST(request: NextRequest) {
     const errors: string[] = [];
 
     for (const row of data) {
-      if (!row.URUNKODU) {
+      // URUNID zorunlu
+      if (!row.URUNID) {
         failed++;
-        errors.push(`Satır atlandı: URUNKODU boş`);
+        errors.push(`Satır atlandı: URUNID boş`);
         continue;
       }
 
       try {
-        const urunKodu = String(row.URUNKODU);
+        const urunId = Number(row.URUNID);
 
-        // Check if product exists
+        // Check if product exists by urunId
         const existingProduct = await prisma.product.findUnique({
-          where: { urunKodu },
+          where: { urunId },
         });
 
         if (!existingProduct) {
@@ -56,35 +58,34 @@ export async function POST(request: NextRequest) {
         }
 
         const categoryData = {
-          anaKategori: row.ANA_KATEGORI ? String(row.ANA_KATEGORI) : null,
-          altKategori1: row.ALT_KATEGORI_1 ? String(row.ALT_KATEGORI_1) : null,
-          altKategori2: row.ALT_KATEGORI_2 ? String(row.ALT_KATEGORI_2) : null,
-          altKategori3: row.ALT_KATEGORI_3 ? String(row.ALT_KATEGORI_3) : null,
+          anaKategori: row.ANA_KATEGORI || null,
+          altKategori1: row.ALT_KATEGORI_1 || null,
+          altKategori2: row.ALT_KATEGORI_2 || null,
+          altKategori3: row.ALT_KATEGORI_3 || null,
         };
 
+        // Check if category exists for this urunId
         const existingCategory = await prisma.productCategory.findUnique({
-          where: { urunKodu },
+          where: { urunId },
         });
 
         if (existingCategory) {
           await prisma.productCategory.update({
-            where: { urunKodu },
+            where: { urunId },
             data: categoryData,
           });
           updated++;
         } else {
           await prisma.productCategory.create({
-            data: {
-              urunKodu,
-              ...categoryData,
-            },
+            data: { urunId, ...categoryData },
           });
           created++;
         }
+
       } catch (err) {
         failed++;
         errors.push(
-          `Hata (${row.URUNKODU}): ${err instanceof Error ? err.message : "Unknown error"}`
+          `Hata (URUNID: ${row.URUNID}): ${err instanceof Error ? err.message : "Unknown error"}`
         );
       }
     }
@@ -94,13 +95,13 @@ export async function POST(request: NextRequest) {
       data: {
         islemTipi: "upload",
         durum: failed > 0 ? "partial" : "success",
-        mesaj: `ürünkategori.xlsx yüklendi. Oluşturulan: ${created}, Güncellenen: ${updated}, Atlanan: ${skipped}, Hatalı: ${failed}`,
+        mesaj: `ürünkategori.xlsx yüklendi. Yeni: ${created}, Güncellenen: ${updated}, Atlanan: ${skipped}, Hata: ${failed}`,
       },
     });
 
     return NextResponse.json({
       success: true,
-      message: "Kategori dosyası başarıyla işlendi",
+      message: "Kategori bilgileri başarıyla yüklendi",
       stats: {
         total: data.length,
         created,
