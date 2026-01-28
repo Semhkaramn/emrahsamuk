@@ -5,22 +5,31 @@ import prisma from "@/lib/db";
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { batchSize = 20, enhanceWithAI = false } = body;
+    const { batchSize = 20, uploadToCloudinary = false } = body;
 
-    // Get API key from settings if AI enhancement is enabled
-    let apiKey: string | null = null;
-    if (enhanceWithAI) {
-      const apiKeySetting = await prisma.settings.findUnique({
-        where: { key: "openai_api_key" },
-      });
-      apiKey = apiKeySetting?.value || null;
+    // Get Cloudinary settings if upload is enabled
+    let cloudinarySettings: { cloudName: string; apiKey: string; apiSecret: string; folder: string } | null = null;
+    if (uploadToCloudinary) {
+      const [cloudName, apiKey, apiSecret, folder] = await Promise.all([
+        prisma.settings.findUnique({ where: { key: "cloudinary_cloud_name" } }),
+        prisma.settings.findUnique({ where: { key: "cloudinary_api_key" } }),
+        prisma.settings.findUnique({ where: { key: "cloudinary_api_secret" } }),
+        prisma.settings.findUnique({ where: { key: "cloudinary_folder" } }),
+      ]);
 
-      if (!apiKey) {
+      if (!cloudName?.value || !apiKey?.value || !apiSecret?.value) {
         return NextResponse.json(
-          { success: false, error: "AI iyileştirme için OpenAI API anahtarı gerekli" },
+          { success: false, error: "Cloudinary ayarları eksik" },
           { status: 400 }
         );
       }
+
+      cloudinarySettings = {
+        cloudName: cloudName.value,
+        apiKey: apiKey.value,
+        apiSecret: apiSecret.value,
+        folder: folder?.value || "products",
+      };
     }
 
     // Get images to process (pending status)
@@ -31,6 +40,7 @@ export async function POST(request: NextRequest) {
       include: {
         product: {
           select: {
+            urunId: true,
             urunKodu: true,
             eskiAdi: true,
             yeniAdi: true,
@@ -53,10 +63,10 @@ export async function POST(request: NextRequest) {
     let failed = 0;
     const errors: string[] = [];
     const details: Array<{
-      urunKodu: string;
+      urunId: number;
       sira: number;
       eskiUrl: string;
-      yeniDosyaAdi: string;
+      yeniUrl: string;
       success: boolean;
       error?: string;
     }> = [];
@@ -66,10 +76,9 @@ export async function POST(request: NextRequest) {
         if (!image.eskiUrl) {
           failed++;
 
-          // Log empty URL error
           await prisma.processingLog.create({
             data: {
-              urunKodu: image.urunKodu,
+              urunId: image.urunId,
               islemTipi: "image",
               durum: "error",
               mesaj: `Resim ${image.sira}: URL boş`,
@@ -77,10 +86,10 @@ export async function POST(request: NextRequest) {
           });
 
           details.push({
-            urunKodu: image.urunKodu,
+            urunId: image.urunId,
             sira: image.sira,
             eskiUrl: "",
-            yeniDosyaAdi: "",
+            yeniUrl: "",
             success: false,
             error: "URL boş",
           });
@@ -88,19 +97,11 @@ export async function POST(request: NextRequest) {
           continue;
         }
 
-        // Update status to downloading
+        // Update status to processing
         await prisma.productImage.update({
           where: { id: image.id },
-          data: { status: "downloading" },
+          data: { status: "processing" },
         });
-
-        // Generate file name
-        const productName = image.product.yeniAdi || image.product.eskiAdi || image.product.urunKodu;
-        const fileName = generateImageFileName(
-          image.product.urunKodu,
-          productName,
-          image.sira
-        );
 
         // Try to download and verify image
         const downloadResult = await downloadImage(image.eskiUrl);
@@ -114,10 +115,9 @@ export async function POST(request: NextRequest) {
             },
           });
 
-          // Log download error
           await prisma.processingLog.create({
             data: {
-              urunKodu: image.urunKodu,
+              urunId: image.urunId,
               islemTipi: "image",
               durum: "error",
               mesaj: `Resim ${image.sira}: ${downloadResult.error}`,
@@ -125,13 +125,13 @@ export async function POST(request: NextRequest) {
           });
 
           failed++;
-          errors.push(`${image.urunKodu} Resim ${image.sira}: ${downloadResult.error}`);
+          errors.push(`Ürün ${image.urunId} Resim ${image.sira}: ${downloadResult.error}`);
 
           details.push({
-            urunKodu: image.urunKodu,
+            urunId: image.urunId,
             sira: image.sira,
             eskiUrl: image.eskiUrl,
-            yeniDosyaAdi: "",
+            yeniUrl: "",
             success: false,
             error: downloadResult.error,
           });
@@ -139,16 +139,25 @@ export async function POST(request: NextRequest) {
           continue;
         }
 
-        // If AI enhancement is requested
-        if (enhanceWithAI && apiKey) {
-          await prisma.productImage.update({
-            where: { id: image.id },
-            data: { status: "enhancing" },
-          });
+        // If Cloudinary upload is enabled
+        let yeniUrl = image.eskiUrl; // Default: keep original URL
+        let cloudinaryId: string | null = null;
 
-          // Note: AI enhancement with DALL-E is very expensive ($0.04/image)
-          // For 15000 products with 5 images each = $3000!
-          // Consider skipping this for now or making it optional per product
+        if (uploadToCloudinary && cloudinarySettings) {
+          const uploadResult = await uploadToCloudinaryService(
+            image.eskiUrl,
+            cloudinarySettings,
+            image.urunId,
+            image.sira
+          );
+
+          if (uploadResult.success && uploadResult.url) {
+            yeniUrl = uploadResult.url;
+            cloudinaryId = uploadResult.publicId || null;
+          } else {
+            // Cloudinary upload failed, but image is valid - mark as done with original URL
+            console.warn(`Cloudinary upload failed for ${image.urunId}:${image.sira}: ${uploadResult.error}`);
+          }
         }
 
         // Mark as done
@@ -156,33 +165,34 @@ export async function POST(request: NextRequest) {
           where: { id: image.id },
           data: {
             status: "done",
-            yeniDosyaAdi: fileName,
+            yeniUrl,
+            cloudinaryId,
           },
         });
 
         // Update product's processedAt
         await prisma.product.update({
-          where: { urunKodu: image.urunKodu },
+          where: { urunId: image.urunId },
           data: {
-            processedAt: new Date(), // Her resim işlendiğinde güncelle
+            processedAt: new Date(),
+            processingStatus: "done",
           },
         });
 
-        // Log success
         await prisma.processingLog.create({
           data: {
-            urunKodu: image.urunKodu,
+            urunId: image.urunId,
             islemTipi: "image",
             durum: "success",
-            mesaj: `Resim ${image.sira}: ${fileName}`,
+            mesaj: `Resim ${image.sira}: ${yeniUrl}`,
           },
         });
 
         details.push({
-          urunKodu: image.urunKodu,
+          urunId: image.urunId,
           sira: image.sira,
           eskiUrl: image.eskiUrl,
-          yeniDosyaAdi: fileName,
+          yeniUrl,
           success: true,
         });
 
@@ -190,12 +200,11 @@ export async function POST(request: NextRequest) {
       } catch (err) {
         failed++;
         const errorMsg = err instanceof Error ? err.message : "Bilinmeyen hata";
-        errors.push(`${image.urunKodu} Resim ${image.sira}: ${errorMsg}`);
+        errors.push(`Ürün ${image.urunId} Resim ${image.sira}: ${errorMsg}`);
 
-        // Log error
         await prisma.processingLog.create({
           data: {
-            urunKodu: image.urunKodu,
+            urunId: image.urunId,
             islemTipi: "image",
             durum: "error",
             mesaj: `Resim ${image.sira}: ${errorMsg}`,
@@ -211,10 +220,10 @@ export async function POST(request: NextRequest) {
         });
 
         details.push({
-          urunKodu: image.urunKodu,
+          urunId: image.urunId,
           sira: image.sira,
           eskiUrl: image.eskiUrl || "",
-          yeniDosyaAdi: "",
+          yeniUrl: "",
           success: false,
           error: errorMsg,
         });
@@ -250,11 +259,10 @@ export async function POST(request: NextRequest) {
 // GET - Resim işleme durumunu getir
 export async function GET() {
   try {
-    const [total, pending, downloading, enhancing, done, errorCount] = await Promise.all([
+    const [total, pending, processing, done, errorCount] = await Promise.all([
       prisma.productImage.count(),
       prisma.productImage.count({ where: { status: "pending" } }),
-      prisma.productImage.count({ where: { status: "downloading" } }),
-      prisma.productImage.count({ where: { status: "enhancing" } }),
+      prisma.productImage.count({ where: { status: "processing" } }),
       prisma.productImage.count({ where: { status: "done" } }),
       prisma.productImage.count({ where: { status: "error" } }),
     ]);
@@ -264,8 +272,7 @@ export async function GET() {
       data: {
         total,
         pending,
-        downloading,
-        enhancing,
+        processing,
         done,
         error: errorCount,
         percentComplete: total > 0 ? Math.round((done / total) * 100) : 0,
@@ -298,7 +305,6 @@ async function downloadImage(url: string): Promise<{ success: boolean; error?: s
       return { success: false, error: "Geçersiz içerik tipi" };
     }
 
-    // Verify we can read the image
     const buffer = await response.arrayBuffer();
     if (buffer.byteLength < 100) {
       return { success: false, error: "Resim çok küçük veya boş" };
@@ -313,32 +319,80 @@ async function downloadImage(url: string): Promise<{ success: boolean; error?: s
   }
 }
 
-// Helper: Generate image file name
-function generateImageFileName(
-  productCode: string,
-  productName: string,
-  imageIndex: number
-): string {
-  // Clean product name for filename
-  const cleanName = productName
-    .toLowerCase()
-    .replace(/ğ/g, "g")
-    .replace(/ü/g, "u")
-    .replace(/ş/g, "s")
-    .replace(/ı/g, "i")
-    .replace(/ö/g, "o")
-    .replace(/ç/g, "c")
-    .replace(/Ğ/g, "G")
-    .replace(/Ü/g, "U")
-    .replace(/Ş/g, "S")
-    .replace(/İ/g, "I")
-    .replace(/Ö/g, "O")
-    .replace(/Ç/g, "C")
-    .replace(/[^a-z0-9\s-]/g, "")
-    .replace(/\s+/g, "-")
-    .substring(0, 50);
+// Helper: Upload to Cloudinary
+async function uploadToCloudinaryService(
+  imageUrl: string,
+  settings: { cloudName: string; apiKey: string; apiSecret: string; folder: string },
+  urunId: number,
+  sira: number
+): Promise<{ success: boolean; url?: string; publicId?: string; error?: string }> {
+  try {
+    const publicId = `${settings.folder}/${urunId}_${sira}`;
 
-  const cleanCode = productCode.replace(/[^a-zA-Z0-9-]/g, "");
+    // Use Cloudinary upload API with URL
+    const formData = new FormData();
+    formData.append("file", imageUrl);
+    formData.append("upload_preset", "ml_default"); // You may need to configure this
+    formData.append("public_id", publicId);
+    formData.append("folder", settings.folder);
 
-  return `${cleanCode}_${cleanName}_${imageIndex}.webp`;
+    const timestamp = Math.floor(Date.now() / 1000);
+    const signature = await generateCloudinarySignature(
+      { public_id: publicId, timestamp },
+      settings.apiSecret
+    );
+
+    const response = await fetch(
+      `https://api.cloudinary.com/v1_1/${settings.cloudName}/image/upload`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          file: imageUrl,
+          api_key: settings.apiKey,
+          timestamp,
+          signature,
+          public_id: publicId,
+          folder: settings.folder,
+        }),
+        headers: {
+          "Content-Type": "application/json",
+        },
+      }
+    );
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      return { success: false, error: errorData.error?.message || `HTTP ${response.status}` };
+    }
+
+    const data = await response.json();
+    return {
+      success: true,
+      url: data.secure_url,
+      publicId: data.public_id,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Cloudinary yükleme hatası",
+    };
+  }
+}
+
+// Helper: Generate Cloudinary signature
+async function generateCloudinarySignature(
+  params: Record<string, string | number>,
+  apiSecret: string
+): Promise<string> {
+  const sortedKeys = Object.keys(params).sort();
+  const stringToSign = sortedKeys
+    .map((key) => `${key}=${params[key]}`)
+    .join("&") + apiSecret;
+
+  // Use Web Crypto API for SHA-1 hash
+  const encoder = new TextEncoder();
+  const data = encoder.encode(stringToSign);
+  const hashBuffer = await crypto.subtle.digest("SHA-1", data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
 }
