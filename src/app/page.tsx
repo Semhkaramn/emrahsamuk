@@ -20,7 +20,6 @@ import {
   Sparkles,
   Zap,
   FolderTree,
-  Archive,
   Loader2,
   CheckCircle2,
   Menu,
@@ -28,7 +27,7 @@ import {
   ChevronRight,
 } from "lucide-react";
 
-type ExportType = "pcden" | "full" | "urunbilgisi" | "urunkategori" | "images-zip";
+type ExportType = "pcden" | "full" | "urunbilgisi" | "urunkategori";
 type ActivePage = "dashboard" | "process" | "upload" | "products" | "export" | "settings";
 
 interface ExportState {
@@ -62,7 +61,6 @@ export default function Home() {
     full: { loading: false, success: false, error: null },
     urunbilgisi: { loading: false, success: false, error: null },
     urunkategori: { loading: false, success: false, error: null },
-    "images-zip": { loading: false, success: false, error: null },
   });
 
   const handleExport = useCallback(async (type: ExportType) => {
@@ -77,7 +75,6 @@ export default function Home() {
         full: "/api/export/full",
         urunbilgisi: "/api/export/urunbilgisi",
         urunkategori: "/api/export/urunkategori",
-        "images-zip": "/api/export/images-zip?limit=500",
       };
 
       const filenames: Record<ExportType, string> = {
@@ -85,7 +82,6 @@ export default function Home() {
         full: "urun-export-full.xlsx",
         urunbilgisi: "urunbilgisi.xlsx",
         urunkategori: "urunkategori.xlsx",
-        "images-zip": "urun-resimleri.zip",
       };
 
       const response = await fetch(endpoints[type]);
