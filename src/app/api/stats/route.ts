@@ -73,7 +73,7 @@ export async function GET() {
         },
         categories: {
           total: totalCategories,
-          distribution: categoryDistribution.map((c) => ({
+          distribution: categoryDistribution.map((c: { anaKategori: string | null; _count: number }) => ({
             name: c.anaKategori || "Kategorisiz",
             count: c._count,
           })),
