@@ -160,6 +160,14 @@ export async function POST(request: NextRequest) {
           },
         });
 
+        // Update product's processedAt
+        await prisma.product.update({
+          where: { urunKodu: image.urunKodu },
+          data: {
+            processedAt: new Date(), // Her resim işlendiğinde güncelle
+          },
+        });
+
         // Log success
         await prisma.processingLog.create({
           data: {
