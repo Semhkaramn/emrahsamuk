@@ -12,19 +12,29 @@ model Product {
   id               Int       @id @default(autoincrement())
   urunId           Int       @unique @map("urun_id")
   urunKodu         String?   @map("urun_kodu") @db.VarChar(100)
-  barkod           String?   @db.VarChar(50)
+  barkodNo         String?   @map("barkod_no") @db.VarChar(50)
   eskiAdi          String?   @map("eski_adi") @db.Text
   yeniAdi          String?   @map("yeni_adi") @db.Text
+  faturaAdi        String?   @map("fatura_adi") @db.Text
   url              String?   @db.VarChar(255)
   marka            String?   @db.VarChar(100)
   aciklama         String?   @db.Text
   durum            String?   @default("AKTIF") @db.VarChar(20)
   vitrinDurumu     String?   @map("vitrin_durumu") @db.VarChar(20)
+  kargoOdeme       String?   @map("kargo_odeme") @db.VarChar(20)
   kdv              Decimal?  @db.Decimal(5, 2)
   desi             Decimal?  @db.Decimal(10, 2)
   stok             Int?      @default(0)
+  onDetay          String?   @map("on_detay") @db.Text
   sira             Int?      @default(0)
+  ozelKod1         String?   @map("ozel_kod_1") @db.VarChar(100)
+  ozelKod2         String?   @map("ozel_kod_2") @db.VarChar(100)
+  ozelKod3         String?   @map("ozel_kod_3") @db.VarChar(100)
   kategoriId       Int?      @map("kategori_id")
+  depoYerKodu      String?   @map("depo_yer_kodu") @db.VarChar(100)
+  ureticiKodu      String?   @map("uretici_kodu") @db.VarChar(100)
+  gtip             String?   @db.VarChar(50)
+  modelKodu        String?   @map("model_kodu") @db.VarChar(100)
   processingStatus String?   @default("pending") @map("processing_status") @db.VarChar(20)
   processedAt      DateTime? @map("processed_at")
   uploadedAt       DateTime? @map("uploaded_at")
@@ -78,6 +88,11 @@ model ProductPrice {
   idefixDoviz      String?  @default("TL") @map("idefix_doviz") @db.VarChar(10)
   lcwFiyat         Decimal? @map("lcw_fiyat") @db.Decimal(12, 2)
   lcwDoviz         String?  @default("TL") @map("lcw_doviz") @db.VarChar(10)
+  // Bayi fiyatları
+  bayiFiyati1      Decimal? @map("bayi_fiyati_1") @db.Decimal(12, 2)
+  bayiFiyati2      Decimal? @map("bayi_fiyati_2") @db.Decimal(12, 2)
+  bayiFiyati3      Decimal? @map("bayi_fiyati_3") @db.Decimal(12, 2)
+  bayiFiyati4      Decimal? @map("bayi_fiyati_4") @db.Decimal(12, 2)
 
   // İlişki
   product Product @relation(fields: [urunId], references: [urunId], onDelete: Cascade)
@@ -88,13 +103,19 @@ model ProductPrice {
 
 // Kategoriler Tablosu
 model ProductCategory {
-  id           Int     @id @default(autoincrement())
-  urunId       Int     @unique @map("urun_id")
-  anaKategori  String? @map("ana_kategori") @db.VarChar(100)
-  altKategori1 String? @map("alt_kategori_1") @db.VarChar(100)
-  altKategori2 String? @map("alt_kategori_2") @db.VarChar(100)
-  altKategori3 String? @map("alt_kategori_3") @db.VarChar(100)
-  aiKategori   String? @map("ai_kategori") @db.VarChar(255)
+  id            Int     @id @default(autoincrement())
+  urunId        Int     @unique @map("urun_id")
+  anaKategori   String? @map("ana_kategori") @db.VarChar(100)
+  altKategori1  String? @map("alt_kategori_1") @db.VarChar(100)
+  altKategori2  String? @map("alt_kategori_2") @db.VarChar(100)
+  altKategori3  String? @map("alt_kategori_3") @db.VarChar(100)
+  altKategori4  String? @map("alt_kategori_4") @db.VarChar(100)
+  altKategori5  String? @map("alt_kategori_5") @db.VarChar(100)
+  altKategori6  String? @map("alt_kategori_6") @db.VarChar(100)
+  altKategori7  String? @map("alt_kategori_7") @db.VarChar(100)
+  altKategori8  String? @map("alt_kategori_8") @db.VarChar(100)
+  altKategori9  String? @map("alt_kategori_9") @db.VarChar(100)
+  aiKategori    String? @map("ai_kategori") @db.VarChar(255)
 
   // İlişki
   product Product @relation(fields: [urunId], references: [urunId], onDelete: Cascade)
@@ -126,12 +147,12 @@ model ProductImage {
 
 // SEO Bilgileri Tablosu
 model ProductSeo {
-  id          Int     @id @default(autoincrement())
-  urunId      Int     @unique @map("urun_id")
-  seoBaslik   String? @map("seo_baslik") @db.Text
-  seoAciklama String? @map("seo_aciklama") @db.Text
-  seoKeywords String? @map("seo_keywords") @db.Text
-  seoUrl      String? @map("seo_url") @db.VarChar(255)
+  id              Int     @id @default(autoincrement())
+  urunId          Int     @unique @map("urun_id")
+  seoBaslik       String? @map("seo_baslik") @db.Text
+  seoAciklama     String? @map("seo_aciklama") @db.Text
+  seoKeywords     String? @map("seo_keywords") @db.Text
+  seoUrl          String? @map("seo_url") @db.VarChar(255)
 
   // İlişki
   product Product @relation(fields: [urunId], references: [urunId], onDelete: Cascade)
