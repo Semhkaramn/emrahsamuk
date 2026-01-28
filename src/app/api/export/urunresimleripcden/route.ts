@@ -1,23 +1,48 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
 import * as XLSX from "xlsx";
+import type { Prisma } from "@prisma/client";
 
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
     const onlyProcessed = searchParams.get("onlyProcessed") === "true";
+    const onlyUnprocessed = searchParams.get("onlyUnprocessed") === "true";
+    const onlyRecentlyUploaded = searchParams.get("onlyRecentlyUploaded") === "true";
+    const sinceDate = searchParams.get("sinceDate"); // ISO date string
+    const untilDate = searchParams.get("untilDate"); // ISO date string
+    const filterType = searchParams.get("filterType"); // "all" | "processed" | "unprocessed" | "recentUpload" | "dateRange"
+
+    // Build where clause based on filters
+    const whereClause: Prisma.ProductWhereInput = {};
+
+    if (filterType === "processed" || onlyProcessed) {
+      whereClause.images = {
+        some: {
+          status: "done",
+        },
+      };
+    } else if (filterType === "unprocessed" || onlyUnprocessed) {
+      whereClause.OR = [
+        { images: { none: {} } },
+        { images: { every: { status: "pending" } } }
+      ];
+    } else if (filterType === "recentUpload" || onlyRecentlyUploaded) {
+      const oneDayAgo = new Date();
+      oneDayAgo.setHours(oneDayAgo.getHours() - 24);
+      whereClause.uploadedAt = {
+        gte: oneDayAgo
+      };
+    } else if (filterType === "dateRange" && sinceDate) {
+      whereClause.processedAt = {
+        gte: new Date(sinceDate),
+        ...(untilDate ? { lte: new Date(untilDate) } : {})
+      };
+    }
 
     // Get all products with images
     const products = await prisma.product.findMany({
-      where: onlyProcessed
-        ? {
-            images: {
-              some: {
-                status: "done",
-              },
-            },
-          }
-        : undefined,
+      where: Object.keys(whereClause).length > 0 ? whereClause : undefined,
       include: {
         images: {
           orderBy: { sira: "asc" },
@@ -32,6 +57,8 @@ export async function GET(request: NextRequest) {
         URUNID: product.urunId,
         URUNKODU: product.urunKodu,
         ADI: product.yeniAdi || product.eskiAdi || "",
+        ISLEM_DURUMU: product.processingStatus || "pending",
+        ISLEM_TARIHI: product.processedAt?.toISOString() || "",
       };
 
       // Add RESIM1-16 columns with file names
@@ -56,16 +83,17 @@ export async function GET(request: NextRequest) {
       data: {
         islemTipi: "export",
         durum: "success",
-        mesaj: `ürünresimleripcden.xlsx export edildi. ${products.length} ürün`,
+        mesaj: `ürünresimleripcden.xlsx export edildi. ${products.length} ürün (Filtre: ${filterType || "all"})`,
       },
     });
+
+    const filename = `urunresimleripcden_${filterType || "all"}_${new Date().toISOString().split("T")[0]}.xlsx`;
 
     return new NextResponse(buffer, {
       headers: {
         "Content-Type":
           "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        "Content-Disposition":
-          'attachment; filename="urunresimleripcden.xlsx"',
+        "Content-Disposition": `attachment; filename="${filename}"`,
       },
     });
   } catch (error) {
