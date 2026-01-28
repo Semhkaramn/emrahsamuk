@@ -3,34 +3,48 @@ import prisma from "@/lib/db";
 import * as XLSX from "xlsx";
 
 interface UrunBilgisiRow {
-  ID?: number;
+  ID: number;
   URUNKODU?: string;
-  BARKODNO?: string;
+  DURUM?: string;
   ADI?: string;
   URL?: string;
-  MARKA?: string;
-  ACIKLAMA?: string;
-  DURUM?: string;
-  VITRINDURUMU?: string;
-  KDV?: number;
-  DESI?: number;
-  STOK?: number;
-  SIRA?: number;
-  KATEGORIID?: number;
+  KARGOODEME?: string;
   PIYASAFIYAT?: number;
   ALISFIYAT?: number;
+  HIZLIFIYAT?: number;
   SITEFIYAT?: number;
+  SITEDOVIZ?: string;
   N11FIYAT?: number;
+  N11DOVIZ?: string;
   HBFIYAT?: number;
+  HBDOVIZ?: string;
   PTTFIYAT?: number;
+  PTTDOVIZ?: string;
   AMAZONTRFIYAT?: number;
+  AMAZONTRDOVIZ?: string;
   TRENDYOLFIYAT?: number;
+  TRENDYOLDOVIZ?: string;
   CICEKSEPETIFIYAT?: number;
+  CICEKSEPETIDOVIZ?: string;
   MODANISAFIYAT?: number;
+  MODANISADOVIZ?: string;
   PAZARAMAFIYAT?: number;
+  PAZARAMADOVIZ?: string;
   FARMAZONFIYAT?: number;
+  FARMAZONDOVIZ?: string;
   IDEFIXFIYAT?: number;
+  IDEFIXDOVIZ?: string;
   LCWFIYAT?: number;
+  LCWDOVIZ?: string;
+  KDV?: number;
+  DESI?: number;
+  STOK?: string | number;
+  SIRA?: string | number;
+  KATEGORIID?: string | number;
+  MARKA?: string;
+  ACIKLAMA?: string;
+  VITRINDURUMU?: string;
+  BARKOD?: string;
 }
 
 export async function POST(request: NextRequest) {
@@ -57,87 +71,94 @@ export async function POST(request: NextRequest) {
     const errors: string[] = [];
 
     for (const row of data) {
-      if (!row.URUNKODU) {
+      // ID zorunlu - urunId olarak kullanılacak
+      if (!row.ID) {
         failed++;
-        errors.push(`Satır atlandı: URUNKODU boş`);
+        errors.push(`Satır atlandı: ID boş`);
         continue;
       }
 
       try {
+        const urunId = Number(row.ID);
+        const urunKodu = row.URUNKODU ? String(row.URUNKODU) : null;
+
+        // Check if product exists by urunId
+        const existingProduct = await prisma.product.findUnique({
+          where: { urunId },
+        });
+
         const productData = {
-          urunId: row.ID,
-          urunKodu: String(row.URUNKODU),
-          barkod: row.BARKODNO ? String(row.BARKODNO) : null,
-          eskiAdi: row.ADI ? String(row.ADI) : null,
-          url: row.URL ? String(row.URL) : null,
-          marka: row.MARKA ? String(row.MARKA) : null,
-          aciklama: row.ACIKLAMA ? String(row.ACIKLAMA) : null,
-          durum: row.DURUM ? String(row.DURUM) : "AKTIF",
-          vitrinDurumu: row.VITRINDURUMU ? String(row.VITRINDURUMU) : null,
-          kdv: row.KDV ? row.KDV : null,
-          desi: row.DESI ? row.DESI : null,
+          urunId,
+          urunKodu,
+          barkod: row.BARKOD || null,
+          eskiAdi: row.ADI || null,
+          url: row.URL || null,
+          marka: row.MARKA || null,
+          aciklama: row.ACIKLAMA || null,
+          durum: row.DURUM || "AKTIF",
+          vitrinDurumu: row.VITRINDURUMU || null,
+          kdv: row.KDV ? Number(row.KDV) : null,
+          desi: row.DESI ? Number(row.DESI) : null,
           stok: row.STOK ? Number(row.STOK) : 0,
           sira: row.SIRA ? Number(row.SIRA) : 0,
           kategoriId: row.KATEGORIID ? Number(row.KATEGORIID) : null,
+          uploadedAt: new Date(),
         };
-
-        const priceData = {
-          piyasaFiyat: row.PIYASAFIYAT || null,
-          alisFiyat: row.ALISFIYAT || null,
-          siteFiyat: row.SITEFIYAT || null,
-          n11Fiyat: row.N11FIYAT || null,
-          hbFiyat: row.HBFIYAT || null,
-          pttFiyat: row.PTTFIYAT || null,
-          amazonTrFiyat: row.AMAZONTRFIYAT || null,
-          trendyolFiyat: row.TRENDYOLFIYAT || null,
-          cicekSepetiFiyat: row.CICEKSEPETIFIYAT || null,
-          modanisaFiyat: row.MODANISAFIYAT || null,
-          pazaramaFiyat: row.PAZARAMAFIYAT || null,
-          farmazonFiyat: row.FARMAZONFIYAT || null,
-          idefixFiyat: row.IDEFIXFIYAT || null,
-          lcwFiyat: row.LCWFIYAT || null,
-        };
-
-        const existingProduct = await prisma.product.findUnique({
-          where: { urunKodu: String(row.URUNKODU) },
-        });
 
         if (existingProduct) {
-          // Update existing product
           await prisma.product.update({
-            where: { urunKodu: String(row.URUNKODU) },
-            data: {
-              ...productData,
-              uploadedAt: new Date(), // Son yükleme zamanı güncelle
-              updatedAt: new Date(),
-            },
+            where: { urunId },
+            data: productData,
           });
-
-          // Update or create prices
-          await prisma.productPrice.upsert({
-            where: { urunKodu: String(row.URUNKODU) },
-            update: priceData,
-            create: { urunKodu: String(row.URUNKODU), ...priceData },
-          });
-
           updated++;
         } else {
-          // Create new product
           await prisma.product.create({
-            data: {
-              ...productData,
-              uploadedAt: new Date(), // Yükleme zamanı kaydet
-              prices: {
-                create: priceData,
-              },
-            },
+            data: productData,
           });
           created++;
         }
+
+        // Fiyat bilgilerini kaydet
+        const priceData = {
+          piyasaFiyat: row.PIYASAFIYAT || null,
+          alisFiyat: row.ALISFIYAT || null,
+          hizliFiyat: row.HIZLIFIYAT || null,
+          siteFiyat: row.SITEFIYAT || null,
+          siteDoviz: row.SITEDOVIZ || "TL",
+          n11Fiyat: row.N11FIYAT || null,
+          n11Doviz: row.N11DOVIZ || "TL",
+          hbFiyat: row.HBFIYAT || null,
+          hbDoviz: row.HBDOVIZ || "TL",
+          pttFiyat: row.PTTFIYAT || null,
+          pttDoviz: row.PTTDOVIZ || "TL",
+          amazonTrFiyat: row.AMAZONTRFIYAT || null,
+          amazonTrDoviz: row.AMAZONTRDOVIZ || "TL",
+          trendyolFiyat: row.TRENDYOLFIYAT || null,
+          trendyolDoviz: row.TRENDYOLDOVIZ || "TL",
+          cicekSepetiFiyat: row.CICEKSEPETIFIYAT || null,
+          cicekSepetiDoviz: row.CICEKSEPETIDOVIZ || "TL",
+          modanisaFiyat: row.MODANISAFIYAT || null,
+          modanisaDoviz: row.MODANISADOVIZ || "TL",
+          pazaramaFiyat: row.PAZARAMAFIYAT || null,
+          pazaramaDoviz: row.PAZARAMADOVIZ || "TL",
+          farmazonFiyat: row.FARMAZONFIYAT || null,
+          farmazonDoviz: row.FARMAZONDOVIZ || "TL",
+          idefixFiyat: row.IDEFIXFIYAT || null,
+          idefixDoviz: row.IDEFIXDOVIZ || "TL",
+          lcwFiyat: row.LCWFIYAT || null,
+          lcwDoviz: row.LCWDOVIZ || "TL",
+        };
+
+        await prisma.productPrice.upsert({
+          where: { urunId },
+          update: priceData,
+          create: { urunId, ...priceData },
+        });
+
       } catch (err) {
         failed++;
         errors.push(
-          `Hata (${row.URUNKODU}): ${err instanceof Error ? err.message : "Unknown error"}`
+          `Hata (ID: ${row.ID}): ${err instanceof Error ? err.message : "Unknown error"}`
         );
       }
     }
@@ -147,20 +168,20 @@ export async function POST(request: NextRequest) {
       data: {
         islemTipi: "upload",
         durum: failed > 0 ? "partial" : "success",
-        mesaj: `ürünbilgisi.xlsx yüklendi. Oluşturulan: ${created}, Güncellenen: ${updated}, Hatalı: ${failed}`,
+        mesaj: `ürünbilgisi.xlsx yüklendi. Yeni: ${created}, Güncellenen: ${updated}, Hata: ${failed}`,
       },
     });
 
     return NextResponse.json({
       success: true,
-      message: "Dosya başarıyla işlendi",
+      message: "Ürün bilgileri başarıyla yüklendi",
       stats: {
         total: data.length,
         created,
         updated,
         failed,
       },
-      errors: errors.slice(0, 10), // İlk 10 hata
+      errors: errors.slice(0, 10),
     });
   } catch (error) {
     console.error("Upload urunbilgisi error:", error);
