@@ -89,12 +89,13 @@ export async function POST(request: NextRequest) {
             },
           });
 
-          // Update product's yeniAdi with SEO title
+          // Update product's yeniAdi with SEO title and processedAt
           await prisma.product.update({
             where: { urunKodu: product.urunKodu },
             data: {
               yeniAdi: seoResult.seoTitle,
               processingStatus: "done",
+              processedAt: new Date(), // İşlem tamamlandığında tarih kaydet
             },
           });
 
