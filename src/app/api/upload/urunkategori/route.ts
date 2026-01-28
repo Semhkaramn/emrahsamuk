@@ -5,11 +5,18 @@ import * as XLSX from "xlsx";
 interface UrunKategoriRow {
   URUNID: number;
   URUNKODU?: string;
+  BARKODNO?: string;
   URUNADI?: string;
   ANA_KATEGORI?: string;
   ALT_KATEGORI_1?: string;
   ALT_KATEGORI_2?: string;
   ALT_KATEGORI_3?: string;
+  ALT_KATEGORI_4?: string;
+  ALT_KATEGORI_5?: string;
+  ALT_KATEGORI_6?: string;
+  ALT_KATEGORI_7?: string;
+  ALT_KATEGORI_8?: string;
+  ALT_KATEGORI_9?: string;
 }
 
 export async function POST(request: NextRequest) {
@@ -35,12 +42,14 @@ export async function POST(request: NextRequest) {
     let skipped = 0;
     let failed = 0;
     const errors: string[] = [];
+    const total = data.length;
 
-    for (const row of data) {
+    for (let i = 0; i < data.length; i++) {
+      const row = data[i];
       // URUNID zorunlu
       if (!row.URUNID) {
         failed++;
-        errors.push(`Satır atlandı: URUNID boş`);
+        errors.push(`Satır ${i + 2} atlandı: URUNID boş`);
         continue;
       }
 
@@ -62,6 +71,12 @@ export async function POST(request: NextRequest) {
           altKategori1: row.ALT_KATEGORI_1 || null,
           altKategori2: row.ALT_KATEGORI_2 || null,
           altKategori3: row.ALT_KATEGORI_3 || null,
+          altKategori4: row.ALT_KATEGORI_4 || null,
+          altKategori5: row.ALT_KATEGORI_5 || null,
+          altKategori6: row.ALT_KATEGORI_6 || null,
+          altKategori7: row.ALT_KATEGORI_7 || null,
+          altKategori8: row.ALT_KATEGORI_8 || null,
+          altKategori9: row.ALT_KATEGORI_9 || null,
         };
 
         // Check if category exists for this urunId
@@ -103,7 +118,7 @@ export async function POST(request: NextRequest) {
       success: true,
       message: "Kategori bilgileri başarıyla yüklendi",
       stats: {
-        total: data.length,
+        total,
         created,
         updated,
         skipped,
