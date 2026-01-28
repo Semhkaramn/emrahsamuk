@@ -9,7 +9,7 @@ export async function GET(
   try {
     const { urunKodu } = await params;
 
-    const product = await prisma.product.findUnique({
+    const product = await prisma.product.findFirst({
       where: { urunKodu },
       include: {
         prices: true,
@@ -71,7 +71,7 @@ export async function PUT(
     } = body;
 
     // Check if product exists
-    const existingProduct = await prisma.product.findUnique({
+    const existingProduct = await prisma.product.findFirst({
       where: { urunKodu },
     });
 
@@ -82,9 +82,9 @@ export async function PUT(
       );
     }
 
-    // Update product
+    // Update product using urunId
     const product = await prisma.product.update({
-      where: { urunKodu },
+      where: { urunId: existingProduct.urunId },
       data: {
         eskiAdi,
         yeniAdi,
@@ -112,33 +112,34 @@ export async function PUT(
     // Update prices if provided
     if (prices) {
       await prisma.productPrice.upsert({
-        where: { urunKodu },
+        where: { urunId: existingProduct.urunId },
         update: prices,
-        create: { ...prices, urunKodu },
+        create: { ...prices, urunId: existingProduct.urunId },
       });
     }
 
     // Update categories if provided
     if (categories) {
       await prisma.productCategory.upsert({
-        where: { urunKodu },
+        where: { urunId: existingProduct.urunId },
         update: categories,
-        create: { ...categories, urunKodu },
+        create: { ...categories, urunId: existingProduct.urunId },
       });
     }
 
     // Update SEO if provided
     if (seo) {
       await prisma.productSeo.upsert({
-        where: { urunKodu },
+        where: { urunId: existingProduct.urunId },
         update: seo,
-        create: { ...seo, urunKodu },
+        create: { ...seo, urunId: existingProduct.urunId },
       });
     }
 
     // Log the action
     await prisma.processingLog.create({
       data: {
+        urunId: existingProduct.urunId,
         urunKodu,
         islemTipi: "update",
         durum: "success",
@@ -147,7 +148,7 @@ export async function PUT(
     });
 
     // Fetch updated product
-    const updatedProduct = await prisma.product.findUnique({
+    const updatedProduct = await prisma.product.findFirst({
       where: { urunKodu },
       include: {
         prices: true,
@@ -176,7 +177,7 @@ export async function DELETE(
     const { urunKodu } = await params;
 
     // Check if product exists
-    const existingProduct = await prisma.product.findUnique({
+    const existingProduct = await prisma.product.findFirst({
       where: { urunKodu },
     });
 
@@ -189,7 +190,7 @@ export async function DELETE(
 
     // Delete product (cascade will delete related records)
     await prisma.product.delete({
-      where: { urunKodu },
+      where: { urunId: existingProduct.urunId },
     });
 
     // Log the action
