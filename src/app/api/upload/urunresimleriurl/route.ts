@@ -5,6 +5,7 @@ import * as XLSX from "xlsx";
 interface UrunResimRow {
   URUNID: number;
   URUNKODU?: string;
+  BARKODNO?: string;
   ADI?: string;
   RESIM1?: string;
   RESIM2?: string;
@@ -48,12 +49,14 @@ export async function POST(request: NextRequest) {
     let skipped = 0;
     let failed = 0;
     const errors: string[] = [];
+    const total = data.length;
 
-    for (const row of data) {
+    for (let i = 0; i < data.length; i++) {
+      const row = data[i];
       // URUNID zorunlu
       if (!row.URUNID) {
         failed++;
-        errors.push(`Satır atlandı: URUNID boş`);
+        errors.push(`Satır ${i + 2} atlandı: URUNID boş`);
         continue;
       }
 
@@ -72,11 +75,11 @@ export async function POST(request: NextRequest) {
 
         // Extract all image URLs (RESIM1-16)
         const imageUrls: { sira: number; url: string }[] = [];
-        for (let i = 1; i <= 16; i++) {
-          const key = `RESIM${i}` as keyof UrunResimRow;
+        for (let j = 1; j <= 16; j++) {
+          const key = `RESIM${j}` as keyof UrunResimRow;
           const url = row[key];
           if (url && typeof url === "string" && url.trim()) {
-            imageUrls.push({ sira: i, url: url.trim() });
+            imageUrls.push({ sira: j, url: url.trim() });
           }
         }
 
@@ -140,7 +143,7 @@ export async function POST(request: NextRequest) {
       success: true,
       message: "Resim URL dosyası başarıyla işlendi",
       stats: {
-        total: data.length,
+        total,
         productsProcessed,
         imagesCreated,
         imagesUpdated,
