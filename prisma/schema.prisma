@@ -1,0 +1,152 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Ana Ürün Tablosu
+model Product {
+  id               Int       @id @default(autoincrement())
+  urunId           Int?      @map("urun_id")
+  urunKodu         String    @unique @map("urun_kodu") @db.VarChar(100)
+  barkod           String?   @db.VarChar(50)
+  eskiAdi          String?   @map("eski_adi") @db.Text
+  yeniAdi          String?   @map("yeni_adi") @db.Text
+  url              String?   @db.VarChar(255)
+  marka            String?   @db.VarChar(100)
+  aciklama         String?   @db.Text
+  durum            String?   @default("AKTIF") @db.VarChar(20)
+  vitrinDurumu     String?   @map("vitrin_durumu") @db.VarChar(20)
+  kdv              Decimal?  @db.Decimal(5, 2)
+  desi             Decimal?  @db.Decimal(10, 2)
+  stok             Int?      @default(0)
+  sira             Int?      @default(0)
+  kategoriId       Int?      @map("kategori_id")
+  processingStatus String?   @default("pending") @map("processing_status") @db.VarChar(20)
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  // İlişkiler
+  prices     ProductPrice?
+  categories ProductCategory?
+  images     ProductImage[]
+  seo        ProductSeo?
+  logs       ProcessingLog[]
+
+  @@index([urunKodu])
+  @@index([durum])
+  @@index([processingStatus])
+  @@map("products")
+}
+
+// Fiyatlar Tablosu
+model ProductPrice {
+  id               Int      @id @default(autoincrement())
+  urunKodu         String   @unique @map("urun_kodu") @db.VarChar(100)
+  piyasaFiyat      Decimal? @map("piyasa_fiyat") @db.Decimal(12, 2)
+  alisFiyat        Decimal? @map("alis_fiyat") @db.Decimal(12, 2)
+  hizliFiyat       Decimal? @map("hizli_fiyat") @db.Decimal(12, 2)
+  siteFiyat        Decimal? @map("site_fiyat") @db.Decimal(12, 2)
+  siteDoviz        String?  @default("TL") @map("site_doviz") @db.VarChar(10)
+  n11Fiyat         Decimal? @map("n11_fiyat") @db.Decimal(12, 2)
+  n11Doviz         String?  @default("TL") @map("n11_doviz") @db.VarChar(10)
+  hbFiyat          Decimal? @map("hb_fiyat") @db.Decimal(12, 2)
+  hbDoviz          String?  @default("TL") @map("hb_doviz") @db.VarChar(10)
+  pttFiyat         Decimal? @map("ptt_fiyat") @db.Decimal(12, 2)
+  pttDoviz         String?  @default("TL") @map("ptt_doviz") @db.VarChar(10)
+  amazonTrFiyat    Decimal? @map("amazon_tr_fiyat") @db.Decimal(12, 2)
+  amazonTrDoviz    String?  @default("TL") @map("amazon_tr_doviz") @db.VarChar(10)
+  trendyolFiyat    Decimal? @map("trendyol_fiyat") @db.Decimal(12, 2)
+  trendyolDoviz    String?  @default("TL") @map("trendyol_doviz") @db.VarChar(10)
+  cicekSepetiFiyat Decimal? @map("ciceksepeti_fiyat") @db.Decimal(12, 2)
+  cicekSepetiDoviz String?  @default("TL") @map("ciceksepeti_doviz") @db.VarChar(10)
+  modanisaFiyat    Decimal? @map("modanisa_fiyat") @db.Decimal(12, 2)
+  modanisaDoviz    String?  @default("TL") @map("modanisa_doviz") @db.VarChar(10)
+  pazaramaFiyat    Decimal? @map("pazarama_fiyat") @db.Decimal(12, 2)
+  pazaramaDoviz    String?  @default("TL") @map("pazarama_doviz") @db.VarChar(10)
+  farmazonFiyat    Decimal? @map("farmazon_fiyat") @db.Decimal(12, 2)
+  farmazonDoviz    String?  @default("TL") @map("farmazon_doviz") @db.VarChar(10)
+  idefixFiyat      Decimal? @map("idefix_fiyat") @db.Decimal(12, 2)
+  idefixDoviz      String?  @default("TL") @map("idefix_doviz") @db.VarChar(10)
+  lcwFiyat         Decimal? @map("lcw_fiyat") @db.Decimal(12, 2)
+  lcwDoviz         String?  @default("TL") @map("lcw_doviz") @db.VarChar(10)
+
+  // İlişki
+  product Product @relation(fields: [urunKodu], references: [urunKodu], onDelete: Cascade)
+
+  @@index([urunKodu])
+  @@map("product_prices")
+}
+
+// Kategoriler Tablosu
+model ProductCategory {
+  id          Int     @id @default(autoincrement())
+  urunKodu    String  @unique @map("urun_kodu") @db.VarChar(100)
+  anaKategori String? @map("ana_kategori") @db.VarChar(100)
+  altKategori1 String? @map("alt_kategori_1") @db.VarChar(100)
+  altKategori2 String? @map("alt_kategori_2") @db.VarChar(100)
+  altKategori3 String? @map("alt_kategori_3") @db.VarChar(100)
+  aiKategori  String? @map("ai_kategori") @db.VarChar(255)
+
+  // İlişki
+  product Product @relation(fields: [urunKodu], references: [urunKodu], onDelete: Cascade)
+
+  @@index([urunKodu])
+  @@index([anaKategori])
+  @@map("product_categories")
+}
+
+// Resimler Tablosu
+model ProductImage {
+  id           Int     @id @default(autoincrement())
+  urunKodu     String  @map("urun_kodu") @db.VarChar(100)
+  sira         Int     // 1-16
+  eskiUrl      String? @map("eski_url") @db.Text
+  yeniDosyaAdi String? @map("yeni_dosya_adi") @db.VarChar(255)
+  status       String? @default("pending") @db.VarChar(20) // pending, downloading, enhancing, done, error
+  errorMessage String? @map("error_message") @db.Text
+
+  // İlişki
+  product Product @relation(fields: [urunKodu], references: [urunKodu], onDelete: Cascade)
+
+  @@unique([urunKodu, sira])
+  @@index([urunKodu])
+  @@index([status])
+  @@map("product_images")
+}
+
+// SEO Bilgileri Tablosu
+model ProductSeo {
+  id          Int     @id @default(autoincrement())
+  urunKodu    String  @unique @map("urun_kodu") @db.VarChar(100)
+  seoBaslik   String? @map("seo_baslik") @db.Text
+  seoAciklama String? @map("seo_aciklama") @db.Text
+  seoKeywords String? @map("seo_keywords") @db.Text
+  seoUrl      String? @map("seo_url") @db.VarChar(255)
+
+  // İlişki
+  product Product @relation(fields: [urunKodu], references: [urunKodu], onDelete: Cascade)
+
+  @@index([urunKodu])
+  @@map("product_seo")
+}
+
+// İşlem Kayıtları Tablosu
+model ProcessingLog {
+  id        Int      @id @default(autoincrement())
+  urunKodu  String?  @map("urun_kodu") @db.VarChar(100)
+  islemTipi String?  @map("islem_tipi") @db.VarChar(50) // upload, seo, image, category, export
+  durum     String?  @db.VarChar(20) // success, error
+  mesaj     String?  @db.Text
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // İlişki
+  product Product? @relation(fields: [urunKodu], references: [urunKodu], onDelete: SetNull)
+
+  @@index([urunKodu])
+  @@index([islemTipi])
+  @@map("processing_logs")
+}
