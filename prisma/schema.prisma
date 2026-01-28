@@ -10,8 +10,8 @@ datasource db {
 // Ana Ürün Tablosu
 model Product {
   id               Int       @id @default(autoincrement())
-  urunId           Int?      @map("urun_id")
-  urunKodu         String    @unique @map("urun_kodu") @db.VarChar(100)
+  urunId           Int       @unique @map("urun_id")
+  urunKodu         String?   @map("urun_kodu") @db.VarChar(100)
   barkod           String?   @db.VarChar(50)
   eskiAdi          String?   @map("eski_adi") @db.Text
   yeniAdi          String?   @map("yeni_adi") @db.Text
@@ -26,8 +26,8 @@ model Product {
   sira             Int?      @default(0)
   kategoriId       Int?      @map("kategori_id")
   processingStatus String?   @default("pending") @map("processing_status") @db.VarChar(20)
-  processedAt      DateTime? @map("processed_at") // Ürün işlendiğinde güncellenir
-  uploadedAt       DateTime? @map("uploaded_at") // Ürün yüklendiğinde set edilir
+  processedAt      DateTime? @map("processed_at")
+  uploadedAt       DateTime? @map("uploaded_at")
   createdAt        DateTime  @default(now()) @map("created_at")
   updatedAt        DateTime  @updatedAt @map("updated_at")
 
@@ -38,6 +38,7 @@ model Product {
   seo        ProductSeo?
   logs       ProcessingLog[]
 
+  @@index([urunId])
   @@index([urunKodu])
   @@index([durum])
   @@index([processingStatus])
@@ -49,7 +50,7 @@ model Product {
 // Fiyatlar Tablosu
 model ProductPrice {
   id               Int      @id @default(autoincrement())
-  urunKodu         String   @unique @map("urun_kodu") @db.VarChar(100)
+  urunId           Int      @unique @map("urun_id")
   piyasaFiyat      Decimal? @map("piyasa_fiyat") @db.Decimal(12, 2)
   alisFiyat        Decimal? @map("alis_fiyat") @db.Decimal(12, 2)
   hizliFiyat       Decimal? @map("hizli_fiyat") @db.Decimal(12, 2)
@@ -79,26 +80,26 @@ model ProductPrice {
   lcwDoviz         String?  @default("TL") @map("lcw_doviz") @db.VarChar(10)
 
   // İlişki
-  product Product @relation(fields: [urunKodu], references: [urunKodu], onDelete: Cascade)
+  product Product @relation(fields: [urunId], references: [urunId], onDelete: Cascade)
 
-  @@index([urunKodu])
+  @@index([urunId])
   @@map("product_prices")
 }
 
 // Kategoriler Tablosu
 model ProductCategory {
-  id          Int     @id @default(autoincrement())
-  urunKodu    String  @unique @map("urun_kodu") @db.VarChar(100)
-  anaKategori String? @map("ana_kategori") @db.VarChar(100)
+  id           Int     @id @default(autoincrement())
+  urunId       Int     @unique @map("urun_id")
+  anaKategori  String? @map("ana_kategori") @db.VarChar(100)
   altKategori1 String? @map("alt_kategori_1") @db.VarChar(100)
   altKategori2 String? @map("alt_kategori_2") @db.VarChar(100)
   altKategori3 String? @map("alt_kategori_3") @db.VarChar(100)
-  aiKategori  String? @map("ai_kategori") @db.VarChar(255)
+  aiKategori   String? @map("ai_kategori") @db.VarChar(255)
 
   // İlişki
-  product Product @relation(fields: [urunKodu], references: [urunKodu], onDelete: Cascade)
+  product Product @relation(fields: [urunId], references: [urunId], onDelete: Cascade)
 
-  @@index([urunKodu])
+  @@index([urunId])
   @@index([anaKategori])
   @@map("product_categories")
 }
@@ -106,20 +107,19 @@ model ProductCategory {
 // Resimler Tablosu
 model ProductImage {
   id            Int     @id @default(autoincrement())
-  urunKodu      String  @map("urun_kodu") @db.VarChar(100)
+  urunId        Int     @map("urun_id")
   sira          Int     // 1-16
   eskiUrl       String? @map("eski_url") @db.Text
-  yeniDosyaAdi  String? @map("yeni_dosya_adi") @db.VarChar(255)
-  cloudinaryUrl String? @map("cloudinary_url") @db.Text // Cloudinary'ye yüklenen resmin URL'si
-  cloudinaryId  String? @map("cloudinary_id") @db.VarChar(255) // Cloudinary public_id
-  status        String? @default("pending") @db.VarChar(20) // pending, downloading, uploading, done, error
+  yeniUrl       String? @map("yeni_url") @db.Text // İşlenmiş resim URL'si (Cloudinary)
+  cloudinaryId  String? @map("cloudinary_id") @db.VarChar(255)
+  status        String? @default("pending") @db.VarChar(20) // pending, processing, done, error
   errorMessage  String? @map("error_message") @db.Text
 
   // İlişki
-  product Product @relation(fields: [urunKodu], references: [urunKodu], onDelete: Cascade)
+  product Product @relation(fields: [urunId], references: [urunId], onDelete: Cascade)
 
-  @@unique([urunKodu, sira])
-  @@index([urunKodu])
+  @@unique([urunId, sira])
+  @@index([urunId])
   @@index([status])
   @@map("product_images")
 }
@@ -127,43 +127,43 @@ model ProductImage {
 // SEO Bilgileri Tablosu
 model ProductSeo {
   id          Int     @id @default(autoincrement())
-  urunKodu    String  @unique @map("urun_kodu") @db.VarChar(100)
+  urunId      Int     @unique @map("urun_id")
   seoBaslik   String? @map("seo_baslik") @db.Text
   seoAciklama String? @map("seo_aciklama") @db.Text
   seoKeywords String? @map("seo_keywords") @db.Text
   seoUrl      String? @map("seo_url") @db.VarChar(255)
 
   // İlişki
-  product Product @relation(fields: [urunKodu], references: [urunKodu], onDelete: Cascade)
+  product Product @relation(fields: [urunId], references: [urunId], onDelete: Cascade)
 
-  @@index([urunKodu])
+  @@index([urunId])
   @@map("product_seo")
 }
 
 // İşlem Kayıtları Tablosu
 model ProcessingLog {
   id        Int      @id @default(autoincrement())
-  urunKodu  String?  @map("urun_kodu") @db.VarChar(100)
-  islemTipi String?  @map("islem_tipi") @db.VarChar(50) // upload, seo, image, category, export
-  durum     String?  @db.VarChar(20) // success, error
+  urunId    Int?     @map("urun_id")
+  islemTipi String?  @map("islem_tipi") @db.VarChar(50)
+  durum     String?  @db.VarChar(20)
   mesaj     String?  @db.Text
   createdAt DateTime @default(now()) @map("created_at")
 
   // İlişki
-  product Product? @relation(fields: [urunKodu], references: [urunKodu], onDelete: SetNull)
+  product Product? @relation(fields: [urunId], references: [urunId], onDelete: SetNull)
 
-  @@index([urunKodu])
+  @@index([urunId])
   @@index([islemTipi])
   @@map("processing_logs")
 }
 
 // Sistem Ayarları Tablosu
 model Settings {
-  id                     Int      @id @default(autoincrement())
-  key                    String   @unique @db.VarChar(100)
-  value                  String?  @db.Text
-  description            String?  @db.Text
-  updatedAt              DateTime @updatedAt @map("updated_at")
+  id          Int      @id @default(autoincrement())
+  key         String   @unique @db.VarChar(100)
+  value       String?  @db.Text
+  description String?  @db.Text
+  updatedAt   DateTime @updatedAt @map("updated_at")
 
   @@map("settings")
 }
