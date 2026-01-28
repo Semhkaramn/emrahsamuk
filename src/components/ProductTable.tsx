@@ -19,6 +19,7 @@ interface ProductTableProps {
 
 const statusConfig = {
   pending: { icon: Clock, color: "text-zinc-400", bg: "bg-zinc-800", label: "Bekliyor" },
+  analyzing: { icon: Loader2, color: "text-purple-400", bg: "bg-purple-500/10", label: "Analiz Ediliyor" },
   processing: { icon: Loader2, color: "text-amber-400", bg: "bg-amber-500/10", label: "İşleniyor" },
   done: { icon: CheckCircle2, color: "text-emerald-400", bg: "bg-emerald-500/10", label: "Tamamlandı" },
   error: { icon: XCircle, color: "text-red-400", bg: "bg-red-500/10", label: "Hata" },
