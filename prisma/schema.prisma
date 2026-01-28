@@ -26,6 +26,8 @@ model Product {
   sira             Int?      @default(0)
   kategoriId       Int?      @map("kategori_id")
   processingStatus String?   @default("pending") @map("processing_status") @db.VarChar(20)
+  processedAt      DateTime? @map("processed_at") // Ürün işlendiğinde güncellenir
+  uploadedAt       DateTime? @map("uploaded_at") // Ürün yüklendiğinde set edilir
   createdAt        DateTime  @default(now()) @map("created_at")
   updatedAt        DateTime  @updatedAt @map("updated_at")
 
@@ -39,6 +41,8 @@ model Product {
   @@index([urunKodu])
   @@index([durum])
   @@index([processingStatus])
+  @@index([processedAt])
+  @@index([uploadedAt])
   @@map("products")
 }
 
