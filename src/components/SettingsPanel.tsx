@@ -1,7 +1,7 @@
 "use client";
 
 import { AISettings } from "@/lib/types";
-import { Key, Sparkles, Image, Settings, Eye, EyeOff, Save, Loader2, CheckCircle2 } from "lucide-react";
+import { Key, Sparkles, Image, Settings, Eye, EyeOff, Save, Loader2, CheckCircle2, Cloud } from "lucide-react";
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Button } from "@/components/ui/button";
 
@@ -15,6 +15,10 @@ export function SettingsPanel({ disabled }: SettingsPanelProps) {
     enableSeoOptimization: true,
     enableImageEnhancement: true,
     imageStyle: "professional",
+    cloudinaryCloudName: "",
+    cloudinaryApiKey: "",
+    cloudinaryApiSecret: "",
+    cloudinaryFolder: "urunler",
   });
   const [showApiKey, setShowApiKey] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -204,6 +208,79 @@ export function SettingsPanel({ disabled }: SettingsPanelProps) {
           </div>
         </div>
       )}
+
+      {/* Cloudinary Settings */}
+      <div className="mt-6 pt-6 border-t border-zinc-800">
+        <div className="flex items-center gap-2 mb-4">
+          <Cloud className="w-5 h-5 text-blue-400" />
+          <h3 className="text-sm font-semibold text-zinc-300">Cloudinary Ayarları</h3>
+        </div>
+        <p className="text-xs text-zinc-500 mb-4">
+          Resimler Cloudinary&apos;ye yüklenir ve URL&apos;ler veritabanında saklanır
+        </p>
+
+        <div className="space-y-4">
+          <div>
+            <label className="text-xs font-medium text-zinc-400 mb-1 block">Cloud Name</label>
+            <input
+              type="text"
+              value={settings.cloudinaryCloudName}
+              onChange={(e) => handleSettingsChange({ ...settings, cloudinaryCloudName: e.target.value })}
+              disabled={disabled}
+              placeholder="your-cloud-name"
+              className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 disabled:opacity-50"
+            />
+          </div>
+
+          <div>
+            <label className="text-xs font-medium text-zinc-400 mb-1 block">API Key</label>
+            <input
+              type="text"
+              value={settings.cloudinaryApiKey}
+              onChange={(e) => handleSettingsChange({ ...settings, cloudinaryApiKey: e.target.value })}
+              disabled={disabled}
+              placeholder="123456789012345"
+              className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 disabled:opacity-50"
+            />
+          </div>
+
+          <div>
+            <label className="text-xs font-medium text-zinc-400 mb-1 block">API Secret</label>
+            <div className="relative">
+              <input
+                type={showApiKey ? "text" : "password"}
+                value={settings.cloudinaryApiSecret}
+                onChange={(e) => handleSettingsChange({ ...settings, cloudinaryApiSecret: e.target.value })}
+                disabled={disabled}
+                placeholder="abcdefghijklmnopqrstuvwxyz"
+                className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 disabled:opacity-50 pr-10"
+              />
+              <button
+                type="button"
+                onClick={() => setShowApiKey(!showApiKey)}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300"
+              >
+                {showApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <label className="text-xs font-medium text-zinc-400 mb-1 block">Klasör Adı</label>
+            <input
+              type="text"
+              value={settings.cloudinaryFolder}
+              onChange={(e) => handleSettingsChange({ ...settings, cloudinaryFolder: e.target.value })}
+              disabled={disabled}
+              placeholder="urunler"
+              className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 disabled:opacity-50"
+            />
+            <p className="text-xs text-zinc-500 mt-1">
+              Resimler bu klasöre yüklenecek (örn: urunler/URUN001_1.jpg)
+            </p>
+          </div>
+        </div>
+      </div>
 
       {/* Cost Warning */}
       {(settings.enableSeoOptimization || settings.enableImageEnhancement) && (
