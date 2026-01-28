@@ -21,7 +21,6 @@ import {
   Package,
   FolderTree,
   Sparkles,
-  Archive,
   Loader2,
   CheckCircle2,
   Calendar,
@@ -30,7 +29,7 @@ import {
   AlertCircle,
 } from "lucide-react";
 
-type ExportType = "pcden" | "full" | "urunbilgisi" | "urunkategori" | "images-zip";
+type ExportType = "pcden" | "full" | "urunbilgisi" | "urunkategori";
 type FilterType = "all" | "processed" | "unprocessed" | "recentUpload" | "dateRange";
 
 interface ExportState {
@@ -48,7 +47,6 @@ export function ExportPanel() {
     full: { loading: false, success: false, error: null },
     urunbilgisi: { loading: false, success: false, error: null },
     urunkategori: { loading: false, success: false, error: null },
-    "images-zip": { loading: false, success: false, error: null },
   });
 
   const buildQueryString = useCallback(() => {
@@ -78,7 +76,6 @@ export function ExportPanel() {
         full: `/api/export/full?${queryString}`,
         urunbilgisi: `/api/export/urunbilgisi?${queryString}`,
         urunkategori: `/api/export/urunkategori?${queryString}`,
-        "images-zip": `/api/export/images-zip?limit=500&${queryString}`,
       };
 
       const filterLabel = filterType === "all" ? "" : `_${filterType}`;
@@ -88,7 +85,6 @@ export function ExportPanel() {
         full: `urun-export-full${filterLabel}_${dateStr}.xlsx`,
         urunbilgisi: `urunbilgisi${filterLabel}_${dateStr}.xlsx`,
         urunkategori: `urunkategori${filterLabel}_${dateStr}.xlsx`,
-        "images-zip": `urun-resimleri${filterLabel}_${dateStr}.zip`,
       };
 
       const response = await fetch(endpoints[type]);
@@ -129,7 +125,7 @@ export function ExportPanel() {
         },
       }));
     }
-  }, [buildQueryString]);
+  }, [buildQueryString, filterType]);
 
   const ExportButton = ({ type, children }: { type: ExportType; children: React.ReactNode }) => {
     const state = exportStates[type];
@@ -191,7 +187,7 @@ export function ExportPanel() {
           Veri Export
         </h2>
         <p className="text-sm text-zinc-500 mt-1">
-          Islenmis verileri Excel veya ZIP formatinda indirin
+          Islenmis verileri Excel formatinda indirin
         </p>
       </div>
 
@@ -407,77 +403,39 @@ export function ExportPanel() {
         </Card>
       </div>
 
-      {/* Image Downloads */}
-      <h3 className="text-lg font-semibold text-zinc-300 flex items-center gap-2 mt-8">
-        <Archive className="w-5 h-5 text-blue-400" />
-        Resim Dosyalari
-      </h3>
-
-      <div className="grid gap-4 md:grid-cols-2">
-        {/* Images ZIP Export */}
-        <Card className="border-zinc-800 bg-zinc-900/50">
-          <CardHeader>
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-teal-500/10">
-                <Archive className="h-5 w-5 text-teal-400" />
-              </div>
-              <div>
-                <CardTitle className="text-base">Resimler (ZIP)</CardTitle>
-                <CardDescription className="text-xs">
-                  Islenmis resimleri indir
-                </CardDescription>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-zinc-400 mb-4">
-              Islenmis urun resimlerini ZIP olarak indir.
-              Dosya adlari SEO uyumlu formatta.
-              <span className="block text-amber-400 mt-1 text-xs">
-                Not: Maksimum 500 resim indirilir (sunucu limiti)
-              </span>
+      {/* Info Card */}
+      <Card className="border-zinc-800 bg-zinc-900/50">
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <Sparkles className="h-5 w-5 text-purple-400" />
+            Export Bilgileri
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="text-sm text-zinc-400 space-y-2">
+            <p className="flex items-start gap-2">
+              <span className="text-emerald-400">*</span>
+              <span>Urun isimleri SEO optimizasyonu ile guncellenmis haliyle indirilir.</span>
             </p>
-            <ExportButton type="images-zip">
-              <Archive className="w-4 h-4 mr-2" />
-              Resimleri ZIP Olarak Indir
-            </ExportButton>
-          </CardContent>
-        </Card>
-
-        {/* Info Card */}
-        <Card className="border-zinc-800 bg-zinc-900/50">
-          <CardHeader>
-            <CardTitle className="text-base flex items-center gap-2">
-              <Sparkles className="h-5 w-5 text-purple-400" />
-              Export Bilgileri
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="text-sm text-zinc-400 space-y-2">
-              <p className="flex items-start gap-2">
-                <span className="text-emerald-400">*</span>
-                <span>Urun isimleri SEO optimizasyonu ile guncellenmis haliyle indirilir.</span>
-              </p>
-              <p className="flex items-start gap-2">
-                <span className="text-purple-400">*</span>
-                <span>Kategoriler AI tarafindan belirlenen onerilerle birlikte gelir.</span>
-              </p>
-              <p className="flex items-start gap-2">
-                <span className="text-blue-400">*</span>
-                <span>Resim dosya adlari urun kodu ve SEO basligina gore olusturulur.</span>
-              </p>
-              <p className="flex items-start gap-2">
-                <span className="text-amber-400">*</span>
-                <span>Islem tarihi ve yukleme tarihi Excel dosyalarinda yer alir.</span>
-              </p>
-              <p className="flex items-start gap-2">
-                <span className="text-teal-400">*</span>
-                <span>Filtreleme ile sadece belirli urunleri indirebilirsiniz.</span>
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+            <p className="flex items-start gap-2">
+              <span className="text-purple-400">*</span>
+              <span>Kategoriler AI tarafindan belirlenen onerilerle birlikte gelir.</span>
+            </p>
+            <p className="flex items-start gap-2">
+              <span className="text-blue-400">*</span>
+              <span>Resimler Cloudinary uzerinden islenip saklanir.</span>
+            </p>
+            <p className="flex items-start gap-2">
+              <span className="text-amber-400">*</span>
+              <span>Islem tarihi ve yukleme tarihi Excel dosyalarinda yer alir.</span>
+            </p>
+            <p className="flex items-start gap-2">
+              <span className="text-teal-400">*</span>
+              <span>Filtreleme ile sadece belirli urunleri indirebilirsiniz.</span>
+            </p>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }
