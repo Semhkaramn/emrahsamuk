@@ -24,7 +24,7 @@ export async function GET(request: NextRequest) {
     const productsData = products.map((product) => ({
       ID: product.urunId,
       URUNKODU: product.urunKodu,
-      BARKOD: product.barkod || "",
+      BARKOD: product.barkodNo || "",
       ESKI_ADI: product.eskiAdi || "",
       YENI_ADI: product.yeniAdi || "",
       URL: product.url || "",
@@ -72,7 +72,7 @@ export async function GET(request: NextRequest) {
         URUNKODU: product.urunKodu,
         SIRA: img.sira,
         ESKI_URL: img.eskiUrl || "",
-        YENI_DOSYA_ADI: img.yeniDosyaAdi || "",
+        YENI_URL: img.yeniUrl || "",
         STATUS: img.status || "",
         ERROR: img.errorMessage || "",
       }))
