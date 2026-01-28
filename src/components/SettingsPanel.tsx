@@ -1,17 +1,27 @@
 "use client";
 
 import { AISettings } from "@/lib/types";
-import { Key, Sparkles, Image, Settings, Eye, EyeOff } from "lucide-react";
-import { useState } from "react";
+import { Key, Sparkles, Image, Settings, Eye, EyeOff, Save, Loader2, CheckCircle2 } from "lucide-react";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { Button } from "@/components/ui/button";
 
 interface SettingsPanelProps {
-  settings: AISettings;
-  onSettingsChange: (settings: AISettings) => void;
   disabled?: boolean;
 }
 
-export function SettingsPanel({ settings, onSettingsChange, disabled }: SettingsPanelProps) {
+export function SettingsPanel({ disabled }: SettingsPanelProps) {
+  const [settings, setSettings] = useState<AISettings>({
+    openaiApiKey: "",
+    enableSeoOptimization: true,
+    enableImageEnhancement: true,
+    imageStyle: "professional",
+  });
   const [showApiKey, setShowApiKey] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [hasChanges, setHasChanges] = useState(false);
+  const originalSettings = useRef<AISettings | null>(null);
 
   const imageStyles = [
     { value: 'professional', label: 'Profesyonel', desc: 'Beyaz arka plan, stüdyo ışığı' },
@@ -20,11 +30,101 @@ export function SettingsPanel({ settings, onSettingsChange, disabled }: Settings
     { value: 'luxury', label: 'Lüks', desc: 'Premium, dramatik ışık' },
   ];
 
+  // Load settings from API
+  useEffect(() => {
+    async function loadSettings() {
+      try {
+        const response = await fetch('/api/settings');
+        const data = await response.json();
+        if (data.success) {
+          setSettings(data.data);
+          originalSettings.current = data.data;
+        }
+      } catch (error) {
+        console.error("Settings load error:", error);
+      } finally {
+        setLoading(false);
+      }
+    }
+    loadSettings();
+  }, []);
+
+  // Check for changes
+  useEffect(() => {
+    if (originalSettings.current) {
+      const changed = JSON.stringify(settings) !== JSON.stringify(originalSettings.current);
+      setHasChanges(changed);
+      if (changed) {
+        setSaved(false);
+      }
+    }
+  }, [settings]);
+
+  // Save settings to API
+  const saveSettings = useCallback(async () => {
+    setSaving(true);
+    try {
+      const response = await fetch('/api/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(settings),
+      });
+      const data = await response.json();
+      if (data.success) {
+        originalSettings.current = settings;
+        setHasChanges(false);
+        setSaved(true);
+        setTimeout(() => setSaved(false), 3000);
+      }
+    } catch (error) {
+      console.error("Settings save error:", error);
+    } finally {
+      setSaving(false);
+    }
+  }, [settings]);
+
+  const handleSettingsChange = useCallback((newSettings: AISettings) => {
+    setSettings(newSettings);
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="bg-zinc-900/50 border border-zinc-800 rounded-2xl p-6">
+        <div className="flex items-center justify-center py-8">
+          <Loader2 className="w-6 h-6 text-zinc-500 animate-spin" />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="bg-zinc-900/50 border border-zinc-800 rounded-2xl p-6">
-      <div className="flex items-center gap-2 mb-6">
-        <Settings className="w-5 h-5 text-zinc-400" />
-        <h2 className="text-lg font-semibold">AI Ayarları</h2>
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center gap-2">
+          <Settings className="w-5 h-5 text-zinc-400" />
+          <h2 className="text-lg font-semibold">AI Ayarları</h2>
+        </div>
+        <div className="flex items-center gap-2">
+          {saved && (
+            <span className="flex items-center gap-1 text-sm text-emerald-400">
+              <CheckCircle2 className="w-4 h-4" />
+              Kaydedildi
+            </span>
+          )}
+          <Button
+            onClick={saveSettings}
+            disabled={disabled || saving || !hasChanges}
+            size="sm"
+            className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50"
+          >
+            {saving ? (
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            ) : (
+              <Save className="w-4 h-4 mr-2" />
+            )}
+            {saving ? "Kaydediliyor..." : "Kaydet"}
+          </Button>
+        </div>
       </div>
 
       {/* API Key */}
@@ -37,7 +137,7 @@ export function SettingsPanel({ settings, onSettingsChange, disabled }: Settings
           <input
             type={showApiKey ? "text" : "password"}
             value={settings.openaiApiKey}
-            onChange={(e) => onSettingsChange({ ...settings, openaiApiKey: e.target.value })}
+            onChange={(e) => handleSettingsChange({ ...settings, openaiApiKey: e.target.value })}
             disabled={disabled}
             placeholder="sk-..."
             className="w-full px-4 py-3 bg-zinc-800 border border-zinc-700 rounded-xl text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500 disabled:opacity-50 pr-12"
@@ -51,7 +151,7 @@ export function SettingsPanel({ settings, onSettingsChange, disabled }: Settings
           </button>
         </div>
         <p className="text-xs text-zinc-500 mt-1">
-          API anahtarınız güvenli şekilde sadece tarayıcınızda saklanır
+          API anahtarınız veritabanında güvenli şekilde saklanır
         </p>
       </div>
 
@@ -63,7 +163,7 @@ export function SettingsPanel({ settings, onSettingsChange, disabled }: Settings
           label="SEO Optimizasyonu"
           description="Ürün isimlerini AI ile SEO'ya uygun hale getir"
           checked={settings.enableSeoOptimization}
-          onChange={(checked) => onSettingsChange({ ...settings, enableSeoOptimization: checked })}
+          onChange={(checked) => handleSettingsChange({ ...settings, enableSeoOptimization: checked })}
           disabled={disabled}
         />
 
@@ -73,7 +173,7 @@ export function SettingsPanel({ settings, onSettingsChange, disabled }: Settings
           label="Resim İyileştirme"
           description="Ürün resimlerini AI ile daha çekici hale getir"
           checked={settings.enableImageEnhancement}
-          onChange={(checked) => onSettingsChange({ ...settings, enableImageEnhancement: checked })}
+          onChange={(checked) => handleSettingsChange({ ...settings, enableImageEnhancement: checked })}
           disabled={disabled}
         />
       </div>
@@ -89,7 +189,7 @@ export function SettingsPanel({ settings, onSettingsChange, disabled }: Settings
               <button
                 key={style.value}
                 type="button"
-                onClick={() => onSettingsChange({ ...settings, imageStyle: style.value as AISettings['imageStyle'] })}
+                onClick={() => handleSettingsChange({ ...settings, imageStyle: style.value as AISettings['imageStyle'] })}
                 disabled={disabled}
                 className={`p-3 rounded-xl border text-left transition-all ${
                   settings.imageStyle === style.value
@@ -112,6 +212,15 @@ export function SettingsPanel({ settings, onSettingsChange, disabled }: Settings
             <strong>Maliyet Uyarısı:</strong> AI işlemleri OpenAI API kredisi kullanır.
             {settings.enableImageEnhancement && " DALL-E 3 resim başına ~$0.04 ücret alır."}
             {settings.enableSeoOptimization && " GPT-4o-mini SEO için çok düşük maliyetlidir."}
+          </p>
+        </div>
+      )}
+
+      {/* Unsaved changes warning */}
+      {hasChanges && (
+        <div className="mt-4 p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl">
+          <p className="text-xs text-amber-400">
+            Kaydedilmemiş değişiklikleriniz var. Kaydetmek için &quot;Kaydet&quot; butonuna tıklayın.
           </p>
         </div>
       )}
