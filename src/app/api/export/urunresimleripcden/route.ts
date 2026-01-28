@@ -6,28 +6,25 @@ import type { Prisma } from "@prisma/client";
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
-    const onlyProcessed = searchParams.get("onlyProcessed") === "true";
-    const onlyUnprocessed = searchParams.get("onlyUnprocessed") === "true";
-    const onlyRecentlyUploaded = searchParams.get("onlyRecentlyUploaded") === "true";
-    const sinceDate = searchParams.get("sinceDate"); // ISO date string
-    const untilDate = searchParams.get("untilDate"); // ISO date string
     const filterType = searchParams.get("filterType"); // "all" | "processed" | "unprocessed" | "recentUpload" | "dateRange"
+    const sinceDate = searchParams.get("sinceDate");
+    const untilDate = searchParams.get("untilDate");
 
     // Build where clause based on filters
     const whereClause: Prisma.ProductWhereInput = {};
 
-    if (filterType === "processed" || onlyProcessed) {
+    if (filterType === "processed") {
       whereClause.images = {
         some: {
           status: "done",
         },
       };
-    } else if (filterType === "unprocessed" || onlyUnprocessed) {
+    } else if (filterType === "unprocessed") {
       whereClause.OR = [
         { images: { none: {} } },
         { images: { every: { status: "pending" } } }
       ];
-    } else if (filterType === "recentUpload" || onlyRecentlyUploaded) {
+    } else if (filterType === "recentUpload") {
       const oneDayAgo = new Date();
       oneDayAgo.setHours(oneDayAgo.getHours() - 24);
       whereClause.uploadedAt = {
@@ -51,20 +48,19 @@ export async function GET(request: NextRequest) {
       orderBy: { urunId: "asc" },
     });
 
-    // Create Excel data
+    // Create Excel data - aynı format: URUNID, URUNKODU, ADI, RESIM1-16
     const excelData = products.map((product) => {
       const row: Record<string, string | number | null> = {
         URUNID: product.urunId,
-        URUNKODU: product.urunKodu,
+        URUNKODU: product.urunKodu || "",
         ADI: product.yeniAdi || product.eskiAdi || "",
-        ISLEM_DURUMU: product.processingStatus || "pending",
-        ISLEM_TARIHI: product.processedAt?.toISOString() || "",
       };
 
-      // Add RESIM1-16 columns with file names
+      // Add RESIM1-16 columns with Cloudinary URLs (yeniUrl)
       for (let i = 1; i <= 16; i++) {
         const image = product.images.find((img) => img.sira === i);
-        row[`RESIM${i}`] = image?.yeniDosyaAdi || "";
+        // Eğer yeniUrl varsa (Cloudinary URL) onu kullan, yoksa eskiUrl'i kullan
+        row[`RESIM${i}`] = image?.yeniUrl || image?.eskiUrl || "";
       }
 
       return row;
@@ -83,11 +79,11 @@ export async function GET(request: NextRequest) {
       data: {
         islemTipi: "export",
         durum: "success",
-        mesaj: `ürünresimleripcden.xlsx export edildi. ${products.length} ürün (Filtre: ${filterType || "all"})`,
+        mesaj: `ürünresimleriurl.xlsx export edildi. ${products.length} ürün (Filtre: ${filterType || "all"})`,
       },
     });
 
-    const filename = `urunresimleripcden_${filterType || "all"}_${new Date().toISOString().split("T")[0]}.xlsx`;
+    const filename = `urunresimleriurl_${filterType || "all"}_${new Date().toISOString().split("T")[0]}.xlsx`;
 
     return new NextResponse(buffer, {
       headers: {
@@ -97,7 +93,7 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (error) {
-    console.error("Export urunresimleripcden error:", error);
+    console.error("Export urunresimleriurl error:", error);
     return NextResponse.json(
       { success: false, error: "Export sırasında hata oluştu" },
       { status: 500 }
