@@ -178,13 +178,15 @@ export async function POST(request: NextRequest) {
     }
 
     const results: Array<{
-      urunKodu: string;
+      urunId: number;
+      urunKodu: string | null;
       seo: { success: boolean; oldName: string | null; newName: string | null; error?: string } | null;
       images: Array<{ sira: number; success: boolean; cloudinaryUrl?: string; error?: string }>;
     }> = [];
 
     for (const product of products) {
       const result: (typeof results)[0] = {
+        urunId: product.urunId,
         urunKodu: product.urunKodu,
         seo: null,
         images: [],
@@ -197,13 +199,13 @@ export async function POST(request: NextRequest) {
 
         if (newName) {
           await prisma.product.update({
-            where: { urunKodu: product.urunKodu },
+            where: { urunId: product.urunId },
             data: { yeniAdi: newName },
           });
 
           await prisma.processingLog.create({
             data: {
-              urunKodu: product.urunKodu,
+              urunId: product.urunId,
               islemTipi: "seo",
               durum: "success",
               mesaj: `${product.eskiAdi} → ${newName}`,
@@ -216,7 +218,7 @@ export async function POST(request: NextRequest) {
 
           await prisma.processingLog.create({
             data: {
-              urunKodu: product.urunKodu,
+              urunId: product.urunId,
               islemTipi: "seo",
               durum: "error",
               mesaj: "SEO optimizasyonu başarısız",
@@ -237,7 +239,7 @@ export async function POST(request: NextRequest) {
           });
 
           // Create public ID from product code and image order
-          const publicId = `${product.urunKodu}_${image.sira}`;
+          const publicId = `${product.urunKodu || product.urunId}_${image.sira}`;
 
           const uploadResult = await uploadToCloudinary(
             image.eskiUrl,
@@ -252,9 +254,8 @@ export async function POST(request: NextRequest) {
             await prisma.productImage.update({
               where: { id: image.id },
               data: {
-                cloudinaryUrl: uploadResult.url,
+                yeniUrl: uploadResult.url,
                 cloudinaryId: uploadResult.publicId,
-                yeniDosyaAdi: `${publicId}.jpg`,
                 status: "done",
               },
             });
@@ -267,7 +268,7 @@ export async function POST(request: NextRequest) {
 
             await prisma.processingLog.create({
               data: {
-                urunKodu: product.urunKodu,
+                urunId: product.urunId,
                 islemTipi: "image",
                 durum: "success",
                 mesaj: `Resim ${image.sira}: ${uploadResult.url}`,
@@ -290,7 +291,7 @@ export async function POST(request: NextRequest) {
 
             await prisma.processingLog.create({
               data: {
-                urunKodu: product.urunKodu,
+                urunId: product.urunId,
                 islemTipi: "image",
                 durum: "error",
                 mesaj: `Resim ${image.sira}: Yükleme hatası`,
@@ -301,16 +302,16 @@ export async function POST(request: NextRequest) {
       }
 
       // Update product processing status
-      const allImagesDone = await prisma.productImage.count({
+      const pendingImagesCount = await prisma.productImage.count({
         where: {
-          urunKodu: product.urunKodu,
+          urunId: product.urunId,
           status: { in: ["pending", "uploading"] },
         },
       });
 
-      if (allImagesDone === 0) {
+      if (pendingImagesCount === 0) {
         await prisma.product.update({
-          where: { urunKodu: product.urunKodu },
+          where: { urunId: product.urunId },
           data: {
             processingStatus: "done",
             processedAt: new Date(),
