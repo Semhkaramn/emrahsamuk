@@ -2,7 +2,7 @@
   remote_images = ["https://source.unsplash.com/.*", "https://images.unsplash.com/.*", "https://ext.same-assets.com/.*", "https://ugc.same-assets.com/.*"]
 
 [build]
-  command = "bunx prisma generate && bun run build"
+  command = "bunx prisma generate && bunx prisma db push --skip-generate && bun run build"
   publish = ".next"
 
 [build.environment]
