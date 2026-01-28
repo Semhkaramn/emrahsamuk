@@ -27,9 +27,9 @@ export async function GET(request: NextRequest) {
       }
 
       return {
-        ID: product.urunId,
-        URUNKODU: product.urunKodu,
-        ADI: product.yeniAdi || product.eskiAdi || "",
+        URUNID: product.urunId,
+        URUNKODU: product.urunKodu || "",
+        URUNADI: product.yeniAdi || product.eskiAdi || "",
         // Orijinal kategoriler
         ANA_KATEGORI: product.categories?.anaKategori || "",
         ALT_KATEGORI_1: product.categories?.altKategori1 || "",
