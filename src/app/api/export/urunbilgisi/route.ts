@@ -1,20 +1,46 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
 import * as XLSX from "xlsx";
+import type { Prisma } from "@prisma/client";
 
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
     const onlyProcessed = searchParams.get("onlyProcessed") === "true";
-    const format = searchParams.get("format") || "xlsx";
+    const onlyUnprocessed = searchParams.get("onlyUnprocessed") === "true";
+    const onlyRecentlyUploaded = searchParams.get("onlyRecentlyUploaded") === "true";
+    const sinceDate = searchParams.get("sinceDate"); // ISO date string
+    const untilDate = searchParams.get("untilDate"); // ISO date string
+    const filterType = searchParams.get("filterType"); // "all" | "processed" | "unprocessed" | "recentUpload" | "dateRange"
+
+    // Build where clause based on filters
+    const whereClause: Prisma.ProductWhereInput = {};
+
+    if (filterType === "processed" || onlyProcessed) {
+      whereClause.processingStatus = "done";
+    } else if (filterType === "unprocessed" || onlyUnprocessed) {
+      whereClause.OR = [
+        { processingStatus: "pending" },
+        { processingStatus: null },
+        { processedAt: null }
+      ];
+    } else if (filterType === "recentUpload" || onlyRecentlyUploaded) {
+      // Son 24 saat içinde yüklenen ürünler
+      const oneDayAgo = new Date();
+      oneDayAgo.setHours(oneDayAgo.getHours() - 24);
+      whereClause.uploadedAt = {
+        gte: oneDayAgo
+      };
+    } else if (filterType === "dateRange" && sinceDate) {
+      whereClause.processedAt = {
+        gte: new Date(sinceDate),
+        ...(untilDate ? { lte: new Date(untilDate) } : {})
+      };
+    }
 
     // Get all products with prices - filter by processed status if requested
     const products = await prisma.product.findMany({
-      where: onlyProcessed
-        ? {
-            processingStatus: "done",
-          }
-        : undefined,
+      where: Object.keys(whereClause).length > 0 ? whereClause : undefined,
       include: {
         prices: true,
         seo: true,
@@ -41,6 +67,9 @@ export async function GET(request: NextRequest) {
       STOK: product.stok || 0,
       SIRA: product.sira || 0,
       KATEGORI_ID: product.kategoriId || "",
+      ISLEM_DURUMU: product.processingStatus || "pending",
+      ISLEM_TARIHI: product.processedAt?.toISOString() || "",
+      YUKLEME_TARIHI: product.uploadedAt?.toISOString() || "",
       // Fiyatlar
       PIYASA_FIYAT: product.prices?.piyasaFiyat?.toString() || "",
       ALIS_FIYAT: product.prices?.alisFiyat?.toString() || "",
@@ -101,6 +130,9 @@ export async function GET(request: NextRequest) {
       { wch: 8 }, // STOK
       { wch: 8 }, // SIRA
       { wch: 12 }, // KATEGORI_ID
+      { wch: 12 }, // ISLEM_DURUMU
+      { wch: 20 }, // ISLEM_TARIHI
+      { wch: 20 }, // YUKLEME_TARIHI
     ];
     worksheet["!cols"] = colWidths;
 
@@ -112,11 +144,11 @@ export async function GET(request: NextRequest) {
       data: {
         islemTipi: "export",
         durum: "success",
-        mesaj: `ürünbilgisi.xlsx export edildi. ${products.length} ürün (yeni isimlerle)`,
+        mesaj: `ürünbilgisi.xlsx export edildi. ${products.length} ürün (Filtre: ${filterType || "all"})`,
       },
     });
 
-    const filename = `urunbilgisi_${new Date().toISOString().split("T")[0]}.xlsx`;
+    const filename = `urunbilgisi_${filterType || "all"}_${new Date().toISOString().split("T")[0]}.xlsx`;
 
     return new NextResponse(buffer, {
       headers: {
