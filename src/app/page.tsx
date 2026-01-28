@@ -8,6 +8,7 @@ import { Dashboard } from "@/components/Dashboard";
 import { ExcelUploader } from "@/components/ExcelUploader";
 import { ProductDataGrid } from "@/components/ProductDataGrid";
 import { SettingsPanel } from "@/components/SettingsPanel";
+import { LiveProcessingPanel } from "@/components/LiveProcessingPanel";
 import {
   LayoutDashboard,
   Upload,
@@ -17,6 +18,7 @@ import {
   FileSpreadsheet,
   Image as ImageIcon,
   Sparkles,
+  Zap,
 } from "lucide-react";
 
 export default function Home() {
@@ -61,13 +63,20 @@ export default function Home() {
 
       <main className="max-w-7xl mx-auto px-6 py-6">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid grid-cols-5 w-full max-w-2xl bg-zinc-900 border border-zinc-800 p-1">
+          <TabsList className="grid grid-cols-6 w-full max-w-3xl bg-zinc-900 border border-zinc-800 p-1">
             <TabsTrigger
               value="dashboard"
               className="flex items-center gap-2 data-[state=active]:bg-zinc-800 data-[state=active]:text-emerald-400"
             >
               <LayoutDashboard className="w-4 h-4" />
               <span className="hidden sm:inline">Dashboard</span>
+            </TabsTrigger>
+            <TabsTrigger
+              value="process"
+              className="flex items-center gap-2 data-[state=active]:bg-zinc-800 data-[state=active]:text-emerald-400"
+            >
+              <Zap className="w-4 h-4" />
+              <span className="hidden sm:inline">İşlem</span>
             </TabsTrigger>
             <TabsTrigger
               value="upload"
@@ -102,6 +111,11 @@ export default function Home() {
           {/* Dashboard Tab */}
           <TabsContent value="dashboard" className="space-y-6">
             <Dashboard />
+          </TabsContent>
+
+          {/* Process Tab - NEW */}
+          <TabsContent value="process" className="space-y-6">
+            <LiveProcessingPanel />
           </TabsContent>
 
           {/* Upload Tab */}
