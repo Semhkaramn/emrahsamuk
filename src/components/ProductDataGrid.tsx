@@ -34,27 +34,94 @@ import {
   CheckCircle2,
   Clock,
   AlertCircle,
+  ArrowRight,
 } from "lucide-react";
+
+interface ProductImage {
+  id: number;
+  sira: number;
+  status: string;
+  eskiUrl: string | null;
+  yeniUrl: string | null;
+}
 
 interface Product {
   id: number;
   urunId: number | null;
   urunKodu: string;
-  barkod: string | null;
+  barkodNo: string | null;
   eskiAdi: string | null;
   yeniAdi: string | null;
   marka: string | null;
   durum: string | null;
   processingStatus: string | null;
   stok: number | null;
-  images: { id: number; sira: number; status: string; eskiUrl: string | null; yeniDosyaAdi: string | null }[];
-  categories: { anaKategori: string | null } | null;
+  images: ProductImage[];
+  categories: {
+    anaKategori: string | null;
+    altKategori1: string | null;
+    aiKategori: string | null;
+  } | null;
   seo: { seoBaslik: string | null } | null;
 }
 
 interface ProductDataGridProps {
   onProductSelect?: (product: Product) => void;
   onProductEdit?: (product: Product) => void;
+}
+
+// Resim önizleme bileşeni
+function ImageThumbnail({ image, productName }: { image: ProductImage; productName: string }) {
+  const [hoveredImage, setHoveredImage] = useState<string | null>(null);
+
+  // Yeni URL varsa onu göster, yoksa eski URL'yi göster
+  const displayUrl = image.yeniUrl || image.eskiUrl;
+
+  if (!displayUrl) {
+    return (
+      <div className="w-8 h-8 bg-zinc-800 rounded border border-zinc-700 flex items-center justify-center">
+        <ImageIcon className="w-3 h-3 text-zinc-600" />
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className="relative"
+      onMouseEnter={() => setHoveredImage(displayUrl)}
+      onMouseLeave={() => setHoveredImage(null)}
+    >
+      <img
+        src={displayUrl}
+        alt={productName}
+        className={`w-8 h-8 object-cover rounded border cursor-pointer transition-all duration-200 ${
+          image.yeniUrl ? 'border-emerald-500' : 'border-zinc-700'
+        }`}
+      />
+      {/* Hover'da büyük resim önizlemesi */}
+      {hoveredImage && (
+        <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 z-50 pointer-events-none">
+          <div className="bg-zinc-900 border border-zinc-700 rounded-lg p-2 shadow-2xl">
+            <img
+              src={hoveredImage}
+              alt={productName}
+              className="w-64 h-64 object-contain rounded"
+            />
+            <div className="flex items-center justify-between mt-2 text-xs">
+              <span className="text-zinc-400">Sıra: {image.sira}</span>
+              <span className={`px-2 py-0.5 rounded ${
+                image.yeniUrl
+                  ? 'bg-emerald-500/20 text-emerald-400'
+                  : 'bg-amber-500/20 text-amber-400'
+              }`}>
+                {image.yeniUrl ? 'İşlenmiş' : 'Orijinal'}
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function ProductDataGrid({ onProductSelect, onProductEdit }: ProductDataGridProps) {
@@ -251,10 +318,9 @@ export function ProductDataGrid({ onProductSelect, onProductEdit }: ProductDataG
                       />
                     </TableHead>
                     <TableHead>Ürün Kodu</TableHead>
-                    <TableHead>Ürün Adı</TableHead>
-                    <TableHead>Marka</TableHead>
+                    <TableHead>Eski Ad / Yeni Ad</TableHead>
                     <TableHead>Kategori</TableHead>
-                    <TableHead className="text-center">Resim</TableHead>
+                    <TableHead className="text-center">Resimler</TableHead>
                     <TableHead className="text-center">Durum</TableHead>
                     <TableHead className="text-center">İşlem</TableHead>
                     <TableHead className="w-24"></TableHead>
@@ -269,47 +335,76 @@ export function ProductDataGrid({ onProductSelect, onProductEdit }: ProductDataG
                           onCheckedChange={() => handleSelectOne(product.id)}
                         />
                       </TableCell>
-                      <TableCell className="font-mono text-sm text-emerald-400">
-                        {product.urunKodu}
+                      <TableCell>
+                        <div>
+                          <span className="font-mono text-sm text-emerald-400">
+                            {product.urunKodu}
+                          </span>
+                          {product.marka && (
+                            <span className="block text-xs text-zinc-500 mt-0.5">
+                              {product.marka}
+                            </span>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell className="min-w-[280px]">
+                        <div className="space-y-1">
+                          {/* Eski Ad */}
+                          <div className="flex items-start gap-2">
+                            <span className="text-xs text-zinc-600 w-10 shrink-0">Eski:</span>
+                            <span className="text-sm text-zinc-400 line-clamp-1">
+                              {product.eskiAdi || "-"}
+                            </span>
+                          </div>
+                          {/* Yeni Ad */}
+                          <div className="flex items-start gap-2">
+                            <span className="text-xs text-emerald-600 w-10 shrink-0">Yeni:</span>
+                            <span className="text-sm text-zinc-200 line-clamp-1 font-medium">
+                              {product.yeniAdi || "-"}
+                            </span>
+                          </div>
+                        </div>
                       </TableCell>
                       <TableCell className="min-w-[200px]">
-                        <span className="block text-sm leading-relaxed">
-                          {product.yeniAdi || product.eskiAdi || "-"}
-                        </span>
-                      </TableCell>
-                      <TableCell className="text-zinc-400">
-                        {product.marka || "-"}
-                      </TableCell>
-                      <TableCell className="text-zinc-400">
-                        {product.categories?.anaKategori || "-"}
-                      </TableCell>
-                      <TableCell className="text-center">
-                        <div className="flex items-center justify-center gap-1">
-                          {product.images.length > 0 && product.images[0]?.eskiUrl ? (
-                            <div className="relative group">
-                              <img
-                                src={product.images[0].eskiUrl}
-                                alt={product.yeniAdi || product.eskiAdi || "Ürün"}
-                                className="w-10 h-10 object-cover rounded border border-zinc-700 cursor-pointer transition-transform duration-200"
-                              />
-                              {/* Hover'da büyük resim */}
-                              <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 hidden group-hover:block z-50">
-                                <div className="bg-zinc-900 border border-zinc-700 rounded-lg p-1 shadow-xl">
-                                  <img
-                                    src={product.images[0].eskiUrl}
-                                    alt={product.yeniAdi || product.eskiAdi || "Ürün"}
-                                    className="w-48 h-48 object-contain rounded"
-                                  />
-                                  <div className="text-xs text-zinc-400 text-center mt-1">
-                                    {product.images.length} resim
-                                  </div>
-                                </div>
-                              </div>
+                        <div className="space-y-1">
+                          {/* Orijinal Kategori */}
+                          <div className="flex items-start gap-2">
+                            <span className="text-xs text-zinc-600 w-10 shrink-0">Eski:</span>
+                            <span className="text-xs text-zinc-400 line-clamp-1">
+                              {product.categories?.anaKategori || "-"}
+                              {product.categories?.altKategori1 && ` > ${product.categories.altKategori1}`}
+                            </span>
+                          </div>
+                          {/* AI Kategori */}
+                          {product.categories?.aiKategori && (
+                            <div className="flex items-start gap-2">
+                              <span className="text-xs text-purple-600 w-10 shrink-0">AI:</span>
+                              <span className="text-xs text-purple-400 line-clamp-1">
+                                {product.categories.aiKategori}
+                              </span>
                             </div>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center justify-center gap-1 flex-wrap max-w-[120px]">
+                          {product.images.length > 0 ? (
+                            product.images.slice(0, 4).map((img) => (
+                              <ImageThumbnail
+                                key={img.id}
+                                image={img}
+                                productName={product.yeniAdi || product.eskiAdi || "Ürün"}
+                              />
+                            ))
                           ) : (
                             <div className="flex items-center gap-1 text-zinc-500">
                               <ImageIcon className="h-4 w-4" />
-                              <span className="text-sm">{product.images.length}</span>
+                              <span className="text-xs">0</span>
+                            </div>
+                          )}
+                          {product.images.length > 4 && (
+                            <div className="w-8 h-8 bg-zinc-800 rounded border border-zinc-700 flex items-center justify-center text-xs text-zinc-400">
+                              +{product.images.length - 4}
                             </div>
                           )}
                         </div>
