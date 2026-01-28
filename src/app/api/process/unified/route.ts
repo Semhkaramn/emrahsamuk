@@ -206,9 +206,14 @@ export async function POST(request: NextRequest) {
           await prisma.processingLog.create({
             data: {
               urunId: product.urunId,
+              urunKodu: product.urunKodu,
               islemTipi: "seo",
               durum: "success",
-              mesaj: `${product.eskiAdi} → ${newName}`,
+              mesaj: `SEO optimizasyonu tamamlandı`,
+              eskiDeger: product.eskiAdi,
+              yeniDeger: newName,
+              eskiKategori: product.categories?.anaKategori || null,
+              yeniKategori: product.categories?.aiKategori || null,
             },
           });
 
@@ -219,9 +224,11 @@ export async function POST(request: NextRequest) {
           await prisma.processingLog.create({
             data: {
               urunId: product.urunId,
+              urunKodu: product.urunKodu,
               islemTipi: "seo",
               durum: "error",
-              mesaj: "SEO optimizasyonu başarısız",
+              mesaj: "SEO optimizasyonu başarısız - AI yanıt vermedi",
+              eskiDeger: product.eskiAdi,
             },
           });
         }
@@ -269,9 +276,12 @@ export async function POST(request: NextRequest) {
             await prisma.processingLog.create({
               data: {
                 urunId: product.urunId,
+                urunKodu: product.urunKodu,
                 islemTipi: "image",
                 durum: "success",
-                mesaj: `Resim ${image.sira}: ${uploadResult.url}`,
+                mesaj: `Resim ${image.sira} Cloudinary'ye yüklendi`,
+                eskiResimler: JSON.stringify([image.eskiUrl]),
+                yeniResimler: JSON.stringify([uploadResult.url]),
               },
             });
           } else {
@@ -292,9 +302,11 @@ export async function POST(request: NextRequest) {
             await prisma.processingLog.create({
               data: {
                 urunId: product.urunId,
+                urunKodu: product.urunKodu,
                 islemTipi: "image",
                 durum: "error",
-                mesaj: `Resim ${image.sira}: Yükleme hatası`,
+                mesaj: `Resim ${image.sira}: Cloudinary yükleme hatası`,
+                eskiResimler: JSON.stringify([image.eskiUrl]),
               },
             });
           }
