@@ -4,10 +4,10 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Separator } from "@/components/ui/separator";
+import { TerminalLogPanel } from "@/components/TerminalLogPanel";
 import {
   Sparkles,
   Image as ImageIcon,
@@ -18,22 +18,10 @@ import {
   AlertCircle,
   Loader2,
   ArrowRight,
-  Clock,
-  Trash2,
-  Activity,
   Zap,
   Cloud,
   Package,
 } from "lucide-react";
-
-interface LogEntry {
-  id: number;
-  urunKodu: string;
-  islemTipi: string;
-  durum: string;
-  mesaj: string | null;
-  createdAt: string;
-}
 
 interface ProcessingStatus {
   products: {
@@ -74,11 +62,9 @@ interface ProcessingResult {
 }
 
 export function LiveProcessingPanel() {
-  const [logs, setLogs] = useState<LogEntry[]>([]);
   const [status, setStatus] = useState<ProcessingStatus | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [lastLogId, setLastLogId] = useState(0);
 
   // Processing options
   const [processSeo, setProcessSeo] = useState(true);
@@ -96,7 +82,6 @@ export function LiveProcessingPanel() {
   // Current processing product
   const [currentProduct, setCurrentProduct] = useState<ProcessingResult | null>(null);
 
-  const scrollRef = useRef<HTMLDivElement>(null);
   const processingRef = useRef<boolean>(false);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -115,36 +100,10 @@ export function LiveProcessingPanel() {
     }
   }, []);
 
-  // Fetch logs
-  const fetchLogs = useCallback(async (afterId?: number) => {
-    try {
-      const url = afterId
-        ? `/api/process/logs?limit=100&afterId=${afterId}`
-        : `/api/process/logs?limit=100`;
-      const response = await fetch(url);
-      const data = await response.json();
-
-      if (data.success) {
-        if (afterId && data.data.logs.length > 0) {
-          setLogs((prev) => [...data.data.logs.reverse(), ...prev].slice(0, 200));
-        } else if (!afterId) {
-          setLogs(data.data.logs);
-        }
-
-        if (data.data.latestId > lastLogId) {
-          setLastLogId(data.data.latestId);
-        }
-      }
-    } catch (error) {
-      console.error("Log fetch error:", error);
-    }
-  }, [lastLogId]);
-
   // Initial load
   useEffect(() => {
     fetchStatus();
-    fetchLogs();
-  }, [fetchStatus, fetchLogs]);
+  }, [fetchStatus]);
 
   // Process single product
   const processNextProduct = useCallback(async () => {
@@ -184,16 +143,15 @@ export function LiveProcessingPanel() {
         imagesFailed: prev.imagesFailed + productResult.images.filter((i) => !i.success).length,
       }));
 
-      // Refresh status and logs
+      // Refresh status
       await fetchStatus();
-      await fetchLogs(lastLogId);
 
       return result.remaining > 0;
     } catch (error) {
       console.error("Processing error:", error);
       return false;
     }
-  }, [processSeo, processImages, fetchStatus, fetchLogs, lastLogId]);
+  }, [processSeo, processImages, fetchStatus]);
 
   // Start processing loop
   const startProcessing = useCallback(async () => {
@@ -236,17 +194,6 @@ export function LiveProcessingPanel() {
     setCurrentProduct(null);
   }, []);
 
-  // Clear logs
-  const clearLogs = async () => {
-    try {
-      await fetch("/api/process/logs", { method: "DELETE" });
-      setLogs([]);
-      setLastLogId(0);
-    } catch (error) {
-      console.error("Clear logs error:", error);
-    }
-  };
-
   // Cleanup on unmount
   useEffect(() => {
     return () => {
@@ -284,7 +231,7 @@ export function LiveProcessingPanel() {
         <div className="flex items-center gap-2">
           {isProcessing && (
             <Badge variant="outline" className="bg-emerald-500/10 text-emerald-400 border-emerald-500/30 animate-pulse">
-              <Activity className="w-3 h-3 mr-1" />
+              <Loader2 className="w-3 h-3 mr-1 animate-spin" />
               İşleniyor
             </Badge>
           )}
@@ -422,7 +369,7 @@ export function LiveProcessingPanel() {
                     {currentProduct.seo.success ? (
                       <span className="text-emerald-400 flex items-center gap-1">
                         <CheckCircle2 className="w-3 h-3" />
-                        {currentProduct.seo.oldName} → {currentProduct.seo.newName}
+                        {currentProduct.seo.oldName} <ArrowRight className="w-3 h-3" /> {currentProduct.seo.newName}
                       </span>
                     ) : (
                       <span className="text-red-400 flex items-center gap-1">
@@ -489,96 +436,8 @@ export function LiveProcessingPanel() {
         </CardContent>
       </Card>
 
-      {/* Live Log Panel */}
-      <Card className="border-zinc-800 bg-zinc-900/50">
-        <CardHeader className="pb-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-emerald-500/10">
-                <Activity className="h-5 w-5 text-emerald-400" />
-              </div>
-              <div>
-                <CardTitle className="text-base">Canlı İşlem Logları</CardTitle>
-                <CardDescription className="text-xs">
-                  Her işlenen ürünün detayları
-                </CardDescription>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <Badge variant="outline" className="text-xs">
-                {logs.length} kayıt
-              </Badge>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={clearLogs}
-                disabled={isProcessing}
-                className="text-zinc-500 hover:text-red-400"
-              >
-                <Trash2 className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <ScrollArea className="h-[350px] rounded-lg border border-zinc-800 bg-zinc-950/50 p-4" ref={scrollRef}>
-            {logs.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-full text-zinc-500">
-                <Clock className="w-8 h-8 mb-2" />
-                <p className="text-sm">Henüz işlem yapılmadı</p>
-                <p className="text-xs">İşlem başlattığınızda loglar burada görünecek</p>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {logs.map((log) => (
-                  <div
-                    key={log.id}
-                    className={`p-3 rounded-lg border ${
-                      log.durum === "success"
-                        ? "bg-emerald-500/5 border-emerald-500/20"
-                        : "bg-red-500/5 border-red-500/20"
-                    }`}
-                  >
-                    <div className="flex items-start gap-3">
-                      {log.durum === "success" ? (
-                        <CheckCircle2 className="h-4 w-4 text-emerald-400 mt-0.5 shrink-0" />
-                      ) : (
-                        <AlertCircle className="h-4 w-4 text-red-400 mt-0.5 shrink-0" />
-                      )}
-                      <div className="flex-1 min-w-0 space-y-1">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <Badge
-                            variant="outline"
-                            className={`text-[10px] px-1.5 py-0 ${
-                              log.islemTipi === "seo"
-                                ? "text-purple-400 border-purple-500/30"
-                                : "text-blue-400 border-blue-500/30"
-                            }`}
-                          >
-                            {log.islemTipi === "seo" ? "SEO" : "Resim"}
-                          </Badge>
-                          <span className="text-xs font-mono text-zinc-400">
-                            {log.urunKodu}
-                          </span>
-                          <span className="text-[10px] text-zinc-600">
-                            {new Date(log.createdAt).toLocaleTimeString("tr-TR")}
-                          </span>
-                        </div>
-
-                        {log.mesaj && (
-                          <p className="text-xs text-zinc-400 truncate">
-                            {log.mesaj}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </ScrollArea>
-        </CardContent>
-      </Card>
+      {/* Terminal Log Panel */}
+      <TerminalLogPanel isProcessing={isProcessing} />
 
       {/* Info Box */}
       <div className="p-4 bg-zinc-800/50 border border-zinc-700 rounded-xl">
