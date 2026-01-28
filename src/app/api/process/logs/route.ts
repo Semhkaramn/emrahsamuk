@@ -3,11 +3,15 @@ import prisma from "@/lib/db";
 
 export interface DetailedLog {
   id: number;
-  urunKodu: string;
-  islemTipi: string;
-  durum: string;
+  urunKodu: string | null;
+  islemTipi: string | null;
+  durum: string | null;
   eskiDeger: string | null;
   yeniDeger: string | null;
+  eskiResimler: string[] | null;
+  yeniResimler: string[] | null;
+  eskiKategori: string | null;
+  yeniKategori: string | null;
   mesaj: string | null;
   createdAt: Date;
 }
@@ -42,6 +46,20 @@ export async function GET(request: NextRequest) {
             eskiAdi: true,
             yeniAdi: true,
             urunKodu: true,
+            categories: {
+              select: {
+                anaKategori: true,
+                aiKategori: true,
+              },
+            },
+            images: {
+              select: {
+                sira: true,
+                eskiUrl: true,
+                yeniUrl: true,
+              },
+              orderBy: { sira: "asc" },
+            },
           },
         },
       },
@@ -63,16 +81,54 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       success: true,
       data: {
-        logs: logs.map((log) => ({
-          id: log.id,
-          urunKodu: log.urunKodu,
-          islemTipi: log.islemTipi,
-          durum: log.durum,
-          mesaj: log.mesaj,
-          eskiAdi: log.product?.eskiAdi || null,
-          yeniAdi: log.product?.yeniAdi || null,
-          createdAt: log.createdAt,
-        })),
+        logs: logs.map((log) => {
+          // Parse JSON strings for images if they exist
+          let eskiResimler: string[] | null = null;
+          let yeniResimler: string[] | null = null;
+
+          try {
+            if (log.eskiResimler) {
+              eskiResimler = JSON.parse(log.eskiResimler);
+            }
+          } catch {
+            eskiResimler = null;
+          }
+
+          try {
+            if (log.yeniResimler) {
+              yeniResimler = JSON.parse(log.yeniResimler);
+            }
+          } catch {
+            yeniResimler = null;
+          }
+
+          // Get images from product if not in log
+          if (!eskiResimler && log.product?.images) {
+            eskiResimler = log.product.images
+              .filter(img => img.eskiUrl)
+              .map(img => img.eskiUrl as string);
+          }
+          if (!yeniResimler && log.product?.images) {
+            yeniResimler = log.product.images
+              .filter(img => img.yeniUrl)
+              .map(img => img.yeniUrl as string);
+          }
+
+          return {
+            id: log.id,
+            urunKodu: log.urunKodu || log.product?.urunKodu || null,
+            islemTipi: log.islemTipi,
+            durum: log.durum,
+            mesaj: log.mesaj,
+            eskiDeger: log.eskiDeger || log.product?.eskiAdi || null,
+            yeniDeger: log.yeniDeger || log.product?.yeniAdi || null,
+            eskiResimler,
+            yeniResimler,
+            eskiKategori: log.eskiKategori || log.product?.categories?.anaKategori || null,
+            yeniKategori: log.yeniKategori || log.product?.categories?.aiKategori || null,
+            createdAt: log.createdAt,
+          };
+        }),
         stats: {
           seo: seoStats,
           image: imageStats,
