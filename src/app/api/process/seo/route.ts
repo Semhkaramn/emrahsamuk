@@ -47,12 +47,20 @@ export async function POST(request: NextRequest) {
         message: "İşlenecek ürün kalmadı",
         processed: 0,
         failed: 0,
+        details: [],
       });
     }
 
     let processed = 0;
     let failed = 0;
     const errors: string[] = [];
+    const details: Array<{
+      urunKodu: string;
+      eskiAdi: string;
+      yeniAdi: string;
+      success: boolean;
+      error?: string;
+    }> = [];
 
     for (const product of products) {
       try {
@@ -102,36 +110,80 @@ export async function POST(request: NextRequest) {
             });
           }
 
+          // Log individual success with details
+          await prisma.processingLog.create({
+            data: {
+              urunKodu: product.urunKodu,
+              islemTipi: "seo",
+              durum: "success",
+              mesaj: `"${productName}" → "${seoResult.seoTitle}"`,
+            },
+          });
+
+          details.push({
+            urunKodu: product.urunKodu,
+            eskiAdi: productName,
+            yeniAdi: seoResult.seoTitle,
+            success: true,
+          });
+
           processed++;
         } else {
           failed++;
-          errors.push(`${product.urunKodu}: SEO verisi alınamadı`);
+          const errorMsg = `SEO verisi alınamadı`;
+          errors.push(`${product.urunKodu}: ${errorMsg}`);
+
+          // Log individual failure
+          await prisma.processingLog.create({
+            data: {
+              urunKodu: product.urunKodu,
+              islemTipi: "seo",
+              durum: "error",
+              mesaj: errorMsg,
+            },
+          });
+
+          details.push({
+            urunKodu: product.urunKodu,
+            eskiAdi: productName,
+            yeniAdi: "",
+            success: false,
+            error: errorMsg,
+          });
         }
       } catch (err) {
         failed++;
-        errors.push(
-          `${product.urunKodu}: ${err instanceof Error ? err.message : "Bilinmeyen hata"}`
-        );
+        const errorMsg = err instanceof Error ? err.message : "Bilinmeyen hata";
+        errors.push(`${product.urunKodu}: ${errorMsg}`);
+
+        // Log individual failure
+        await prisma.processingLog.create({
+          data: {
+            urunKodu: product.urunKodu,
+            islemTipi: "seo",
+            durum: "error",
+            mesaj: errorMsg,
+          },
+        });
 
         // Update status to error
         await prisma.product.update({
           where: { urunKodu: product.urunKodu },
           data: { processingStatus: "error" },
         });
+
+        details.push({
+          urunKodu: product.urunKodu,
+          eskiAdi: product.eskiAdi || product.urunKodu,
+          yeniAdi: "",
+          success: false,
+          error: errorMsg,
+        });
       }
 
       // Rate limiting - OpenAI için bekle
       await new Promise((resolve) => setTimeout(resolve, 500));
     }
-
-    // Log the processing
-    await prisma.processingLog.create({
-      data: {
-        islemTipi: "seo",
-        durum: failed > 0 ? "partial" : "success",
-        mesaj: `SEO işleme: ${processed} başarılı, ${failed} hatalı`,
-      },
-    });
 
     // Get remaining count
     const remainingCount = await prisma.product.count({
@@ -145,6 +197,7 @@ export async function POST(request: NextRequest) {
       failed,
       remaining: remainingCount,
       errors: errors.slice(0, 5),
+      details,
     });
   } catch (error) {
     console.error("SEO batch processing error:", error);
