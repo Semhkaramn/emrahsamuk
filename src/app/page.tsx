@@ -19,30 +19,118 @@ import {
   Image as ImageIcon,
   Sparkles,
   Zap,
+  FolderTree,
+  Archive,
+  Loader2,
+  CheckCircle2,
 } from "lucide-react";
+
+type ExportType = "pcden" | "full" | "urunbilgisi" | "urunkategori" | "images-zip";
+
+interface ExportState {
+  loading: boolean;
+  success: boolean;
+  error: string | null;
+}
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState("dashboard");
+  const [exportStates, setExportStates] = useState<Record<ExportType, ExportState>>({
+    pcden: { loading: false, success: false, error: null },
+    full: { loading: false, success: false, error: null },
+    urunbilgisi: { loading: false, success: false, error: null },
+    urunkategori: { loading: false, success: false, error: null },
+    "images-zip": { loading: false, success: false, error: null },
+  });
 
-  const handleExport = useCallback(async (type: 'pcden' | 'full') => {
+  const handleExport = useCallback(async (type: ExportType) => {
+    setExportStates((prev) => ({
+      ...prev,
+      [type]: { loading: true, success: false, error: null },
+    }));
+
     try {
-      const endpoint = type === 'pcden'
-        ? '/api/export/urunresimleripcden'
-        : '/api/export/full';
+      const endpoints: Record<ExportType, string> = {
+        pcden: "/api/export/urunresimleripcden",
+        full: "/api/export/full",
+        urunbilgisi: "/api/export/urunbilgisi",
+        urunkategori: "/api/export/urunkategori",
+        "images-zip": "/api/export/images-zip?limit=500",
+      };
 
-      const response = await fetch(endpoint);
+      const filenames: Record<ExportType, string> = {
+        pcden: "urunresimleripcden.xlsx",
+        full: "urun-export-full.xlsx",
+        urunbilgisi: "urunbilgisi.xlsx",
+        urunkategori: "urunkategori.xlsx",
+        "images-zip": "urun-resimleri.zip",
+      };
+
+      const response = await fetch(endpoints[type]);
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: "İndirme hatası" }));
+        throw new Error(errorData.error || "İndirme hatası");
+      }
+
       const blob = await response.blob();
-
       const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
+      const a = document.createElement("a");
       a.href = url;
-      a.download = type === 'pcden' ? 'urunresimleripcden.xlsx' : 'urun-export-full.xlsx';
+      a.download = filenames[type];
       a.click();
       URL.revokeObjectURL(url);
+
+      setExportStates((prev) => ({
+        ...prev,
+        [type]: { loading: false, success: true, error: null },
+      }));
+
+      // Reset success after 3 seconds
+      setTimeout(() => {
+        setExportStates((prev) => ({
+          ...prev,
+          [type]: { ...prev[type], success: false },
+        }));
+      }, 3000);
     } catch (error) {
       console.error("Export error:", error);
+      setExportStates((prev) => ({
+        ...prev,
+        [type]: {
+          loading: false,
+          success: false,
+          error: error instanceof Error ? error.message : "İndirme hatası",
+        },
+      }));
     }
   }, []);
+
+  const ExportButton = ({ type, children }: { type: ExportType; children: React.ReactNode }) => {
+    const state = exportStates[type];
+    return (
+      <Button
+        onClick={() => handleExport(type)}
+        disabled={state.loading}
+        className="w-full"
+        variant={state.success ? "outline" : "default"}
+      >
+        {state.loading ? (
+          <>
+            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            İndiriliyor...
+          </>
+        ) : state.success ? (
+          <>
+            <CheckCircle2 className="w-4 h-4 mr-2 text-emerald-400" />
+            İndirildi!
+          </>
+        ) : (
+          children
+        )}
+      </Button>
+    );
+  };
 
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100">
@@ -54,8 +142,8 @@ export default function Home() {
               <Package className="w-6 h-6 text-white" />
             </div>
             <div>
-              <h1 className="text-xl font-bold">Ürün Yönetim Sistemi</h1>
-              <p className="text-xs text-zinc-500">AI SEO + Resim İyileştirme + Excel Dönüştürme</p>
+              <h1 className="text-xl font-bold">Urun Yonetim Sistemi</h1>
+              <p className="text-xs text-zinc-500">AI SEO + Resim Iyilestirme + Excel Donusturme</p>
             </div>
           </div>
         </div>
@@ -76,21 +164,21 @@ export default function Home() {
               className="flex items-center gap-2 data-[state=active]:bg-zinc-800 data-[state=active]:text-emerald-400"
             >
               <Zap className="w-4 h-4" />
-              <span className="hidden sm:inline">İşlem</span>
+              <span className="hidden sm:inline">Islem</span>
             </TabsTrigger>
             <TabsTrigger
               value="upload"
               className="flex items-center gap-2 data-[state=active]:bg-zinc-800 data-[state=active]:text-emerald-400"
             >
               <Upload className="w-4 h-4" />
-              <span className="hidden sm:inline">Yükle</span>
+              <span className="hidden sm:inline">Yukle</span>
             </TabsTrigger>
             <TabsTrigger
               value="products"
               className="flex items-center gap-2 data-[state=active]:bg-zinc-800 data-[state=active]:text-emerald-400"
             >
               <Package className="w-4 h-4" />
-              <span className="hidden sm:inline">Ürünler</span>
+              <span className="hidden sm:inline">Urunler</span>
             </TabsTrigger>
             <TabsTrigger
               value="export"
@@ -113,7 +201,7 @@ export default function Home() {
             <Dashboard />
           </TabsContent>
 
-          {/* Process Tab - NEW */}
+          {/* Process Tab */}
           <TabsContent value="process" className="space-y-6">
             <LiveProcessingPanel />
           </TabsContent>
@@ -124,10 +212,10 @@ export default function Home() {
               <div>
                 <h2 className="text-2xl font-bold flex items-center gap-2">
                   <Upload className="w-6 h-6 text-emerald-400" />
-                  Excel Dosyası Yükle
+                  Excel Dosyasi Yukle
                 </h2>
                 <p className="text-sm text-zinc-500 mt-1">
-                  Aşağıdaki Excel dosyalarını yükleyerek ürün verilerinizi sisteme aktarın
+                  Asagidaki Excel dosyalarini yukleyerek urun verilerinizi sisteme aktarin
                 </p>
               </div>
               <ExcelUploader />
@@ -146,7 +234,7 @@ export default function Home() {
             />
           </TabsContent>
 
-          {/* Export Tab */}
+          {/* Export Tab - UPDATED */}
           <TabsContent value="export" className="space-y-6">
             <div className="space-y-4">
               <div>
@@ -155,11 +243,71 @@ export default function Home() {
                   Veri Export
                 </h2>
                 <p className="text-sm text-zinc-500 mt-1">
-                  İşlenmiş verileri Excel formatında indirin
+                  Islenmis verileri Excel veya ZIP formatinda indirin
                 </p>
               </div>
 
-              <div className="grid gap-4 md:grid-cols-2">
+              {/* Excel Exports */}
+              <h3 className="text-lg font-semibold text-zinc-300 flex items-center gap-2 mt-6">
+                <FileSpreadsheet className="w-5 h-5 text-emerald-400" />
+                Excel Dosyalari
+              </h3>
+
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                {/* Urun Bilgisi Export */}
+                <Card className="border-zinc-800 bg-zinc-900/50">
+                  <CardHeader>
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 rounded-lg bg-emerald-500/10">
+                        <Package className="h-5 w-5 text-emerald-400" />
+                      </div>
+                      <div>
+                        <CardTitle className="text-base">Urun Bilgisi</CardTitle>
+                        <CardDescription className="text-xs">
+                          Yeni isimlerle urun verileri
+                        </CardDescription>
+                      </div>
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-sm text-zinc-400 mb-4">
+                      Tum urunler yeni SEO isim, fiyat ve stok bilgileriyle.
+                      Orijinal urunbilgisi.xlsx formatinda.
+                    </p>
+                    <ExportButton type="urunbilgisi">
+                      <FileSpreadsheet className="w-4 h-4 mr-2" />
+                      urunbilgisi.xlsx Indir
+                    </ExportButton>
+                  </CardContent>
+                </Card>
+
+                {/* Kategori Export */}
+                <Card className="border-zinc-800 bg-zinc-900/50">
+                  <CardHeader>
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 rounded-lg bg-purple-500/10">
+                        <FolderTree className="h-5 w-5 text-purple-400" />
+                      </div>
+                      <div>
+                        <CardTitle className="text-base">Urun Kategorisi</CardTitle>
+                        <CardDescription className="text-xs">
+                          AI tarafindan belirlenen kategoriler
+                        </CardDescription>
+                      </div>
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-sm text-zinc-400 mb-4">
+                      Orijinal ve AI tarafindan belirlenen kategoriler.
+                      Onerilen kategori sutunlari dahil.
+                    </p>
+                    <ExportButton type="urunkategori">
+                      <FileSpreadsheet className="w-4 h-4 mr-2" />
+                      urunkategori.xlsx Indir
+                    </ExportButton>
+                  </CardContent>
+                </Card>
+
                 {/* PC'den Format Export */}
                 <Card className="border-zinc-800 bg-zinc-900/50">
                   <CardHeader>
@@ -168,25 +316,22 @@ export default function Home() {
                         <ImageIcon className="h-5 w-5 text-blue-400" />
                       </div>
                       <div>
-                        <CardTitle className="text-base">Resim Dosya Adları</CardTitle>
+                        <CardTitle className="text-base">Resim Dosya Adlari</CardTitle>
                         <CardDescription className="text-xs">
-                          ürünresimleripcden.xlsx formatı
+                          urunresimleripcden.xlsx formati
                         </CardDescription>
                       </div>
                     </div>
                   </CardHeader>
                   <CardContent>
                     <p className="text-sm text-zinc-400 mb-4">
-                      URUNID, URUNKODU, ADI ve RESIM1-16 dosya adları sütunlarını içerir.
-                      PC&apos;ye indirilen resimlerin dosya adlarıyla eşleşir.
+                      URUNID, URUNKODU, ADI ve RESIM1-16 dosya adlari.
+                      PC&apos;ye indirilen resimlerle eslesir.
                     </p>
-                    <Button
-                      onClick={() => handleExport('pcden')}
-                      className="w-full bg-blue-600 hover:bg-blue-700"
-                    >
+                    <ExportButton type="pcden">
                       <FileSpreadsheet className="w-4 h-4 mr-2" />
-                      ürünresimleripcden.xlsx İndir
-                    </Button>
+                      urunresimleripcden.xlsx Indir
+                    </ExportButton>
                   </CardContent>
                 </Card>
 
@@ -194,29 +339,99 @@ export default function Home() {
                 <Card className="border-zinc-800 bg-zinc-900/50">
                   <CardHeader>
                     <div className="flex items-center gap-3">
-                      <div className="p-2 rounded-lg bg-purple-500/10">
-                        <Sparkles className="h-5 w-5 text-purple-400" />
+                      <div className="p-2 rounded-lg bg-amber-500/10">
+                        <Sparkles className="h-5 w-5 text-amber-400" />
                       </div>
                       <div>
                         <CardTitle className="text-base">Tam Veri Export</CardTitle>
                         <CardDescription className="text-xs">
-                          Tüm ürün bilgileri + SEO
+                          Tum bilgiler + SEO + Kategoriler
                         </CardDescription>
                       </div>
                     </div>
                   </CardHeader>
                   <CardContent>
                     <p className="text-sm text-zinc-400 mb-4">
-                      Tüm ürün bilgileri, SEO optimizeli başlıklar, kategoriler ve
-                      fiyat bilgilerini içeren tam export.
+                      Tum urun bilgileri, SEO, kategoriler ve fiyatlar.
+                      Birden fazla sayfa icerir.
                     </p>
-                    <Button
-                      onClick={() => handleExport('full')}
-                      className="w-full bg-purple-600 hover:bg-purple-700"
-                    >
+                    <ExportButton type="full">
                       <FileSpreadsheet className="w-4 h-4 mr-2" />
-                      Tam Export İndir
-                    </Button>
+                      Tam Export Indir
+                    </ExportButton>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Image Downloads */}
+              <h3 className="text-lg font-semibold text-zinc-300 flex items-center gap-2 mt-8">
+                <Archive className="w-5 h-5 text-blue-400" />
+                Resim Dosyalari
+              </h3>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                {/* Images ZIP Export */}
+                <Card className="border-zinc-800 bg-zinc-900/50">
+                  <CardHeader>
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 rounded-lg bg-teal-500/10">
+                        <Archive className="h-5 w-5 text-teal-400" />
+                      </div>
+                      <div>
+                        <CardTitle className="text-base">Resimler (ZIP)</CardTitle>
+                        <CardDescription className="text-xs">
+                          Islenmis resimleri indir
+                        </CardDescription>
+                      </div>
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-sm text-zinc-400 mb-4">
+                      Islenmis urun resimlerini ZIP olarak indir.
+                      Dosya adlari SEO uyumlu formatta.
+                      <span className="block text-amber-400 mt-1 text-xs">
+                        Not: Maksimum 500 resim indirilir (sunucu limiti)
+                      </span>
+                    </p>
+                    <ExportButton type="images-zip">
+                      <Archive className="w-4 h-4 mr-2" />
+                      Resimleri ZIP Olarak Indir
+                    </ExportButton>
+                    {exportStates["images-zip"].error && (
+                      <p className="text-xs text-red-400 mt-2">
+                        {exportStates["images-zip"].error}
+                      </p>
+                    )}
+                  </CardContent>
+                </Card>
+
+                {/* Info Card */}
+                <Card className="border-zinc-800 bg-zinc-900/50">
+                  <CardHeader>
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <Sparkles className="h-5 w-5 text-purple-400" />
+                      Export Bilgileri
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <div className="text-sm text-zinc-400 space-y-2">
+                      <p className="flex items-start gap-2">
+                        <span className="text-emerald-400">*</span>
+                        <span>Urun isimleri SEO optimizasyonu ile guncellenmis haliyle indirilir.</span>
+                      </p>
+                      <p className="flex items-start gap-2">
+                        <span className="text-purple-400">*</span>
+                        <span>Kategoriler AI tarafindan belirlenen onerilerle birlikte gelir.</span>
+                      </p>
+                      <p className="flex items-start gap-2">
+                        <span className="text-blue-400">*</span>
+                        <span>Resim dosya adlari urun kodu ve SEO basligina gore olusturulur.</span>
+                      </p>
+                      <p className="flex items-start gap-2">
+                        <span className="text-amber-400">*</span>
+                        <span>Buyuk dosyalar icin indirme birkas dakika surebilir.</span>
+                      </p>
+                    </div>
                   </CardContent>
                 </Card>
               </div>
@@ -232,7 +447,7 @@ export default function Home() {
                   Ayarlar
                 </h2>
                 <p className="text-sm text-zinc-500 mt-1">
-                  AI ve işleme ayarlarını yapılandırın
+                  AI ve isleme ayarlarini yapilandirin
                 </p>
               </div>
 
@@ -248,7 +463,7 @@ export default function Home() {
       <footer className="border-t border-zinc-800 mt-12">
         <div className="max-w-7xl mx-auto px-6 py-4">
           <p className="text-center text-xs text-zinc-600">
-            Ürün Yönetim Sistemi v2.0 • AI-Powered SEO & Image Enhancement
+            Urun Yonetim Sistemi v2.0 - AI-Powered SEO & Image Enhancement
           </p>
         </div>
       </footer>
