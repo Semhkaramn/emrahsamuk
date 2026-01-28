@@ -163,18 +163,26 @@ model ProductSeo {
 
 // İşlem Kayıtları Tablosu
 model ProcessingLog {
-  id        Int      @id @default(autoincrement())
-  urunId    Int?     @map("urun_id")
-  islemTipi String?  @map("islem_tipi") @db.VarChar(50)
-  durum     String?  @db.VarChar(20)
-  mesaj     String?  @db.Text
-  createdAt DateTime @default(now()) @map("created_at")
+  id           Int      @id @default(autoincrement())
+  urunId       Int?     @map("urun_id")
+  urunKodu     String?  @map("urun_kodu") @db.VarChar(100)
+  islemTipi    String?  @map("islem_tipi") @db.VarChar(50)
+  durum        String?  @db.VarChar(20)
+  mesaj        String?  @db.Text
+  eskiDeger    String?  @map("eski_deger") @db.Text
+  yeniDeger    String?  @map("yeni_deger") @db.Text
+  eskiResimler String?  @map("eski_resimler") @db.Text // JSON string
+  yeniResimler String?  @map("yeni_resimler") @db.Text // JSON string
+  eskiKategori String?  @map("eski_kategori") @db.VarChar(255)
+  yeniKategori String?  @map("yeni_kategori") @db.VarChar(255)
+  createdAt    DateTime @default(now()) @map("created_at")
 
   // İlişki
   product Product? @relation(fields: [urunId], references: [urunId], onDelete: SetNull)
 
   @@index([urunId])
   @@index([islemTipi])
+  @@index([createdAt])
   @@map("processing_logs")
 }
 
