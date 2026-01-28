@@ -105,13 +105,15 @@ model ProductCategory {
 
 // Resimler Tablosu
 model ProductImage {
-  id           Int     @id @default(autoincrement())
-  urunKodu     String  @map("urun_kodu") @db.VarChar(100)
-  sira         Int     // 1-16
-  eskiUrl      String? @map("eski_url") @db.Text
-  yeniDosyaAdi String? @map("yeni_dosya_adi") @db.VarChar(255)
-  status       String? @default("pending") @db.VarChar(20) // pending, downloading, enhancing, done, error
-  errorMessage String? @map("error_message") @db.Text
+  id            Int     @id @default(autoincrement())
+  urunKodu      String  @map("urun_kodu") @db.VarChar(100)
+  sira          Int     // 1-16
+  eskiUrl       String? @map("eski_url") @db.Text
+  yeniDosyaAdi  String? @map("yeni_dosya_adi") @db.VarChar(255)
+  cloudinaryUrl String? @map("cloudinary_url") @db.Text // Cloudinary'ye yüklenen resmin URL'si
+  cloudinaryId  String? @map("cloudinary_id") @db.VarChar(255) // Cloudinary public_id
+  status        String? @default("pending") @db.VarChar(20) // pending, downloading, uploading, done, error
+  errorMessage  String? @map("error_message") @db.Text
 
   // İlişki
   product Product @relation(fields: [urunKodu], references: [urunKodu], onDelete: Cascade)
