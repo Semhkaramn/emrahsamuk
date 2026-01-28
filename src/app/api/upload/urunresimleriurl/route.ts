@@ -3,8 +3,9 @@ import prisma from "@/lib/db";
 import * as XLSX from "xlsx";
 
 interface UrunResimRow {
-  URUNID?: number;
+  URUNID: number;
   URUNKODU?: string;
+  ADI?: string;
   RESIM1?: string;
   RESIM2?: string;
   RESIM3?: string;
@@ -49,18 +50,19 @@ export async function POST(request: NextRequest) {
     const errors: string[] = [];
 
     for (const row of data) {
-      if (!row.URUNKODU) {
+      // URUNID zorunlu
+      if (!row.URUNID) {
         failed++;
-        errors.push(`Satır atlandı: URUNKODU boş`);
+        errors.push(`Satır atlandı: URUNID boş`);
         continue;
       }
 
       try {
-        const urunKodu = String(row.URUNKODU);
+        const urunId = Number(row.URUNID);
 
-        // Check if product exists
+        // Check if product exists by urunId
         const existingProduct = await prisma.product.findUnique({
-          where: { urunKodu },
+          where: { urunId },
         });
 
         if (!existingProduct) {
@@ -68,7 +70,7 @@ export async function POST(request: NextRequest) {
           continue;
         }
 
-        // Extract all image URLs
+        // Extract all image URLs (RESIM1-16)
         const imageUrls: { sira: number; url: string }[] = [];
         for (let i = 1; i <= 16; i++) {
           const key = `RESIM${i}` as keyof UrunResimRow;
@@ -82,8 +84,8 @@ export async function POST(request: NextRequest) {
         for (const img of imageUrls) {
           const existingImage = await prisma.productImage.findUnique({
             where: {
-              urunKodu_sira: {
-                urunKodu,
+              urunId_sira: {
+                urunId,
                 sira: img.sira,
               },
             },
@@ -92,8 +94,8 @@ export async function POST(request: NextRequest) {
           if (existingImage) {
             await prisma.productImage.update({
               where: {
-                urunKodu_sira: {
-                  urunKodu,
+                urunId_sira: {
+                  urunId,
                   sira: img.sira,
                 },
               },
@@ -106,7 +108,7 @@ export async function POST(request: NextRequest) {
           } else {
             await prisma.productImage.create({
               data: {
-                urunKodu,
+                urunId,
                 sira: img.sira,
                 eskiUrl: img.url,
                 status: "pending",
@@ -120,7 +122,7 @@ export async function POST(request: NextRequest) {
       } catch (err) {
         failed++;
         errors.push(
-          `Hata (${row.URUNKODU}): ${err instanceof Error ? err.message : "Unknown error"}`
+          `Hata (URUNID: ${row.URUNID}): ${err instanceof Error ? err.message : "Unknown error"}`
         );
       }
     }
