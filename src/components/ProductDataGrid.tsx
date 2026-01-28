@@ -4,7 +4,13 @@ import { useState, useEffect, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Select } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -181,30 +187,38 @@ export function ProductDataGrid({ onProductSelect, onProductEdit }: ProductDataG
           </div>
           <Select
             value={durum}
-            onChange={(e) => {
-              setDurum(e.target.value);
+            onValueChange={(value) => {
+              setDurum(value);
               setPage(1);
             }}
-            options={[
-              { value: "", label: "Tüm Durumlar" },
-              { value: "AKTIF", label: "Aktif" },
-              { value: "PASIF", label: "Pasif" },
-            ]}
-          />
+          >
+            <SelectTrigger className="w-[180px]">
+              <SelectValue placeholder="Tüm Durumlar" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="">Tüm Durumlar</SelectItem>
+              <SelectItem value="AKTIF">Aktif</SelectItem>
+              <SelectItem value="PASIF">Pasif</SelectItem>
+            </SelectContent>
+          </Select>
           <Select
             value={processingStatus}
-            onChange={(e) => {
-              setProcessingStatus(e.target.value);
+            onValueChange={(value) => {
+              setProcessingStatus(value);
               setPage(1);
             }}
-            options={[
-              { value: "", label: "Tüm İşlem Durumları" },
-              { value: "pending", label: "Bekliyor" },
-              { value: "processing", label: "İşleniyor" },
-              { value: "done", label: "Tamamlandı" },
-              { value: "error", label: "Hatalı" },
-            ]}
-          />
+          >
+            <SelectTrigger className="w-[200px]">
+              <SelectValue placeholder="Tüm İşlem Durumları" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="">Tüm İşlem Durumları</SelectItem>
+              <SelectItem value="pending">Bekliyor</SelectItem>
+              <SelectItem value="processing">İşleniyor</SelectItem>
+              <SelectItem value="done">Tamamlandı</SelectItem>
+              <SelectItem value="error">Hatalı</SelectItem>
+            </SelectContent>
+          </Select>
           <Button type="submit">Ara</Button>
         </form>
       </CardHeader>
