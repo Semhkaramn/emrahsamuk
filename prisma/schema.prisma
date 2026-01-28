@@ -150,3 +150,14 @@ model ProcessingLog {
   @@index([islemTipi])
   @@map("processing_logs")
 }
+
+// Sistem Ayarları Tablosu
+model Settings {
+  id                     Int      @id @default(autoincrement())
+  key                    String   @unique @db.VarChar(100)
+  value                  String?  @db.Text
+  description            String?  @db.Text
+  updatedAt              DateTime @updatedAt @map("updated_at")
+
+  @@map("settings")
+}
