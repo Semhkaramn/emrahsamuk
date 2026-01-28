@@ -126,7 +126,7 @@ export async function POST(request: NextRequest) {
             data: {
               ...productData,
               prices: {
-                create: { urunKodu: String(row.URUNKODU), ...priceData },
+                create: priceData,
               },
             },
           });
