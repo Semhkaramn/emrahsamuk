@@ -49,10 +49,10 @@ export async function GET(request: NextRequest) {
       orderBy: { urunId: "asc" },
     });
 
-    // Create Excel data matching original ürünbilgisi.xlsx format but with new names
+    // Create Excel data matching original ürünbilgisi.xlsx format
     const excelData = products.map((product) => ({
       ID: product.urunId,
-      URUNKODU: product.urunKodu,
+      URUNKODU: product.urunKodu || "",
       BARKOD: product.barkod || "",
       // Yeni ad varsa onu kullan, yoksa eski adı
       ADI: product.yeniAdi || product.eskiAdi || "",
