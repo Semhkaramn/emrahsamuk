@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Separator } from "@/components/ui/separator";
 import {
   Sparkles,
@@ -21,6 +22,8 @@ import {
   Trash2,
   Activity,
   Zap,
+  Cloud,
+  Package,
 } from "lucide-react";
 
 interface LogEntry {
@@ -29,49 +32,90 @@ interface LogEntry {
   islemTipi: string;
   durum: string;
   mesaj: string | null;
-  eskiAdi: string | null;
-  yeniAdi: string | null;
   createdAt: string;
 }
 
 interface ProcessingStatus {
-  total: number;
-  processed?: number;
-  pending: number;
-  done?: number;
-  error?: number;
-  percentComplete: number;
+  products: {
+    total: number;
+    pending: number;
+    done: number;
+    error: number;
+    percentComplete: number;
+  };
+  images: {
+    total: number;
+    pending: number;
+    done: number;
+    error: number;
+    percentComplete: number;
+  };
+  seo: {
+    optimized: number;
+    remaining: number;
+    percentComplete: number;
+  };
 }
 
-interface ProcessingDetail {
+interface ProcessingResult {
   urunKodu: string;
-  eskiAdi?: string;
-  yeniAdi?: string;
-  sira?: number;
-  eskiUrl?: string;
-  yeniDosyaAdi?: string;
-  success: boolean;
-  error?: string;
+  seo: {
+    success: boolean;
+    oldName: string | null;
+    newName: string | null;
+    error?: string;
+  } | null;
+  images: Array<{
+    sira: number;
+    success: boolean;
+    cloudinaryUrl?: string;
+    error?: string;
+  }>;
 }
 
 export function LiveProcessingPanel() {
   const [logs, setLogs] = useState<LogEntry[]>([]);
-  const [seoStatus, setSeoStatus] = useState<ProcessingStatus | null>(null);
-  const [imageStatus, setImageStatus] = useState<ProcessingStatus | null>(null);
-  const [seoProcessing, setSeoProcessing] = useState(false);
-  const [imageProcessing, setImageProcessing] = useState(false);
+  const [status, setStatus] = useState<ProcessingStatus | null>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [lastLogId, setLastLogId] = useState(0);
-  const [recentDetails, setRecentDetails] = useState<ProcessingDetail[]>([]);
-  const [processedCount, setProcessedCount] = useState({ seo: 0, image: 0 });
-  const [errorCount, setErrorCount] = useState({ seo: 0, image: 0 });
+
+  // Processing options
+  const [processSeo, setProcessSeo] = useState(true);
+  const [processImages, setProcessImages] = useState(true);
+
+  // Stats for current session
+  const [sessionStats, setSessionStats] = useState({
+    productsProcessed: 0,
+    seoSuccess: 0,
+    seoFailed: 0,
+    imagesSuccess: 0,
+    imagesFailed: 0,
+  });
+
+  // Current processing product
+  const [currentProduct, setCurrentProduct] = useState<ProcessingResult | null>(null);
 
   const scrollRef = useRef<HTMLDivElement>(null);
-  const seoIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const imageIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const processingRef = useRef<boolean>(false);
+  const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Fetch logs (polling)
+  // Fetch status
+  const fetchStatus = useCallback(async () => {
+    try {
+      const response = await fetch("/api/process/unified");
+      const data = await response.json();
+      if (data.success) {
+        setStatus(data.data);
+      }
+    } catch (error) {
+      console.error("Status fetch error:", error);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // Fetch logs
   const fetchLogs = useCallback(async (afterId?: number) => {
     try {
       const url = afterId
@@ -82,10 +126,8 @@ export function LiveProcessingPanel() {
 
       if (data.success) {
         if (afterId && data.data.logs.length > 0) {
-          // Prepend new logs
           setLogs((prev) => [...data.data.logs.reverse(), ...prev].slice(0, 200));
         } else if (!afterId) {
-          // Initial load - reverse to show newest first in the array
           setLogs(data.data.logs);
         }
 
@@ -98,171 +140,100 @@ export function LiveProcessingPanel() {
     }
   }, [lastLogId]);
 
-  // Fetch status
-  const fetchStatus = useCallback(async () => {
-    try {
-      const [seoRes, imageRes] = await Promise.all([
-        fetch("/api/process/seo"),
-        fetch("/api/process/images"),
-      ]);
-
-      const seoData = await seoRes.json();
-      const imageData = await imageRes.json();
-
-      if (seoData.success) setSeoStatus(seoData.data);
-      if (imageData.success) setImageStatus(imageData.data);
-    } catch (error) {
-      console.error("Status fetch error:", error);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
   // Initial load
   useEffect(() => {
     fetchStatus();
     fetchLogs();
   }, [fetchStatus, fetchLogs]);
 
-  // Polling for new logs when processing
-  useEffect(() => {
-    if (seoProcessing || imageProcessing) {
-      pollIntervalRef.current = setInterval(() => {
-        fetchLogs(lastLogId);
-      }, 1000);
+  // Process single product
+  const processNextProduct = useCallback(async () => {
+    if (!processingRef.current) return false;
+
+    try {
+      const response = await fetch("/api/process/unified", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          processSeo,
+          processImages,
+          batchSize: 1,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!result.success) {
+        console.error("Processing error:", result.error);
+        return false;
+      }
+
+      if (result.processed === 0) {
+        return false; // No more products
+      }
+
+      const productResult = result.results[0] as ProcessingResult;
+      setCurrentProduct(productResult);
+
+      // Update session stats
+      setSessionStats((prev) => ({
+        productsProcessed: prev.productsProcessed + 1,
+        seoSuccess: prev.seoSuccess + (productResult.seo?.success ? 1 : 0),
+        seoFailed: prev.seoFailed + (productResult.seo && !productResult.seo.success ? 1 : 0),
+        imagesSuccess: prev.imagesSuccess + productResult.images.filter((i) => i.success).length,
+        imagesFailed: prev.imagesFailed + productResult.images.filter((i) => !i.success).length,
+      }));
+
+      // Refresh status and logs
+      await fetchStatus();
+      await fetchLogs(lastLogId);
+
+      return result.remaining > 0;
+    } catch (error) {
+      console.error("Processing error:", error);
+      return false;
+    }
+  }, [processSeo, processImages, fetchStatus, fetchLogs, lastLogId]);
+
+  // Start processing loop
+  const startProcessing = useCallback(async () => {
+    if (!processSeo && !processImages) {
+      alert("En az bir işlem türü seçmelisiniz!");
+      return;
     }
 
-    return () => {
-      if (pollIntervalRef.current) {
-        clearInterval(pollIntervalRef.current);
-      }
-    };
-  }, [seoProcessing, imageProcessing, fetchLogs, lastLogId]);
+    setIsProcessing(true);
+    processingRef.current = true;
+    setSessionStats({
+      productsProcessed: 0,
+      seoSuccess: 0,
+      seoFailed: 0,
+      imagesSuccess: 0,
+      imagesFailed: 0,
+    });
 
-  // SEO Processing
-  const startSeoProcessing = useCallback(async () => {
-    setSeoProcessing(true);
-    setProcessedCount((prev) => ({ ...prev, seo: 0 }));
-    setErrorCount((prev) => ({ ...prev, seo: 0 }));
-
-    const processNextBatch = async () => {
-      if (!seoProcessing) return;
-
-      try {
-        const response = await fetch("/api/process/seo", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ batchSize: 5, onlyPending: true }),
-        });
-
-        const result = await response.json();
-
-        if (result.success) {
-          // Add details to recent
-          if (result.details && result.details.length > 0) {
-            setRecentDetails((prev) => [...result.details, ...prev].slice(0, 50));
-          }
-
-          setProcessedCount((prev) => ({
-            ...prev,
-            seo: prev.seo + result.processed
-          }));
-          setErrorCount((prev) => ({
-            ...prev,
-            seo: prev.seo + result.failed
-          }));
-
-          // Refresh status
-          await fetchStatus();
-          await fetchLogs(lastLogId);
-
-          // Continue if there are more
-          if (result.remaining > 0) {
-            seoIntervalRef.current = setTimeout(processNextBatch, 1000);
-          } else {
-            setSeoProcessing(false);
-          }
-        } else {
-          console.error("SEO processing error:", result.error);
-          setSeoProcessing(false);
-        }
-      } catch (error) {
-        console.error("SEO network error:", error);
-        setSeoProcessing(false);
-      }
-    };
-
-    processNextBatch();
-  }, [fetchStatus, fetchLogs, lastLogId, seoProcessing]);
-
-  const stopSeoProcessing = useCallback(() => {
-    setSeoProcessing(false);
-    if (seoIntervalRef.current) {
-      clearTimeout(seoIntervalRef.current);
-    }
-  }, []);
-
-  // Image Processing
-  const startImageProcessing = useCallback(async () => {
-    setImageProcessing(true);
-    setProcessedCount((prev) => ({ ...prev, image: 0 }));
-    setErrorCount((prev) => ({ ...prev, image: 0 }));
-
-    const processNextBatch = async () => {
-      if (!imageProcessing) return;
-
-      try {
-        const response = await fetch("/api/process/images", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ batchSize: 20, enhanceWithAI: false }),
-        });
-
-        const result = await response.json();
-
-        if (result.success) {
-          // Add details to recent
-          if (result.details && result.details.length > 0) {
-            setRecentDetails((prev) => [...result.details, ...prev].slice(0, 50));
-          }
-
-          setProcessedCount((prev) => ({
-            ...prev,
-            image: prev.image + result.processed
-          }));
-          setErrorCount((prev) => ({
-            ...prev,
-            image: prev.image + result.failed
-          }));
-
-          // Refresh status
-          await fetchStatus();
-          await fetchLogs(lastLogId);
-
-          // Continue if there are more
-          if (result.remaining > 0) {
-            imageIntervalRef.current = setTimeout(processNextBatch, 500);
-          } else {
-            setImageProcessing(false);
-          }
-        } else {
-          console.error("Image processing error:", result.error);
-          setImageProcessing(false);
-        }
-      } catch (error) {
-        console.error("Image network error:", error);
-        setImageProcessing(false);
+    const processLoop = async () => {
+      const hasMore = await processNextProduct();
+      if (hasMore && processingRef.current) {
+        intervalRef.current = setTimeout(processLoop, 500);
+      } else {
+        setIsProcessing(false);
+        processingRef.current = false;
+        setCurrentProduct(null);
       }
     };
 
-    processNextBatch();
-  }, [fetchStatus, fetchLogs, lastLogId, imageProcessing]);
+    processLoop();
+  }, [processSeo, processImages, processNextProduct]);
 
-  const stopImageProcessing = useCallback(() => {
-    setImageProcessing(false);
-    if (imageIntervalRef.current) {
-      clearTimeout(imageIntervalRef.current);
+  // Stop processing
+  const stopProcessing = useCallback(() => {
+    setIsProcessing(false);
+    processingRef.current = false;
+    if (intervalRef.current) {
+      clearTimeout(intervalRef.current);
     }
+    setCurrentProduct(null);
   }, []);
 
   // Clear logs
@@ -270,7 +241,6 @@ export function LiveProcessingPanel() {
     try {
       await fetch("/api/process/logs", { method: "DELETE" });
       setLogs([]);
-      setRecentDetails([]);
       setLastLogId(0);
     } catch (error) {
       console.error("Clear logs error:", error);
@@ -280,9 +250,8 @@ export function LiveProcessingPanel() {
   // Cleanup on unmount
   useEffect(() => {
     return () => {
-      if (seoIntervalRef.current) clearTimeout(seoIntervalRef.current);
-      if (imageIntervalRef.current) clearTimeout(imageIntervalRef.current);
-      if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+      processingRef.current = false;
+      if (intervalRef.current) clearTimeout(intervalRef.current);
     };
   }, []);
 
@@ -294,20 +263,20 @@ export function LiveProcessingPanel() {
     );
   }
 
-  const isProcessing = seoProcessing || imageProcessing;
+  const canStart = (processSeo || processImages) && !isProcessing && status && (status.products.pending > 0 || status.seo.remaining > 0 || status.images.pending > 0);
 
   return (
     <div className="space-y-6">
-      {/* Header with status */}
+      {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="p-2 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600">
             <Zap className="w-6 h-6 text-white" />
           </div>
           <div>
-            <h2 className="text-xl font-bold">Toplu İşlem Merkezi</h2>
+            <h2 className="text-xl font-bold">Birleşik İşlem Merkezi</h2>
             <p className="text-xs text-zinc-500">
-              SEO optimizasyonu ve resim işleme
+              Ürün ürün SEO + Cloudinary işleme
             </p>
           </div>
         </div>
@@ -330,168 +299,195 @@ export function LiveProcessingPanel() {
         </div>
       </div>
 
-      {/* Processing Controls */}
-      <div className="grid gap-4 md:grid-cols-2">
-        {/* SEO Processing Card */}
-        <Card className="border-zinc-800 bg-zinc-900/50">
-          <CardHeader className="pb-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-purple-500/10">
-                  <Sparkles className="h-5 w-5 text-purple-400" />
+      {/* Main Control Card */}
+      <Card className="border-zinc-800 bg-zinc-900/50">
+        <CardHeader className="pb-4">
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-lg bg-emerald-500/10">
+              <Package className="h-5 w-5 text-emerald-400" />
+            </div>
+            <div>
+              <CardTitle className="text-base">Ürün İşleme</CardTitle>
+              <CardDescription className="text-xs">
+                Her ürün sırayla işlenir: SEO optimizasyonu + Resimler Cloudinary&apos;ye yüklenir
+              </CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+
+        <CardContent className="space-y-6">
+          {/* Processing Options */}
+          <div className="space-y-3">
+            <p className="text-sm font-medium text-zinc-300">İşlem Seçenekleri</p>
+            <div className="grid grid-cols-2 gap-3">
+              <label
+                className={`flex items-center gap-3 p-4 rounded-xl border cursor-pointer transition-all ${
+                  processSeo
+                    ? "bg-purple-500/10 border-purple-500/30"
+                    : "bg-zinc-800/50 border-zinc-700 hover:border-zinc-600"
+                }`}
+              >
+                <Checkbox
+                  checked={processSeo}
+                  onCheckedChange={(checked) => setProcessSeo(checked === true)}
+                  disabled={isProcessing}
+                />
+                <div className="flex items-center gap-2">
+                  <Sparkles className={`w-5 h-5 ${processSeo ? "text-purple-400" : "text-zinc-500"}`} />
+                  <div>
+                    <p className={`font-medium text-sm ${processSeo ? "text-purple-300" : "text-zinc-400"}`}>
+                      SEO Optimizasyonu
+                    </p>
+                    <p className="text-xs text-zinc-500">AI ile ürün adı düzenleme</p>
+                  </div>
                 </div>
-                <div>
-                  <CardTitle className="text-base">SEO Optimizasyonu</CardTitle>
-                  <CardDescription className="text-xs">
-                    AI ile ürün isimlerini optimize et
-                  </CardDescription>
+              </label>
+
+              <label
+                className={`flex items-center gap-3 p-4 rounded-xl border cursor-pointer transition-all ${
+                  processImages
+                    ? "bg-blue-500/10 border-blue-500/30"
+                    : "bg-zinc-800/50 border-zinc-700 hover:border-zinc-600"
+                }`}
+              >
+                <Checkbox
+                  checked={processImages}
+                  onCheckedChange={(checked) => setProcessImages(checked === true)}
+                  disabled={isProcessing}
+                />
+                <div className="flex items-center gap-2">
+                  <Cloud className={`w-5 h-5 ${processImages ? "text-blue-400" : "text-zinc-500"}`} />
+                  <div>
+                    <p className={`font-medium text-sm ${processImages ? "text-blue-300" : "text-zinc-400"}`}>
+                      Resim Yükleme
+                    </p>
+                    <p className="text-xs text-zinc-500">Cloudinary&apos;ye yükleme</p>
+                  </div>
                 </div>
+              </label>
+            </div>
+          </div>
+
+          <Separator className="bg-zinc-800" />
+
+          {/* Status Overview */}
+          {status && (
+            <div className="grid grid-cols-3 gap-4">
+              <div className="p-4 bg-zinc-800/50 rounded-xl">
+                <div className="flex items-center gap-2 mb-2">
+                  <Package className="w-4 h-4 text-emerald-400" />
+                  <span className="text-xs text-zinc-400">Ürünler</span>
+                </div>
+                <p className="text-2xl font-bold text-zinc-100">{status.products.pending}</p>
+                <p className="text-xs text-zinc-500">bekliyor / {status.products.total} toplam</p>
+                <Progress value={status.products.percentComplete} className="h-1 mt-2" />
+              </div>
+
+              <div className="p-4 bg-zinc-800/50 rounded-xl">
+                <div className="flex items-center gap-2 mb-2">
+                  <Sparkles className="w-4 h-4 text-purple-400" />
+                  <span className="text-xs text-zinc-400">SEO</span>
+                </div>
+                <p className="text-2xl font-bold text-zinc-100">{status.seo.remaining}</p>
+                <p className="text-xs text-zinc-500">kalan / {status.seo.optimized} tamamlandı</p>
+                <Progress value={status.seo.percentComplete} className="h-1 mt-2" />
+              </div>
+
+              <div className="p-4 bg-zinc-800/50 rounded-xl">
+                <div className="flex items-center gap-2 mb-2">
+                  <ImageIcon className="w-4 h-4 text-blue-400" />
+                  <span className="text-xs text-zinc-400">Resimler</span>
+                </div>
+                <p className="text-2xl font-bold text-zinc-100">{status.images.pending}</p>
+                <p className="text-xs text-zinc-500">bekliyor / {status.images.total} toplam</p>
+                <Progress value={status.images.percentComplete} className="h-1 mt-2" />
               </div>
             </div>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {seoStatus && (
-              <>
-                <div className="space-y-2">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-zinc-400">İlerleme</span>
-                    <span className="text-zinc-200">{seoStatus.percentComplete}%</span>
-                  </div>
-                  <Progress value={seoStatus.percentComplete} className="h-2" />
-                </div>
+          )}
 
-                <div className="grid grid-cols-3 gap-2 text-center">
-                  <div className="p-2 bg-zinc-800/50 rounded-lg">
-                    <p className="text-lg font-bold text-zinc-100">{seoStatus.total.toLocaleString()}</p>
-                    <p className="text-xs text-zinc-500">Toplam</p>
-                  </div>
-                  <div className="p-2 bg-emerald-500/10 rounded-lg">
-                    <p className="text-lg font-bold text-emerald-400">{(seoStatus.processed || 0).toLocaleString()}</p>
-                    <p className="text-xs text-zinc-500">İşlendi</p>
-                  </div>
-                  <div className="p-2 bg-amber-500/10 rounded-lg">
-                    <p className="text-lg font-bold text-amber-400">{seoStatus.pending.toLocaleString()}</p>
-                    <p className="text-xs text-zinc-500">Bekliyor</p>
-                  </div>
-                </div>
+          <Separator className="bg-zinc-800" />
 
-                {seoProcessing && (
-                  <div className="p-2 bg-purple-500/10 rounded-lg border border-purple-500/20">
-                    <div className="flex items-center gap-2 text-xs text-purple-300">
-                      <Loader2 className="w-3 h-3 animate-spin" />
-                      Bu oturumda: {processedCount.seo} başarılı, {errorCount.seo} hatalı
-                    </div>
+          {/* Current Processing */}
+          {currentProduct && (
+            <div className="p-4 bg-emerald-500/5 border border-emerald-500/20 rounded-xl">
+              <div className="flex items-center gap-2 mb-3">
+                <Loader2 className="w-4 h-4 text-emerald-400 animate-spin" />
+                <span className="text-sm font-medium text-emerald-400">Şu an işleniyor</span>
+              </div>
+              <div className="space-y-2">
+                <p className="text-sm font-mono text-zinc-300">{currentProduct.urunKodu}</p>
+                {currentProduct.seo && (
+                  <div className="flex items-center gap-2 text-xs">
+                    <Badge variant="outline" className="text-purple-400 border-purple-500/30">SEO</Badge>
+                    {currentProduct.seo.success ? (
+                      <span className="text-emerald-400 flex items-center gap-1">
+                        <CheckCircle2 className="w-3 h-3" />
+                        {currentProduct.seo.oldName} → {currentProduct.seo.newName}
+                      </span>
+                    ) : (
+                      <span className="text-red-400 flex items-center gap-1">
+                        <AlertCircle className="w-3 h-3" />
+                        {currentProduct.seo.error}
+                      </span>
+                    )}
                   </div>
                 )}
-
-                <div className="flex gap-2">
-                  {seoProcessing ? (
-                    <Button
-                      onClick={stopSeoProcessing}
-                      variant="outline"
-                      className="flex-1 border-red-500/50 text-red-400 hover:bg-red-500/10"
-                    >
-                      <Pause className="w-4 h-4 mr-2" />
-                      Durdur
-                    </Button>
-                  ) : (
-                    <Button
-                      onClick={startSeoProcessing}
-                      className="flex-1 bg-purple-600 hover:bg-purple-700"
-                      disabled={seoStatus.pending === 0 || imageProcessing}
-                    >
-                      <Play className="w-4 h-4 mr-2" />
-                      {seoStatus.pending === 0 ? "Tamamlandı" : "Başlat"}
-                    </Button>
-                  )}
-                </div>
-              </>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Image Processing Card */}
-        <Card className="border-zinc-800 bg-zinc-900/50">
-          <CardHeader className="pb-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-blue-500/10">
-                  <ImageIcon className="h-5 w-5 text-blue-400" />
-                </div>
-                <div>
-                  <CardTitle className="text-base">Resim İşleme</CardTitle>
-                  <CardDescription className="text-xs">
-                    Resimleri doğrula ve dosya adı oluştur
-                  </CardDescription>
-                </div>
+                {currentProduct.images.length > 0 && (
+                  <div className="flex items-center gap-2 text-xs">
+                    <Badge variant="outline" className="text-blue-400 border-blue-500/30">Resim</Badge>
+                    <span className="text-zinc-400">
+                      {currentProduct.images.filter(i => i.success).length} / {currentProduct.images.length} yüklendi
+                    </span>
+                  </div>
+                )}
               </div>
             </div>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {imageStatus && (
-              <>
-                <div className="space-y-2">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-zinc-400">İlerleme</span>
-                    <span className="text-zinc-200">{imageStatus.percentComplete}%</span>
-                  </div>
-                  <Progress value={imageStatus.percentComplete} className="h-2" />
-                </div>
+          )}
 
-                <div className="grid grid-cols-4 gap-2 text-center">
-                  <div className="p-2 bg-zinc-800/50 rounded-lg">
-                    <p className="text-lg font-bold text-zinc-100">{imageStatus.total.toLocaleString()}</p>
-                    <p className="text-xs text-zinc-500">Toplam</p>
-                  </div>
-                  <div className="p-2 bg-emerald-500/10 rounded-lg">
-                    <p className="text-lg font-bold text-emerald-400">{(imageStatus.done || 0).toLocaleString()}</p>
-                    <p className="text-xs text-zinc-500">Tamamlandı</p>
-                  </div>
-                  <div className="p-2 bg-amber-500/10 rounded-lg">
-                    <p className="text-lg font-bold text-amber-400">{imageStatus.pending.toLocaleString()}</p>
-                    <p className="text-xs text-zinc-500">Bekliyor</p>
-                  </div>
-                  <div className="p-2 bg-red-500/10 rounded-lg">
-                    <p className="text-lg font-bold text-red-400">{(imageStatus.error || 0).toLocaleString()}</p>
-                    <p className="text-xs text-zinc-500">Hatalı</p>
-                  </div>
-                </div>
+          {/* Session Stats */}
+          {sessionStats.productsProcessed > 0 && (
+            <div className="p-3 bg-zinc-800/50 rounded-lg">
+              <p className="text-xs text-zinc-400 mb-2">Bu Oturum</p>
+              <div className="flex items-center gap-4 text-xs">
+                <span className="text-zinc-300">
+                  <strong>{sessionStats.productsProcessed}</strong> ürün
+                </span>
+                <span className="text-purple-400">
+                  SEO: {sessionStats.seoSuccess} başarılı, {sessionStats.seoFailed} hatalı
+                </span>
+                <span className="text-blue-400">
+                  Resim: {sessionStats.imagesSuccess} başarılı, {sessionStats.imagesFailed} hatalı
+                </span>
+              </div>
+            </div>
+          )}
 
-                {imageProcessing && (
-                  <div className="p-2 bg-blue-500/10 rounded-lg border border-blue-500/20">
-                    <div className="flex items-center gap-2 text-xs text-blue-300">
-                      <Loader2 className="w-3 h-3 animate-spin" />
-                      Bu oturumda: {processedCount.image} başarılı, {errorCount.image} hatalı
-                    </div>
-                  </div>
-                )}
-
-                <div className="flex gap-2">
-                  {imageProcessing ? (
-                    <Button
-                      onClick={stopImageProcessing}
-                      variant="outline"
-                      className="flex-1 border-red-500/50 text-red-400 hover:bg-red-500/10"
-                    >
-                      <Pause className="w-4 h-4 mr-2" />
-                      Durdur
-                    </Button>
-                  ) : (
-                    <Button
-                      onClick={startImageProcessing}
-                      className="flex-1 bg-blue-600 hover:bg-blue-700"
-                      disabled={imageStatus.pending === 0 || seoProcessing}
-                    >
-                      <Play className="w-4 h-4 mr-2" />
-                      {imageStatus.pending === 0 ? "Tamamlandı" : "Başlat"}
-                    </Button>
-                  )}
-                </div>
-              </>
+          {/* Action Buttons */}
+          <div className="flex gap-3">
+            {isProcessing ? (
+              <Button
+                onClick={stopProcessing}
+                variant="outline"
+                className="flex-1 border-red-500/50 text-red-400 hover:bg-red-500/10"
+              >
+                <Pause className="w-4 h-4 mr-2" />
+                Durdur
+              </Button>
+            ) : (
+              <Button
+                onClick={startProcessing}
+                className="flex-1 bg-emerald-600 hover:bg-emerald-700"
+                disabled={!canStart}
+              >
+                <Play className="w-4 h-4 mr-2" />
+                {status && status.products.pending === 0 && status.seo.remaining === 0 && status.images.pending === 0
+                  ? "Tamamlandı"
+                  : "İşlemi Başlat"}
+              </Button>
             )}
-          </CardContent>
-        </Card>
-      </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Live Log Panel */}
       <Card className="border-zinc-800 bg-zinc-900/50">
@@ -504,7 +500,7 @@ export function LiveProcessingPanel() {
               <div>
                 <CardTitle className="text-base">Canlı İşlem Logları</CardTitle>
                 <CardDescription className="text-xs">
-                  Her işlenen ürünün detayları anlık olarak görüntülenir
+                  Her işlenen ürünün detayları
                 </CardDescription>
               </div>
             </div>
@@ -525,7 +521,7 @@ export function LiveProcessingPanel() {
           </div>
         </CardHeader>
         <CardContent>
-          <ScrollArea className="h-[400px] rounded-lg border border-zinc-800 bg-zinc-950/50 p-4" ref={scrollRef}>
+          <ScrollArea className="h-[350px] rounded-lg border border-zinc-800 bg-zinc-950/50 p-4" ref={scrollRef}>
             {logs.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full text-zinc-500">
                 <Clock className="w-8 h-8 mb-2" />
@@ -569,21 +565,7 @@ export function LiveProcessingPanel() {
                           </span>
                         </div>
 
-                        {/* SEO Transformation Display */}
-                        {log.islemTipi === "seo" && log.eskiAdi && log.yeniAdi && (
-                          <div className="flex items-center gap-2 text-sm flex-wrap">
-                            <span className="text-zinc-500 line-through truncate max-w-[200px]">
-                              {log.eskiAdi}
-                            </span>
-                            <ArrowRight className="h-3 w-3 text-emerald-400 shrink-0" />
-                            <span className="text-emerald-300 truncate max-w-[200px]">
-                              {log.yeniAdi}
-                            </span>
-                          </div>
-                        )}
-
-                        {/* Message for non-transformation logs */}
-                        {log.mesaj && !(log.islemTipi === "seo" && log.eskiAdi && log.yeniAdi) && (
+                        {log.mesaj && (
                           <p className="text-xs text-zinc-400 truncate">
                             {log.mesaj}
                           </p>
@@ -598,104 +580,19 @@ export function LiveProcessingPanel() {
         </CardContent>
       </Card>
 
-      {/* Recent Details Panel */}
-      {recentDetails.length > 0 && (
-        <Card className="border-zinc-800 bg-zinc-900/50">
-          <CardHeader className="pb-3">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-amber-500/10">
-                <Zap className="h-5 w-5 text-amber-400" />
-              </div>
-              <div>
-                <CardTitle className="text-base">Son İşlenen Ürünler</CardTitle>
-                <CardDescription className="text-xs">
-                  Bu oturumda işlenen ürünlerin detayları
-                </CardDescription>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="grid gap-2 max-h-[300px] overflow-y-auto">
-              {recentDetails.slice(0, 20).map((detail, index) => (
-                <div
-                  key={`${detail.urunKodu}-${index}`}
-                  className={`p-3 rounded-lg border ${
-                    detail.success
-                      ? "bg-zinc-800/30 border-zinc-700/50"
-                      : "bg-red-500/5 border-red-500/20"
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-mono text-zinc-400">
-                      {detail.urunKodu}
-                    </span>
-                    {detail.success ? (
-                      <CheckCircle2 className="h-3 w-3 text-emerald-400" />
-                    ) : (
-                      <AlertCircle className="h-3 w-3 text-red-400" />
-                    )}
-                  </div>
-
-                  {detail.eskiAdi && detail.yeniAdi && (
-                    <div className="mt-2 flex items-center gap-2 text-sm">
-                      <span className="text-zinc-500 truncate max-w-[150px]">
-                        {detail.eskiAdi}
-                      </span>
-                      <ArrowRight className="h-3 w-3 text-emerald-400 shrink-0" />
-                      <span className="text-emerald-300 truncate max-w-[150px]">
-                        {detail.yeniAdi}
-                      </span>
-                    </div>
-                  )}
-
-                  {detail.yeniDosyaAdi && (
-                    <p className="mt-1 text-xs text-blue-300 truncate">
-                      {detail.yeniDosyaAdi}
-                    </p>
-                  )}
-
-                  {detail.error && (
-                    <p className="mt-1 text-xs text-red-400">
-                      {detail.error}
-                    </p>
-                  )}
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Cost Estimation */}
-      {seoStatus && seoStatus.pending > 0 && (
-        <div className="p-4 bg-zinc-800/50 border border-zinc-700 rounded-xl">
-          <h3 className="text-sm font-medium text-zinc-300 mb-2">Tahmini Maliyet</h3>
-          <div className="grid grid-cols-2 gap-4 text-sm">
-            <div>
-              <span className="text-zinc-500">SEO Optimizasyonu:</span>
-              <span className="text-zinc-200 ml-2">
-                ~${((seoStatus.pending / 5) * 0.01).toFixed(2)}
-                <span className="text-zinc-500 text-xs ml-1">({seoStatus.pending.toLocaleString()} ürün)</span>
-              </span>
-            </div>
-            <div>
-              <span className="text-zinc-500">Resim İşleme:</span>
-              <span className="text-emerald-400 ml-2">Ücretsiz</span>
-              <span className="text-zinc-500 text-xs ml-1">(AI iyileştirme kapalı)</span>
-            </div>
-          </div>
-          <Separator className="my-3" />
-          <div className="text-xs text-zinc-500">
-            <strong className="text-zinc-400">Not:</strong> SEO için GPT-4o-mini kullanılıyor.
-            Her 5 ürün için yaklaşık $0.01 maliyet oluşur.
-            {seoStatus.pending > 1000 && (
-              <span className="text-amber-400 ml-1">
-                15000 ürün için toplam maliyet: ~$30
-              </span>
-            )}
-          </div>
+      {/* Info Box */}
+      <div className="p-4 bg-zinc-800/50 border border-zinc-700 rounded-xl">
+        <h3 className="text-sm font-medium text-zinc-300 mb-2">Nasıl Çalışır?</h3>
+        <div className="space-y-2 text-xs text-zinc-500">
+          <p>1. <strong>SEO Optimizasyonu:</strong> OpenAI GPT-4o-mini ile ürün adları SEO&apos;ya uygun hale getirilir</p>
+          <p>2. <strong>Resim Yükleme:</strong> Ürün resimleri Cloudinary&apos;ye yüklenir ve URL&apos;ler kaydedilir</p>
+          <p>3. Her ürün sırayla işlenir - önce SEO, sonra resimler</p>
         </div>
-      )}
+        <Separator className="my-3 bg-zinc-700" />
+        <div className="text-xs text-zinc-500">
+          <strong className="text-zinc-400">Ayarlar:</strong> Cloudinary ve OpenAI API bilgilerini &quot;Ayarlar&quot; sayfasından yapılandırın.
+        </div>
+      </div>
     </div>
   );
 }
