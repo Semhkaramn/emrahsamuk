@@ -18,11 +18,14 @@ export async function GET(request: NextRequest) {
     const where: Record<string, unknown> = {};
 
     if (search) {
+      // Eğer sayısal ise urunId olarak da ara
+      const searchNum = Number(search);
       where.OR = [
         { urunKodu: { contains: search, mode: "insensitive" } },
         { eskiAdi: { contains: search, mode: "insensitive" } },
         { yeniAdi: { contains: search, mode: "insensitive" } },
         { marka: { contains: search, mode: "insensitive" } },
+        ...(isNaN(searchNum) ? [] : [{ urunId: searchNum }]),
       ];
     }
 
@@ -45,7 +48,7 @@ export async function GET(request: NextRequest) {
         where,
         skip,
         take: limit,
-        orderBy: { createdAt: "desc" },
+        orderBy: { urunId: "asc" },
         include: {
           prices: true,
           categories: true,
@@ -102,28 +105,29 @@ export async function POST(request: NextRequest) {
       seo,
     } = body;
 
-    if (!urunKodu) {
+    // urunId zorunlu
+    if (!urunId) {
       return NextResponse.json(
-        { success: false, error: "Ürün kodu zorunludur" },
+        { success: false, error: "Ürün ID zorunludur" },
         { status: 400 }
       );
     }
 
-    // Check if product exists
+    // Check if product exists by urunId
     const existingProduct = await prisma.product.findUnique({
-      where: { urunKodu },
+      where: { urunId: Number(urunId) },
     });
 
     if (existingProduct) {
       return NextResponse.json(
-        { success: false, error: "Bu ürün kodu zaten mevcut" },
+        { success: false, error: "Bu ürün ID zaten mevcut" },
         { status: 400 }
       );
     }
 
     const product = await prisma.product.create({
       data: {
-        urunId,
+        urunId: Number(urunId),
         urunKodu,
         barkod,
         eskiAdi,
@@ -138,40 +142,7 @@ export async function POST(request: NextRequest) {
         stok,
         sira,
         kategoriId,
-        prices: prices
-          ? {
-              create: {
-                ...prices,
-                urunKodu,
-              },
-            }
-          : undefined,
-        categories: categories
-          ? {
-              create: {
-                ...categories,
-                urunKodu,
-              },
-            }
-          : undefined,
-        images: images
-          ? {
-              createMany: {
-                data: images.map((img: { sira: number; eskiUrl: string }) => ({
-                  ...img,
-                  urunKodu,
-                })),
-              },
-            }
-          : undefined,
-        seo: seo
-          ? {
-              create: {
-                ...seo,
-                urunKodu,
-              },
-            }
-          : undefined,
+        uploadedAt: new Date(),
       },
       include: {
         prices: true,
@@ -181,17 +152,58 @@ export async function POST(request: NextRequest) {
       },
     });
 
+    // Create related records if provided
+    if (prices) {
+      await prisma.productPrice.create({
+        data: { urunId: product.urunId, ...prices },
+      });
+    }
+
+    if (categories) {
+      await prisma.productCategory.create({
+        data: { urunId: product.urunId, ...categories },
+      });
+    }
+
+    if (images && Array.isArray(images)) {
+      await prisma.productImage.createMany({
+        data: images.map((img: { sira: number; eskiUrl: string }) => ({
+          urunId: product.urunId,
+          sira: img.sira,
+          eskiUrl: img.eskiUrl,
+          status: "pending",
+        })),
+      });
+    }
+
+    if (seo) {
+      await prisma.productSeo.create({
+        data: { urunId: product.urunId, ...seo },
+      });
+    }
+
     // Log the action
     await prisma.processingLog.create({
       data: {
-        urunKodu,
+        urunId: product.urunId,
         islemTipi: "create",
         durum: "success",
-        mesaj: `Ürün oluşturuldu: ${urunKodu}`,
+        mesaj: `Ürün oluşturuldu: ${product.urunId}`,
       },
     });
 
-    return NextResponse.json({ success: true, data: product });
+    // Fetch the complete product with relations
+    const completeProduct = await prisma.product.findUnique({
+      where: { urunId: product.urunId },
+      include: {
+        prices: true,
+        categories: true,
+        images: true,
+        seo: true,
+      },
+    });
+
+    return NextResponse.json({ success: true, data: completeProduct });
   } catch (error) {
     console.error("Products POST error:", error);
     return NextResponse.json(
@@ -218,20 +230,32 @@ export async function PUT(request: NextRequest) {
 
     for (const product of products) {
       try {
+        if (!product.urunId) {
+          results.push({
+            urunId: null,
+            success: false,
+            error: "urunId zorunlu",
+          });
+          continue;
+        }
+
         const updated = await prisma.product.upsert({
-          where: { urunKodu: product.urunKodu },
+          where: { urunId: Number(product.urunId) },
           update: {
             ...product,
+            urunId: Number(product.urunId),
             updatedAt: new Date(),
           },
           create: {
             ...product,
+            urunId: Number(product.urunId),
+            uploadedAt: new Date(),
           },
         });
-        results.push({ urunKodu: product.urunKodu, success: true, data: updated });
+        results.push({ urunId: product.urunId, success: true, data: updated });
       } catch (err) {
         results.push({
-          urunKodu: product.urunKodu,
+          urunId: product.urunId,
           success: false,
           error: err instanceof Error ? err.message : "Unknown error",
         });
@@ -252,19 +276,19 @@ export async function PUT(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
   try {
     const body = await request.json();
-    const { urunKodlari } = body;
+    const { urunIdler } = body;
 
-    if (!urunKodlari || !Array.isArray(urunKodlari)) {
+    if (!urunIdler || !Array.isArray(urunIdler)) {
       return NextResponse.json(
-        { success: false, error: "Ürün kodu listesi gerekli" },
+        { success: false, error: "Ürün ID listesi gerekli" },
         { status: 400 }
       );
     }
 
     const result = await prisma.product.deleteMany({
       where: {
-        urunKodu: {
-          in: urunKodlari,
+        urunId: {
+          in: urunIdler.map(Number),
         },
       },
     });
