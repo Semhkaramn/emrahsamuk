@@ -186,9 +186,9 @@ export function ProductDataGrid({ onProductSelect, onProductEdit }: ProductDataG
             />
           </div>
           <Select
-            value={durum}
+            value={durum || "all"}
             onValueChange={(value) => {
-              setDurum(value);
+              setDurum(value === "all" ? "" : value);
               setPage(1);
             }}
           >
@@ -196,15 +196,15 @@ export function ProductDataGrid({ onProductSelect, onProductEdit }: ProductDataG
               <SelectValue placeholder="Tüm Durumlar" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">Tüm Durumlar</SelectItem>
+              <SelectItem value="all">Tüm Durumlar</SelectItem>
               <SelectItem value="AKTIF">Aktif</SelectItem>
               <SelectItem value="PASIF">Pasif</SelectItem>
             </SelectContent>
           </Select>
           <Select
-            value={processingStatus}
+            value={processingStatus || "all"}
             onValueChange={(value) => {
-              setProcessingStatus(value);
+              setProcessingStatus(value === "all" ? "" : value);
               setPage(1);
             }}
           >
@@ -212,7 +212,7 @@ export function ProductDataGrid({ onProductSelect, onProductEdit }: ProductDataG
               <SelectValue placeholder="Tüm İşlem Durumları" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">Tüm İşlem Durumları</SelectItem>
+              <SelectItem value="all">Tüm İşlem Durumları</SelectItem>
               <SelectItem value="pending">Bekliyor</SelectItem>
               <SelectItem value="processing">İşleniyor</SelectItem>
               <SelectItem value="done">Tamamlandı</SelectItem>
