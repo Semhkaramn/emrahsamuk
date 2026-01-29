@@ -104,7 +104,7 @@ export async function POST(request: NextRequest) {
         categories: true,
         images: {
           orderBy: { sira: "asc" },
-          take: 4,
+          take: 1,
         },
       },
     });
