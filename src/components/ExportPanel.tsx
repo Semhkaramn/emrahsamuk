@@ -29,7 +29,7 @@ import {
   AlertCircle,
 } from "lucide-react";
 
-type ExportType = "pcden" | "full" | "urunbilgisi" | "urunkategori";
+type ExportType = "urunresimleriurl" | "urunbilgisi" | "urunkategori";
 type FilterType = "all" | "processed" | "unprocessed" | "recentUpload" | "dateRange";
 
 interface ExportState {
@@ -43,8 +43,7 @@ export function ExportPanel() {
   const [sinceDate, setSinceDate] = useState<string>("");
   const [untilDate, setUntilDate] = useState<string>("");
   const [exportStates, setExportStates] = useState<Record<ExportType, ExportState>>({
-    pcden: { loading: false, success: false, error: null },
-    full: { loading: false, success: false, error: null },
+    urunresimleriurl: { loading: false, success: false, error: null },
     urunbilgisi: { loading: false, success: false, error: null },
     urunkategori: { loading: false, success: false, error: null },
   });
@@ -72,8 +71,7 @@ export function ExportPanel() {
     try {
       const queryString = buildQueryString();
       const endpoints: Record<ExportType, string> = {
-        pcden: `/api/export/urunresimleripcden?${queryString}`,
-        full: `/api/export/full?${queryString}`,
+        urunresimleriurl: `/api/export/urunresimleripcden?${queryString}`,
         urunbilgisi: `/api/export/urunbilgisi?${queryString}`,
         urunkategori: `/api/export/urunkategori?${queryString}`,
       };
@@ -81,8 +79,7 @@ export function ExportPanel() {
       const filterLabel = filterType === "all" ? "" : `_${filterType}`;
       const dateStr = new Date().toISOString().split("T")[0];
       const filenames: Record<ExportType, string> = {
-        pcden: `urunresimleripcden${filterLabel}_${dateStr}.xlsx`,
-        full: `urun-export-full${filterLabel}_${dateStr}.xlsx`,
+        urunresimleriurl: `urunresimleriurl${filterLabel}_${dateStr}.xlsx`,
         urunbilgisi: `urunbilgisi${filterLabel}_${dateStr}.xlsx`,
         urunkategori: `urunkategori${filterLabel}_${dateStr}.xlsx`,
       };
@@ -338,8 +335,8 @@ export function ExportPanel() {
           </CardHeader>
           <CardContent>
             <p className="text-sm text-zinc-400 mb-4">
-              Orijinal ve AI tarafından belirlenen kategoriler.
-              Önerilen kategori sütunları dahil.
+              Yeni kategori varsa onu, yoksa eski kategoriyi kullanır.
+              Tutarlı kategori yapısı sağlar.
             </p>
             <ExportButton type="urunkategori">
               <FileSpreadsheet className="w-4 h-4 mr-2" />
@@ -348,7 +345,7 @@ export function ExportPanel() {
           </CardContent>
         </Card>
 
-        {/* PC'den Format Export */}
+        {/* Ürün Resimleri URL Export */}
         <Card className="border-zinc-800 bg-zinc-900/50">
           <CardHeader>
             <div className="flex items-center gap-3">
@@ -356,48 +353,21 @@ export function ExportPanel() {
                 <ImageIcon className="h-5 w-5 text-blue-400" />
               </div>
               <div>
-                <CardTitle className="text-base">Resim Dosya Adları</CardTitle>
+                <CardTitle className="text-base">Ürün Resimleri URL</CardTitle>
                 <CardDescription className="text-xs">
-                  urunresimleripcden.xlsx formatı
+                  urunresimleriurl.xlsx formatı
                 </CardDescription>
               </div>
             </div>
           </CardHeader>
           <CardContent>
             <p className="text-sm text-zinc-400 mb-4">
-              URUNID, URUNKODU, ADI, RESIM1-16 ve işlem tarihi.
-              PC&apos;ye indirilen resimlerle eşleşir.
+              URUNID, URUNKODU, ADI ve RESIM1-16 URL&apos;leri.
+              Yeni URL varsa onu, yoksa eskisini kullanır.
             </p>
-            <ExportButton type="pcden">
+            <ExportButton type="urunresimleriurl">
               <FileSpreadsheet className="w-4 h-4 mr-2" />
-              urunresimleripcden.xlsx İndir
-            </ExportButton>
-          </CardContent>
-        </Card>
-
-        {/* Full Export */}
-        <Card className="border-zinc-800 bg-zinc-900/50">
-          <CardHeader>
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-amber-500/10">
-                <Sparkles className="h-5 w-5 text-amber-400" />
-              </div>
-              <div>
-                <CardTitle className="text-base">Tam Veri Export</CardTitle>
-                <CardDescription className="text-xs">
-                  Tüm bilgiler + SEO + Kategoriler
-                </CardDescription>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-zinc-400 mb-4">
-              Tüm ürün bilgileri, SEO, kategoriler ve fiyatlar.
-              Birden fazla sayfa içerir.
-            </p>
-            <ExportButton type="full">
-              <FileSpreadsheet className="w-4 h-4 mr-2" />
-              Tam Export İndir
+              urunresimleriurl.xlsx İndir
             </ExportButton>
           </CardContent>
         </Card>
@@ -419,19 +389,15 @@ export function ExportPanel() {
             </p>
             <p className="flex items-start gap-2">
               <span className="text-purple-400">*</span>
-              <span>Kategoriler AI tarafından belirlenen önerilerle birlikte gelir.</span>
+              <span>Kategoriler: Yeni kategori varsa onu, yoksa eski kategoriyi kullanır.</span>
             </p>
             <p className="flex items-start gap-2">
               <span className="text-blue-400">*</span>
-              <span>Resimler Cloudinary üzerinden işlenip saklanır.</span>
+              <span>Resimler: Yeni URL varsa (Cloudinary), yoksa eski URL kullanılır.</span>
             </p>
             <p className="flex items-start gap-2">
               <span className="text-amber-400">*</span>
-              <span>İşlem tarihi ve yükleme tarihi Excel dosyalarında yer alır.</span>
-            </p>
-            <p className="flex items-start gap-2">
-              <span className="text-teal-400">*</span>
-              <span>Filtreleme ile sadece belirli ürünleri indirebilirsiniz.</span>
+              <span>Tüm dosyalar yüklediğiniz formatla aynı yapıda indirilir.</span>
             </p>
           </div>
         </CardContent>
