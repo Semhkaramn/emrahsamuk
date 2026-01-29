@@ -105,6 +105,7 @@ model ProductPrice {
 model ProductCategory {
   id            Int     @id @default(autoincrement())
   urunId        Int     @unique @map("urun_id")
+  // Eski (Orijinal) Kategoriler
   anaKategori   String? @map("ana_kategori") @db.VarChar(100)
   altKategori1  String? @map("alt_kategori_1") @db.VarChar(100)
   altKategori2  String? @map("alt_kategori_2") @db.VarChar(100)
@@ -115,13 +116,32 @@ model ProductCategory {
   altKategori7  String? @map("alt_kategori_7") @db.VarChar(100)
   altKategori8  String? @map("alt_kategori_8") @db.VarChar(100)
   altKategori9  String? @map("alt_kategori_9") @db.VarChar(100)
+
+  // Yeni (AI ile belirlenen) Kategoriler
+  yeniAnaKategori   String? @map("yeni_ana_kategori") @db.VarChar(100)
+  yeniAltKategori1  String? @map("yeni_alt_kategori_1") @db.VarChar(100)
+  yeniAltKategori2  String? @map("yeni_alt_kategori_2") @db.VarChar(100)
+  yeniAltKategori3  String? @map("yeni_alt_kategori_3") @db.VarChar(100)
+  yeniAltKategori4  String? @map("yeni_alt_kategori_4") @db.VarChar(100)
+  yeniAltKategori5  String? @map("yeni_alt_kategori_5") @db.VarChar(100)
+  yeniAltKategori6  String? @map("yeni_alt_kategori_6") @db.VarChar(100)
+  yeniAltKategori7  String? @map("yeni_alt_kategori_7") @db.VarChar(100)
+  yeniAltKategori8  String? @map("yeni_alt_kategori_8") @db.VarChar(100)
+  yeniAltKategori9  String? @map("yeni_alt_kategori_9") @db.VarChar(100)
+
+  // AI ham kategori çıktısı (loglama için)
   aiKategori    String? @map("ai_kategori") @db.VarChar(255)
+  // Kategori işleme durumu
+  processingStatus String? @default("pending") @map("processing_status") @db.VarChar(20)
+  processedAt   DateTime? @map("processed_at")
 
   // İlişki
   product Product @relation(fields: [urunId], references: [urunId], onDelete: Cascade)
 
   @@index([urunId])
   @@index([anaKategori])
+  @@index([yeniAnaKategori])
+  @@index([processingStatus])
   @@map("product_categories")
 }
 
