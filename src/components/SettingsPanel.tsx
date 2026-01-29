@@ -20,7 +20,8 @@ export function SettingsPanel({ disabled }: SettingsPanelProps) {
     cloudinaryApiSecret: "",
     cloudinaryFolder: "urunler",
   });
-  const [showApiKey, setShowApiKey] = useState(false);
+  const [showOpenAIKey, setShowOpenAIKey] = useState(false);
+  const [showCloudinarySecret, setShowCloudinarySecret] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -139,7 +140,7 @@ export function SettingsPanel({ disabled }: SettingsPanelProps) {
         </label>
         <div className="relative">
           <input
-            type={showApiKey ? "text" : "password"}
+            type={showOpenAIKey ? "text" : "password"}
             value={settings.openaiApiKey}
             onChange={(e) => handleSettingsChange({ ...settings, openaiApiKey: e.target.value })}
             disabled={disabled}
@@ -148,10 +149,10 @@ export function SettingsPanel({ disabled }: SettingsPanelProps) {
           />
           <button
             type="button"
-            onClick={() => setShowApiKey(!showApiKey)}
+            onClick={() => setShowOpenAIKey(!showOpenAIKey)}
             className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300"
           >
-            {showApiKey ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+            {showOpenAIKey ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
           </button>
         </div>
         <p className="text-xs text-zinc-500 mt-1">
@@ -248,7 +249,7 @@ export function SettingsPanel({ disabled }: SettingsPanelProps) {
             <label className="text-xs font-medium text-zinc-400 mb-1 block">API Secret</label>
             <div className="relative">
               <input
-                type={showApiKey ? "text" : "password"}
+                type={showCloudinarySecret ? "text" : "password"}
                 value={settings.cloudinaryApiSecret}
                 onChange={(e) => handleSettingsChange({ ...settings, cloudinaryApiSecret: e.target.value })}
                 disabled={disabled}
@@ -257,10 +258,10 @@ export function SettingsPanel({ disabled }: SettingsPanelProps) {
               />
               <button
                 type="button"
-                onClick={() => setShowApiKey(!showApiKey)}
+                onClick={() => setShowCloudinarySecret(!showCloudinarySecret)}
                 className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300"
               >
-                {showApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                {showCloudinarySecret ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
             </div>
           </div>
