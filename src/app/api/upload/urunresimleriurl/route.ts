@@ -1,9 +1,10 @@
 import { NextRequest } from "next/server";
 import prisma from "@/lib/db";
 import * as XLSX from "xlsx";
+import type { Prisma } from "@prisma/client";
 
-// Route segment config - timeout ve body size ayarları
-export const maxDuration = 300; // 5 dakika timeout
+// Route segment config
+export const maxDuration = 300;
 export const dynamic = 'force-dynamic';
 
 interface UrunResimRow {
@@ -29,8 +30,18 @@ interface UrunResimRow {
   RESIM16?: string;
 }
 
-// Batch işleme boyutu
-const BATCH_SIZE = 200; // Resimler için daha küçük batch boyutu (çok resim olabileceğinden)
+// Optimize edilmiş batch boyutu
+const BATCH_SIZE = 100; // Resimler için daha küçük (her satırda 16 resim olabilir)
+const PARALLEL_LIMIT = 20;
+
+// Yardımcı: Diziyi chunk'lara böl
+function chunkArray<T>(array: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let i = 0; i < array.length; i += size) {
+    chunks.push(array.slice(i, i + size));
+  }
+  return chunks;
+}
 
 export async function POST(request: NextRequest) {
   const encoder = new TextEncoder();
@@ -61,6 +72,7 @@ export async function POST(request: NextRequest) {
 
         const total = data.length;
         let productsProcessed = 0;
+        let imagesCreated = 0;
         let imagesUpdated = 0;
         let skipped = 0;
         let failed = 0;
@@ -73,10 +85,8 @@ export async function POST(request: NextRequest) {
           message: `${total} ürün bulundu, resim URL'leri işleniyor...`
         });
 
-        // Önce tüm mevcut ürünleri bir seferde al (performans için)
-        const allUrunIds = data
-          .filter(row => row.URUNID)
-          .map(row => Number(row.URUNID));
+        // Mevcut verileri al
+        const allUrunIds = data.filter(row => row.URUNID).map(row => Number(row.URUNID));
 
         const existingProducts = await prisma.product.findMany({
           where: { urunId: { in: allUrunIds } },
@@ -84,9 +94,16 @@ export async function POST(request: NextRequest) {
         });
         const existingUrunIdSet = new Set(existingProducts.map(p => p.urunId));
 
+        // Mevcut resimleri al
+        const existingImages = await prisma.productImage.findMany({
+          where: { urunId: { in: allUrunIds } },
+          select: { urunId: true, sira: true }
+        });
+        const existingImageSet = new Set(existingImages.map(i => `${i.urunId}-${i.sira}`));
+
         sendProgress({
           type: 'status',
-          message: `${existingUrunIdSet.size} mevcut ürün bulundu`
+          message: `${existingUrunIdSet.size} mevcut ürün, ${existingImages.length} mevcut resim bulundu`
         });
 
         // Batch işleme
@@ -94,8 +111,8 @@ export async function POST(request: NextRequest) {
           const batchEnd = Math.min(batchStart + BATCH_SIZE, data.length);
           const batch = data.slice(batchStart, batchEnd);
 
-          // Bu batch için tüm resim işlemlerini topla
-          const imageOperations: { urunId: number; sira: number; url: string }[] = [];
+          const imagesToCreate: Prisma.ProductImageCreateManyInput[] = [];
+          const imagesToUpdate: { urunId: number; sira: number; url: string }[] = [];
           let batchProductsProcessed = 0;
           let batchSkipped = 0;
           let batchFailed = 0;
@@ -115,19 +132,28 @@ export async function POST(request: NextRequest) {
             try {
               const urunId = Number(row.URUNID);
 
-              // Ürün var mı kontrol et (cache'den)
               if (!existingUrunIdSet.has(urunId)) {
                 batchSkipped++;
                 continue;
               }
 
-              // Extract all image URLs (RESIM1-16)
               let hasImages = false;
               for (let j = 1; j <= 16; j++) {
                 const key = `RESIM${j}` as keyof UrunResimRow;
                 const url = row[key];
                 if (url && typeof url === "string" && url.trim()) {
-                  imageOperations.push({ urunId, sira: j, url: url.trim() });
+                  const imageKey = `${urunId}-${j}`;
+                  if (existingImageSet.has(imageKey)) {
+                    imagesToUpdate.push({ urunId, sira: j, url: url.trim() });
+                  } else {
+                    imagesToCreate.push({
+                      urunId,
+                      sira: j,
+                      eskiUrl: url.trim(),
+                      status: "pending",
+                    });
+                    existingImageSet.add(imageKey);
+                  }
                   hasImages = true;
                 }
               }
@@ -148,51 +174,42 @@ export async function POST(request: NextRequest) {
             }
           }
 
-          // Transaction ile resim işlemlerini yap
-          if (imageOperations.length > 0) {
-            try {
-              await prisma.$transaction(async (tx) => {
-                // Paralel upsert işlemleri
-                const upsertPromises = imageOperations.map(({ urunId, sira, url }) =>
-                  tx.productImage.upsert({
-                    where: {
-                      urunId_sira: { urunId, sira },
-                    },
-                    update: {
-                      eskiUrl: url,
-                      status: "pending",
-                    },
-                    create: {
-                      urunId,
-                      sira,
-                      eskiUrl: url,
-                      status: "pending",
-                    },
-                  }).catch((err) => {
-                    console.error(`Image upsert error for urunId ${urunId}, sira ${sira}:`, err);
-                    return null;
-                  })
-                );
-                await Promise.all(upsertPromises);
-              }, {
-                timeout: 120000, // 2 dakika - çok resim olabileceğinden
+          // Veritabanı işlemleri
+          try {
+            // 1. Yeni resimleri toplu ekle (TEK SORGU)
+            if (imagesToCreate.length > 0) {
+              await prisma.productImage.createMany({
+                data: imagesToCreate,
+                skipDuplicates: true,
               });
+              imagesCreated += imagesToCreate.length;
+            }
 
-              imagesUpdated += imageOperations.length;
-            } catch (txError) {
-              console.error("Transaction error:", txError);
-              // Fallback: tek tek işle
-              for (const { urunId, sira, url } of imageOperations) {
-                try {
-                  await prisma.productImage.upsert({
-                    where: { urunId_sira: { urunId, sira } },
-                    update: { eskiUrl: url, status: "pending" },
-                    create: { urunId, sira, eskiUrl: url, status: "pending" },
-                  });
-                  imagesUpdated++;
-                } catch {
-                  // Skip failed image
-                }
+            // 2. Mevcut resimleri güncelle - sınırlı paralel
+            if (imagesToUpdate.length > 0) {
+              const updateChunks = chunkArray(imagesToUpdate, PARALLEL_LIMIT);
+              for (const chunk of updateChunks) {
+                await Promise.all(
+                  chunk.map(({ urunId, sira, url }) =>
+                    prisma.productImage.update({
+                      where: { urunId_sira: { urunId, sira } },
+                      data: { eskiUrl: url, status: "pending" },
+                    }).catch(() => null)
+                  )
+                );
+              }
+              imagesUpdated += imagesToUpdate.length;
+            }
+
+          } catch (batchError) {
+            console.error("Batch error:", batchError);
+            // Fallback: tek tek işle
+            for (const image of imagesToCreate) {
+              try {
+                await prisma.productImage.create({ data: image });
+                imagesCreated++;
+              } catch {
+                // Skip
               }
             }
           }
@@ -209,6 +226,7 @@ export async function POST(request: NextRequest) {
             total,
             percent,
             productsProcessed,
+            imagesCreated,
             imagesUpdated,
             skipped,
             failed,
@@ -216,17 +234,17 @@ export async function POST(request: NextRequest) {
           });
         }
 
-        // Log the upload
+        // Log
         try {
           await prisma.processingLog.create({
             data: {
               islemTipi: "upload",
               durum: failed > 0 ? "partial" : "success",
-              mesaj: `ürünresimleriurl.xlsx yüklendi. Ürün: ${productsProcessed}, Resim: ${imagesUpdated}, Atlanan: ${skipped}`,
+              mesaj: `ürünresimleriurl.xlsx yüklendi. Ürün: ${productsProcessed}, Yeni Resim: ${imagesCreated}, Güncellenen: ${imagesUpdated}, Atlanan: ${skipped}`,
             },
           });
         } catch (logErr) {
-          console.error("Log create error:", logErr);
+          console.error("Log error:", logErr);
         }
 
         sendProgress({
@@ -236,7 +254,7 @@ export async function POST(request: NextRequest) {
           stats: {
             total,
             productsProcessed,
-            imagesCreated: 0,
+            imagesCreated,
             imagesUpdated,
             skipped,
             failed,
@@ -246,7 +264,7 @@ export async function POST(request: NextRequest) {
 
         controller.close();
       } catch (error) {
-        console.error("Upload urunresimleriurl error:", error);
+        console.error("Upload error:", error);
         sendProgress({
           type: 'error',
           message: error instanceof Error ? error.message : "Dosya işlenirken hata oluştu"
