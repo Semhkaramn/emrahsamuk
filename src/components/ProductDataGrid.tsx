@@ -12,7 +12,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Search,
   ChevronLeft,
@@ -27,7 +26,6 @@ import {
   BarChart3,
   FolderTree,
   FileText,
-  X,
 } from "lucide-react";
 
 interface ProductImage {
@@ -68,39 +66,59 @@ interface ProductDataGridProps {
 // Büyük resim önizleme componenti
 function ImagePreview({
   imageUrl,
-  position,
-  onClose,
+  thumbRect,
 }: {
   imageUrl: string | null;
-  position: { x: number; y: number } | null;
-  onClose: () => void;
+  thumbRect: DOMRect | null;
 }) {
-  if (!imageUrl || !position) return null;
+  const [imageLoaded, setImageLoaded] = useState(false);
+
+  if (!imageUrl || !thumbRect) return null;
+
+  // Önizlemeyi thumbnail'in sağında göster
+  const previewWidth = 350;
+  const previewHeight = 350;
+
+  // Ekran sınırlarını kontrol et
+  let left = thumbRect.right + 16;
+  let top = thumbRect.top - 100;
+
+  // Sağda yer yoksa solda göster
+  if (left + previewWidth > window.innerWidth - 20) {
+    left = thumbRect.left - previewWidth - 16;
+  }
+
+  // Üstte veya altta taşma kontrolü
+  if (top < 20) top = 20;
+  if (top + previewHeight > window.innerHeight - 20) {
+    top = window.innerHeight - previewHeight - 20;
+  }
 
   return (
     <div
-      className="fixed z-50 pointer-events-none"
-      style={{
-        left: Math.min(position.x + 20, window.innerWidth - 420),
-        top: Math.max(20, Math.min(position.y - 200, window.innerHeight - 420)),
-      }}
+      className="fixed z-[100] pointer-events-none animate-in fade-in zoom-in-95 duration-150"
+      style={{ left, top }}
     >
-      <div className="bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl p-2 pointer-events-auto">
+      <div className="bg-zinc-900 border-2 border-emerald-500/30 rounded-xl shadow-2xl shadow-black/50 p-3">
         <div className="relative">
+          {!imageLoaded && (
+            <div className="w-[350px] h-[350px] flex items-center justify-center bg-zinc-800 rounded-lg">
+              <div className="animate-spin w-8 h-8 border-2 border-emerald-500 border-t-transparent rounded-full" />
+            </div>
+          )}
           <img
             src={imageUrl}
             alt="Önizleme"
-            className="max-w-[400px] max-h-[400px] object-contain rounded-lg"
+            className={`max-w-[350px] max-h-[350px] object-contain rounded-lg ${imageLoaded ? 'block' : 'hidden'}`}
+            onLoad={() => setImageLoaded(true)}
             onError={(e) => {
               (e.target as HTMLImageElement).src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100'%3E%3Crect fill='%23333' width='100' height='100'/%3E%3Ctext fill='%23666' x='50' y='50' text-anchor='middle' dy='.3em'%3EHata%3C/text%3E%3C/svg%3E";
+              setImageLoaded(true);
             }}
           />
-          <button
-            onClick={onClose}
-            className="absolute top-1 right-1 p-1 bg-black/60 hover:bg-black/80 rounded-full pointer-events-auto"
-          >
-            <X className="w-4 h-4 text-white" />
-          </button>
+        </div>
+        <div className="mt-2 text-center">
+          <span className="text-xs text-zinc-500">Tıklayarak tam boyutta aç</span>
         </div>
       </div>
     </div>
@@ -116,23 +134,32 @@ function ImageThumbnail({
 }: {
   image: ProductImage;
   type: "eski" | "yeni";
-  onHover: (url: string, e: React.MouseEvent) => void;
+  onHover: (url: string, rect: DOMRect) => void;
   onLeave: () => void;
 }) {
   const url = type === "eski" ? image.eskiUrl : image.yeniUrl;
+  const thumbRef = useRef<HTMLDivElement>(null);
+
   if (!url) return null;
+
+  const handleMouseEnter = () => {
+    if (thumbRef.current) {
+      const rect = thumbRef.current.getBoundingClientRect();
+      onHover(url, rect);
+    }
+  };
 
   return (
     <div
+      ref={thumbRef}
       className="relative group/thumb cursor-pointer"
-      onMouseEnter={(e) => onHover(url, e)}
+      onMouseEnter={handleMouseEnter}
       onMouseLeave={onLeave}
-      onMouseMove={(e) => onHover(url, e)}
     >
       <img
         src={url}
         alt={`Resim ${image.sira}`}
-        className={`w-12 h-12 object-cover rounded-lg transition-all duration-200 hover:ring-2 ${
+        className={`w-12 h-12 object-cover rounded-lg transition-all duration-200 hover:ring-2 hover:scale-110 ${
           type === "yeni" ? "ring-emerald-500/50 hover:ring-emerald-500" : "hover:ring-zinc-400"
         }`}
         onClick={() => window.open(url, "_blank")}
@@ -151,7 +178,7 @@ function ProductRow({
   onImageLeave,
 }: {
   product: Product;
-  onImageHover: (url: string, e: React.MouseEvent) => void;
+  onImageHover: (url: string, rect: DOMRect) => void;
   onImageLeave: () => void;
 }) {
   const getStatusIcon = (status: string | null) => {
@@ -371,7 +398,7 @@ export function ProductDataGrid({ onProductSelect, onProductEdit }: ProductDataG
 
   // Image preview state
   const [previewImage, setPreviewImage] = useState<string | null>(null);
-  const [previewPosition, setPreviewPosition] = useState<{ x: number; y: number } | null>(null);
+  const [previewRect, setPreviewRect] = useState<DOMRect | null>(null);
 
   // Unused props warning'i önlemek için
   void onProductSelect;
@@ -413,14 +440,14 @@ export function ProductDataGrid({ onProductSelect, onProductEdit }: ProductDataG
     fetchProducts();
   }, [fetchProducts]);
 
-  const handleImageHover = useCallback((url: string, e: React.MouseEvent) => {
+  const handleImageHover = useCallback((url: string, rect: DOMRect) => {
     setPreviewImage(url);
-    setPreviewPosition({ x: e.clientX, y: e.clientY });
+    setPreviewRect(rect);
   }, []);
 
   const handleImageLeave = useCallback(() => {
     setPreviewImage(null);
-    setPreviewPosition(null);
+    setPreviewRect(null);
   }, []);
 
   return (
@@ -560,8 +587,7 @@ export function ProductDataGrid({ onProductSelect, onProductEdit }: ProductDataG
       {/* Global Image Preview */}
       <ImagePreview
         imageUrl={previewImage}
-        position={previewPosition}
-        onClose={handleImageLeave}
+        thumbRect={previewRect}
       />
     </>
   );
