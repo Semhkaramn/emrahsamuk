@@ -3,8 +3,8 @@ import prisma from "@/lib/db";
 import * as XLSX from "xlsx";
 import { Prisma } from "@prisma/client";
 
-// Route segment config
-export const maxDuration = 300;
+// Route segment config - Daha yüksek timeout
+export const maxDuration = 600; // 10 dakika
 export const dynamic = 'force-dynamic';
 
 interface UrunBilgisiRow {
@@ -68,17 +68,151 @@ interface UrunBilgisiRow {
   VITRINDURUMU?: string;
 }
 
-// 15-20 bin ürün için optimize edilmiş
-const BATCH_SIZE = 500; // createMany çok hızlı, daha büyük batch kullanabiliriz
+// 50 bin ürün için optimize edilmiş değerler
+const BATCH_SIZE = 200; // Daha küçük batch - bellek dostu
+const MAX_RETRIES = 3; // Hatalı batch için retry sayısı
+const EXISTING_CHECK_BATCH = 5000; // Mevcut kayıtları kontrol etmek için chunk
+
+// Yardımcı: Set'e parça parça ID ekleme (bellek dostu)
+async function getExistingIds(
+  model: 'product' | 'productPrice' | 'productSeo',
+  sendProgress: (data: object) => void
+): Promise<Set<number>> {
+  const idSet = new Set<number>();
+  let cursor: number | undefined;
+  let count = 0;
+
+  while (true) {
+    const query: { take: number; skip?: number; cursor?: { id: number }; select: { urunId: true; id: true }; orderBy: { id: 'asc' } } = {
+      take: EXISTING_CHECK_BATCH,
+      select: { urunId: true, id: true },
+      orderBy: { id: 'asc' as const },
+    };
+
+    if (cursor) {
+      query.cursor = { id: cursor };
+      query.skip = 1;
+    }
+
+    let records: { urunId: number; id: number }[] = [];
+
+    if (model === 'product') {
+      records = await prisma.product.findMany(query);
+    } else if (model === 'productPrice') {
+      records = await prisma.productPrice.findMany(query);
+    } else if (model === 'productSeo') {
+      records = await prisma.productSeo.findMany(query);
+    }
+
+    if (records.length === 0) break;
+
+    for (const r of records) {
+      idSet.add(r.urunId);
+    }
+
+    count += records.length;
+    cursor = records[records.length - 1].id;
+
+    if (records.length < EXISTING_CHECK_BATCH) break;
+  }
+
+  return idSet;
+}
+
+// Retry mekanizmalı batch ekleme
+async function createBatchWithRetry<T>(
+  createFn: () => Promise<T>,
+  retries: number = MAX_RETRIES
+): Promise<{ success: boolean; error?: string }> {
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      await createFn();
+      return { success: true };
+    } catch (error) {
+      if (attempt === retries) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Bilinmeyen hata'
+        };
+      }
+      // Kısa bekleme süresi (exponential backoff)
+      await new Promise(resolve => setTimeout(resolve, 100 * attempt));
+    }
+  }
+  return { success: false, error: 'Max retry aşıldı' };
+}
+
+// Tek tek kayıt ekleme (batch başarısız olduğunda fallback)
+async function createRecordsOneByOne(
+  products: Prisma.ProductCreateManyInput[],
+  prices: Prisma.ProductPriceCreateManyInput[],
+  seos: Prisma.ProductSeoCreateManyInput[]
+): Promise<{ created: number; failed: number; errors: string[] }> {
+  let created = 0;
+  let failed = 0;
+  const errors: string[] = [];
+
+  // Ürünleri tek tek ekle
+  for (const product of products) {
+    try {
+      await prisma.product.create({ data: product });
+      created++;
+
+      // Bu ürünün fiyatını ekle
+      const price = prices.find(p => p.urunId === product.urunId);
+      if (price) {
+        try {
+          await prisma.productPrice.create({ data: price });
+        } catch {
+          // Fiyat eklenemedi ama ürün eklendi
+        }
+      }
+
+      // Bu ürünün SEO'sunu ekle
+      const seo = seos.find(s => s.urunId === product.urunId);
+      if (seo) {
+        try {
+          await prisma.productSeo.create({ data: seo });
+        } catch {
+          // SEO eklenemedi ama ürün eklendi
+        }
+      }
+    } catch (err) {
+      failed++;
+      if (errors.length < 20) {
+        errors.push(`ID ${product.urunId}: ${err instanceof Error ? err.message : 'Hata'}`);
+      }
+    }
+  }
+
+  return { created, failed, errors };
+}
 
 export async function POST(request: NextRequest) {
   const encoder = new TextEncoder();
+  let lastProgressTime = Date.now();
 
   const stream = new ReadableStream({
     async start(controller) {
       const sendProgress = (data: object) => {
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+        try {
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+          lastProgressTime = Date.now();
+        } catch {
+          // Stream kapanmış olabilir
+        }
       };
+
+      // Keep-alive için düzenli heartbeat gönder
+      const heartbeatInterval = setInterval(() => {
+        if (Date.now() - lastProgressTime > 10000) {
+          try {
+            controller.enqueue(encoder.encode(`: heartbeat\n\n`));
+          } catch {
+            clearInterval(heartbeatInterval);
+          }
+        }
+      }, 15000);
 
       try {
         const formData = await request.formData();
@@ -86,12 +220,14 @@ export async function POST(request: NextRequest) {
 
         if (!file) {
           sendProgress({ type: 'error', message: 'Dosya bulunamadı' });
+          clearInterval(heartbeatInterval);
           controller.close();
           return;
         }
 
         sendProgress({ type: 'status', message: 'Excel dosyası okunuyor...' });
 
+        // Excel dosyasını oku
         const arrayBuffer = await file.arrayBuffer();
         const workbook = XLSX.read(arrayBuffer, { type: "buffer" });
         const sheetName = workbook.SheetNames[0];
@@ -108,34 +244,24 @@ export async function POST(request: NextRequest) {
         sendProgress({
           type: 'start',
           total,
-          message: `${total} ürün bulundu, işlem başlıyor...`
+          message: `${total.toLocaleString()} ürün bulundu, işlem başlıyor...`
         });
 
-        // Tüm mevcut ürün ID'lerini al (TEK SORGU)
-        sendProgress({ type: 'status', message: 'Mevcut ürünler kontrol ediliyor...' });
+        // Mevcut kayıtları al (cursor-based pagination ile)
+        sendProgress({ type: 'status', message: 'Mevcut ürünler kontrol ediliyor (bu biraz sürebilir)...' });
 
-        const existingProducts = await prisma.product.findMany({
-          select: { urunId: true }
-        });
-        const existingIdSet = new Set(existingProducts.map(p => p.urunId));
+        const existingIdSet = await getExistingIds('product', sendProgress);
+        sendProgress({ type: 'status', message: `${existingIdSet.size.toLocaleString()} mevcut ürün bulundu` });
 
-        // Mevcut fiyat ve SEO kayıtlarını al
-        const existingPrices = await prisma.productPrice.findMany({
-          select: { urunId: true }
-        });
-        const existingPriceIdSet = new Set(existingPrices.map(p => p.urunId));
-
-        const existingSeo = await prisma.productSeo.findMany({
-          select: { urunId: true }
-        });
-        const existingSeoIdSet = new Set(existingSeo.map(p => p.urunId));
+        const existingPriceIdSet = await getExistingIds('productPrice', sendProgress);
+        const existingSeoIdSet = await getExistingIds('productSeo', sendProgress);
 
         sendProgress({
           type: 'status',
-          message: `${existingIdSet.size} mevcut ürün bulundu. Sadece yeni ürünler eklenecek...`
+          message: `Mevcut: ${existingIdSet.size.toLocaleString()} ürün, ${existingPriceIdSet.size.toLocaleString()} fiyat, ${existingSeoIdSet.size.toLocaleString()} SEO. Yeni ürünler ekleniyor...`
         });
 
-        // Batch işleme - SADECE YENİ ÜRÜNLER
+        // Batch işleme
         for (let batchStart = 0; batchStart < data.length; batchStart += BATCH_SIZE) {
           const batchEnd = Math.min(batchStart + BATCH_SIZE, data.length);
           const batch = data.slice(batchStart, batchEnd);
@@ -144,9 +270,12 @@ export async function POST(request: NextRequest) {
           const pricesToCreate: Prisma.ProductPriceCreateManyInput[] = [];
           const seosToCreate: Prisma.ProductSeoCreateManyInput[] = [];
 
+          let batchSkipped = 0;
+          let batchFailed = 0;
+
           for (const row of batch) {
             if (!row.ID) {
-              failed++;
+              batchFailed++;
               continue;
             }
 
@@ -154,7 +283,7 @@ export async function POST(request: NextRequest) {
 
             // MEVCUT ÜRÜNÜ ATLA
             if (existingIdSet.has(urunId)) {
-              skipped++;
+              batchSkipped++;
               continue;
             }
 
@@ -244,41 +373,63 @@ export async function POST(request: NextRequest) {
                 existingSeoIdSet.add(urunId);
               }
 
-              created++;
             } catch (err) {
-              failed++;
-              if (errors.length < 10) {
-                errors.push(`Hata (ID: ${row.ID}): ${err instanceof Error ? err.message : "Bilinmeyen hata"}`);
+              batchFailed++;
+              if (errors.length < 20) {
+                errors.push(`Hazırlama hatası (ID: ${row.ID}): ${err instanceof Error ? err.message : "Bilinmeyen hata"}`);
               }
             }
           }
 
-          // Toplu ekleme (TEK SORGU - ÇOK HIZLI!)
-          try {
-            if (productsToCreate.length > 0) {
-              await prisma.product.createMany({
-                data: productsToCreate,
-                skipDuplicates: true,
-              });
-            }
+          skipped += batchSkipped;
+          failed += batchFailed;
 
-            if (pricesToCreate.length > 0) {
-              await prisma.productPrice.createMany({
-                data: pricesToCreate,
-                skipDuplicates: true,
-              });
-            }
+          // Toplu ekleme - Transaction ile (hata toleranslı)
+          if (productsToCreate.length > 0) {
+            const batchResult = await createBatchWithRetry(async () => {
+              await prisma.$transaction(async (tx) => {
+                await tx.product.createMany({
+                  data: productsToCreate,
+                  skipDuplicates: true,
+                });
 
-            if (seosToCreate.length > 0) {
-              await prisma.productSeo.createMany({
-                data: seosToCreate,
-                skipDuplicates: true,
+                if (pricesToCreate.length > 0) {
+                  await tx.productPrice.createMany({
+                    data: pricesToCreate,
+                    skipDuplicates: true,
+                  });
+                }
+
+                if (seosToCreate.length > 0) {
+                  await tx.productSeo.createMany({
+                    data: seosToCreate,
+                    skipDuplicates: true,
+                  });
+                }
+              }, {
+                timeout: 60000, // 60 saniye transaction timeout
               });
+            });
+
+            if (batchResult.success) {
+              created += productsToCreate.length;
+            } else {
+              // Batch başarısız - tek tek dene
+              sendProgress({
+                type: 'status',
+                message: `Batch ${batchStart}-${batchEnd} hatası, tek tek ekleniyor...`
+              });
+
+              const fallbackResult = await createRecordsOneByOne(
+                productsToCreate,
+                pricesToCreate,
+                seosToCreate
+              );
+
+              created += fallbackResult.created;
+              failed += fallbackResult.failed;
+              errors.push(...fallbackResult.errors);
             }
-          } catch (batchError) {
-            console.error("Batch error:", batchError);
-            failed += productsToCreate.length;
-            created -= productsToCreate.length;
           }
 
           processed = batchEnd;
@@ -292,8 +443,13 @@ export async function POST(request: NextRequest) {
             created,
             skipped,
             failed,
-            message: `${processed} / ${total} işlendi - ${created} yeni, ${skipped} atlandı (${percent}%)`
+            message: `${processed.toLocaleString()} / ${total.toLocaleString()} işlendi - ${created.toLocaleString()} yeni, ${skipped.toLocaleString()} atlandı (${percent}%)`
           });
+
+          // Her 10 batch'te bir garbage collection'a izin ver
+          if ((batchStart / BATCH_SIZE) % 10 === 0) {
+            await new Promise(resolve => setTimeout(resolve, 10));
+          }
         }
 
         // Log
@@ -302,7 +458,7 @@ export async function POST(request: NextRequest) {
             data: {
               islemTipi: "upload",
               durum: failed > 0 ? "partial" : "success",
-              mesaj: `ürünbilgisi.xlsx: ${created} yeni eklendi, ${skipped} atlandı (mevcut), ${failed} hata`,
+              mesaj: `ürünbilgisi.xlsx: ${created.toLocaleString()} yeni eklendi, ${skipped.toLocaleString()} atlandı (mevcut), ${failed.toLocaleString()} hata`,
             },
           });
         } catch (logErr) {
@@ -312,19 +468,21 @@ export async function POST(request: NextRequest) {
         sendProgress({
           type: 'complete',
           success: true,
-          message: `Tamamlandı! ${created} yeni ürün eklendi, ${skipped} mevcut ürün atlandı.`,
+          message: `Tamamlandı! ${created.toLocaleString()} yeni ürün eklendi, ${skipped.toLocaleString()} mevcut ürün atlandı.`,
           stats: {
             total,
             created,
             skipped,
             failed,
           },
-          errors: errors.slice(0, 10),
+          errors: errors.slice(0, 20),
         });
 
+        clearInterval(heartbeatInterval);
         controller.close();
       } catch (error) {
         console.error("Upload error:", error);
+        clearInterval(heartbeatInterval);
         sendProgress({
           type: 'error',
           message: error instanceof Error ? error.message : "Dosya işlenirken hata oluştu"
@@ -337,8 +495,9 @@ export async function POST(request: NextRequest) {
   return new Response(stream, {
     headers: {
       'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache',
+      'Cache-Control': 'no-cache, no-transform',
       'Connection': 'keep-alive',
+      'X-Accel-Buffering': 'no', // Nginx buffering'i kapat
     },
   });
 }
