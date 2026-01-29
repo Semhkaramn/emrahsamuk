@@ -12,6 +12,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Search,
   ChevronLeft,
@@ -21,8 +22,12 @@ import {
   CheckCircle2,
   Clock,
   AlertCircle,
-  ChevronLeftIcon,
-  ChevronRightIcon,
+  Image as ImageIcon,
+  Tag,
+  BarChart3,
+  FolderTree,
+  FileText,
+  X,
 } from "lucide-react";
 
 interface ProductImage {
@@ -60,175 +65,295 @@ interface ProductDataGridProps {
   onProductEdit?: (product: Product) => void;
 }
 
-// Yatay kaydırılabilir resim galerisi
-function ImageGallery({
-  images,
-  type,
+// Büyük resim önizleme componenti
+function ImagePreview({
+  imageUrl,
+  position,
+  onClose,
 }: {
-  images: ProductImage[];
-  type: "eski" | "yeni";
+  imageUrl: string | null;
+  position: { x: number; y: number } | null;
+  onClose: () => void;
 }) {
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const [canScrollLeft, setCanScrollLeft] = useState(false);
-  const [canScrollRight, setCanScrollRight] = useState(false);
-
-  const filteredImages = images.filter((img) =>
-    type === "eski" ? img.eskiUrl : img.yeniUrl
-  );
-
-  const checkScroll = useCallback(() => {
-    if (scrollRef.current) {
-      const { scrollLeft, scrollWidth, clientWidth } = scrollRef.current;
-      setCanScrollLeft(scrollLeft > 0);
-      setCanScrollRight(scrollLeft < scrollWidth - clientWidth - 1);
-    }
-  }, []);
-
-  useEffect(() => {
-    checkScroll();
-    const el = scrollRef.current;
-    if (el) {
-      el.addEventListener("scroll", checkScroll);
-      return () => el.removeEventListener("scroll", checkScroll);
-    }
-  }, [checkScroll, filteredImages]);
-
-  const scroll = (direction: "left" | "right") => {
-    if (scrollRef.current) {
-      const scrollAmount = 200;
-      scrollRef.current.scrollBy({
-        left: direction === "left" ? -scrollAmount : scrollAmount,
-        behavior: "smooth",
-      });
-    }
-  };
-
-  if (filteredImages.length === 0) {
-    return (
-      <div className="flex items-center justify-center h-16 bg-zinc-800/50 rounded-lg">
-        <span className="text-xs text-zinc-500">Resim yok</span>
-      </div>
-    );
-  }
+  if (!imageUrl || !position) return null;
 
   return (
-    <div className="relative group">
-      {/* Sol ok */}
-      {canScrollLeft && (
-        <button
-          onClick={() => scroll("left")}
-          className="absolute left-0 top-1/2 -translate-y-1/2 z-10 w-6 h-6 bg-black/70 hover:bg-black/90 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-        >
-          <ChevronLeftIcon className="w-4 h-4 text-white" />
-        </button>
-      )}
-
-      {/* Resim container */}
-      <div
-        ref={scrollRef}
-        className="flex gap-1.5 overflow-x-auto scrollbar-hide scroll-smooth"
-        style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
-      >
-        {filteredImages.map((img) => {
-          const url = type === "eski" ? img.eskiUrl : img.yeniUrl;
-          return (
-            <div
-              key={img.id}
-              className="flex-shrink-0 relative group/img"
-            >
-              <img
-                src={url || ""}
-                alt={`Resim ${img.sira}`}
-                className={`w-14 h-14 sm:w-16 sm:h-16 object-cover rounded-lg cursor-pointer transition-transform hover:scale-105 ${
-                  type === "yeni" ? "ring-1 ring-emerald-500/50" : ""
-                }`}
-                onClick={() => window.open(url || "", "_blank")}
-              />
-              <span className="absolute bottom-0.5 right-0.5 text-[10px] bg-black/70 text-white px-1 rounded">
-                {img.sira}
-              </span>
-            </div>
-          );
-        })}
+    <div
+      className="fixed z-50 pointer-events-none"
+      style={{
+        left: Math.min(position.x + 20, window.innerWidth - 420),
+        top: Math.max(20, Math.min(position.y - 200, window.innerHeight - 420)),
+      }}
+    >
+      <div className="bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl p-2 pointer-events-auto">
+        <div className="relative">
+          <img
+            src={imageUrl}
+            alt="Önizleme"
+            className="max-w-[400px] max-h-[400px] object-contain rounded-lg"
+            onError={(e) => {
+              (e.target as HTMLImageElement).src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100'%3E%3Crect fill='%23333' width='100' height='100'/%3E%3Ctext fill='%23666' x='50' y='50' text-anchor='middle' dy='.3em'%3EHata%3C/text%3E%3C/svg%3E";
+            }}
+          />
+          <button
+            onClick={onClose}
+            className="absolute top-1 right-1 p-1 bg-black/60 hover:bg-black/80 rounded-full pointer-events-auto"
+          >
+            <X className="w-4 h-4 text-white" />
+          </button>
+        </div>
       </div>
-
-      {/* Sağ ok */}
-      {canScrollRight && (
-        <button
-          onClick={() => scroll("right")}
-          className="absolute right-0 top-1/2 -translate-y-1/2 z-10 w-6 h-6 bg-black/70 hover:bg-black/90 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-        >
-          <ChevronRightIcon className="w-4 h-4 text-white" />
-        </button>
-      )}
     </div>
   );
 }
 
-// Ürün kartı
-function ProductCard({ product }: { product: Product }) {
+// Resim thumbnail componenti
+function ImageThumbnail({
+  image,
+  type,
+  onHover,
+  onLeave,
+}: {
+  image: ProductImage;
+  type: "eski" | "yeni";
+  onHover: (url: string, e: React.MouseEvent) => void;
+  onLeave: () => void;
+}) {
+  const url = type === "eski" ? image.eskiUrl : image.yeniUrl;
+  if (!url) return null;
+
+  return (
+    <div
+      className="relative group/thumb cursor-pointer"
+      onMouseEnter={(e) => onHover(url, e)}
+      onMouseLeave={onLeave}
+      onMouseMove={(e) => onHover(url, e)}
+    >
+      <img
+        src={url}
+        alt={`Resim ${image.sira}`}
+        className={`w-12 h-12 object-cover rounded-lg transition-all duration-200 hover:ring-2 ${
+          type === "yeni" ? "ring-emerald-500/50 hover:ring-emerald-500" : "hover:ring-zinc-400"
+        }`}
+        onClick={() => window.open(url, "_blank")}
+      />
+      <span className="absolute -bottom-0.5 -right-0.5 text-[9px] bg-black/80 text-white px-1 rounded">
+        {image.sira}
+      </span>
+    </div>
+  );
+}
+
+// Ürün satırı componenti
+function ProductRow({
+  product,
+  onImageHover,
+  onImageLeave,
+}: {
+  product: Product;
+  onImageHover: (url: string, e: React.MouseEvent) => void;
+  onImageLeave: () => void;
+}) {
   const getStatusIcon = (status: string | null) => {
     switch (status) {
       case "done":
-        return <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />;
+        return <CheckCircle2 className="h-4 w-4 text-emerald-400" />;
       case "processing":
-        return <RefreshCw className="h-3.5 w-3.5 text-amber-400 animate-spin" />;
+        return <RefreshCw className="h-4 w-4 text-amber-400 animate-spin" />;
       case "error":
-        return <AlertCircle className="h-3.5 w-3.5 text-red-400" />;
+        return <AlertCircle className="h-4 w-4 text-red-400" />;
       default:
-        return <Clock className="h-3.5 w-3.5 text-zinc-500" />;
+        return <Clock className="h-4 w-4 text-zinc-500" />;
     }
   };
 
-  // Yeni kategori varsa onu göster, yoksa eskiyi
-  const kategori = product.categories?.yeniAnaKategori || product.categories?.anaKategori;
+  const getStatusBadge = (status: string | null) => {
+    const statusMap: Record<string, { label: string; className: string }> = {
+      done: { label: "Tamamlandı", className: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" },
+      processing: { label: "İşleniyor", className: "bg-amber-500/10 text-amber-400 border-amber-500/20" },
+      error: { label: "Hata", className: "bg-red-500/10 text-red-400 border-red-500/20" },
+      pending: { label: "Bekliyor", className: "bg-zinc-500/10 text-zinc-400 border-zinc-500/20" },
+    };
+    const statusInfo = statusMap[status || "pending"] || statusMap.pending;
+    return (
+      <span className={`px-2 py-0.5 text-xs rounded-full border ${statusInfo.className}`}>
+        {statusInfo.label}
+      </span>
+    );
+  };
+
+  // Kategoriler
+  const anaKategori = product.categories?.yeniAnaKategori || product.categories?.anaKategori;
   const altKategori = product.categories?.yeniAltKategori1 || product.categories?.altKategori1;
+  const aiKategori = product.categories?.aiKategori;
+
+  // Resimler
+  const eskiResimler = product.images.filter((i) => i.eskiUrl);
+  const yeniResimler = product.images.filter((i) => i.yeniUrl);
 
   return (
-    <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-3 space-y-3 hover:border-zinc-700 transition-colors">
-      {/* Başlık satırı */}
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2 min-w-0">
-          <span className="font-mono text-sm text-emerald-400 truncate">
-            {product.urunKodu}
-          </span>
-          {getStatusIcon(product.processingStatus)}
-        </div>
-        <span className="text-[10px] text-zinc-500 shrink-0">
-          #{product.urunId || product.id}
-        </span>
-      </div>
+    <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 hover:border-zinc-700 transition-colors">
+      <div className="flex flex-col lg:flex-row gap-4">
+        {/* Sol taraf - Ürün bilgileri */}
+        <div className="flex-1 min-w-0 space-y-3">
+          {/* Başlık satırı */}
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="p-2 rounded-lg bg-emerald-500/10 shrink-0">
+                <Package className="h-4 w-4 text-emerald-400" />
+              </div>
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-mono text-base font-semibold text-emerald-400">
+                    {product.urunKodu}
+                  </span>
+                  {getStatusIcon(product.processingStatus)}
+                  {getStatusBadge(product.processingStatus)}
+                </div>
+                <div className="text-xs text-zinc-500 mt-0.5">
+                  ID: {product.urunId || product.id}
+                  {product.barkodNo && <span className="ml-2">Barkod: {product.barkodNo}</span>}
+                </div>
+              </div>
+            </div>
+            <div className="text-right shrink-0">
+              <span className={`px-2 py-0.5 text-xs rounded-full ${
+                product.durum === "AKTIF"
+                  ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+                  : "bg-zinc-500/10 text-zinc-400 border border-zinc-500/20"
+              }`}>
+                {product.durum || "Belirsiz"}
+              </span>
+            </div>
+          </div>
 
-      {/* Kategori */}
-      {kategori && (
-        <div className="text-xs text-zinc-400 truncate">
-          {kategori}
-          {altKategori && <span className="text-zinc-500"> &gt; {altKategori}</span>}
-        </div>
-      )}
+          {/* Detay bilgiler - Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+            {/* Eski Adı */}
+            <div className="bg-zinc-800/50 rounded-lg p-3">
+              <div className="flex items-center gap-1.5 mb-1">
+                <Tag className="h-3.5 w-3.5 text-amber-400" />
+                <span className="text-[10px] text-zinc-500 uppercase tracking-wide">Eski Adı</span>
+              </div>
+              <p className="text-sm text-zinc-300 line-clamp-2">
+                {product.eskiAdi || <span className="text-zinc-600 italic">Belirtilmemiş</span>}
+              </p>
+            </div>
 
-      {/* Eski Resimler */}
-      <div className="space-y-1">
-        <div className="flex items-center gap-1.5">
-          <div className="w-1.5 h-1.5 rounded-full bg-amber-500" />
-          <span className="text-[10px] text-zinc-500 uppercase tracking-wide">Eski</span>
-          <span className="text-[10px] text-zinc-600">
-            ({product.images.filter((i) => i.eskiUrl).length})
-          </span>
-        </div>
-        <ImageGallery images={product.images} type="eski" />
-      </div>
+            {/* Yeni Adı */}
+            <div className="bg-zinc-800/50 rounded-lg p-3">
+              <div className="flex items-center gap-1.5 mb-1">
+                <FileText className="h-3.5 w-3.5 text-emerald-400" />
+                <span className="text-[10px] text-zinc-500 uppercase tracking-wide">Yeni Adı (SEO)</span>
+              </div>
+              <p className="text-sm text-zinc-100 font-medium line-clamp-2">
+                {product.yeniAdi || product.seo?.seoBaslik || <span className="text-zinc-600 italic">Henüz işlenmedi</span>}
+              </p>
+            </div>
 
-      {/* Yeni Resimler */}
-      <div className="space-y-1">
-        <div className="flex items-center gap-1.5">
-          <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-          <span className="text-[10px] text-zinc-500 uppercase tracking-wide">Yeni</span>
-          <span className="text-[10px] text-zinc-600">
-            ({product.images.filter((i) => i.yeniUrl).length})
-          </span>
+            {/* Marka */}
+            <div className="bg-zinc-800/50 rounded-lg p-3">
+              <div className="flex items-center gap-1.5 mb-1">
+                <Tag className="h-3.5 w-3.5 text-purple-400" />
+                <span className="text-[10px] text-zinc-500 uppercase tracking-wide">Marka</span>
+              </div>
+              <p className="text-sm text-zinc-300">
+                {product.marka || <span className="text-zinc-600 italic">Belirtilmemiş</span>}
+              </p>
+            </div>
+
+            {/* Kategori */}
+            <div className="bg-zinc-800/50 rounded-lg p-3">
+              <div className="flex items-center gap-1.5 mb-1">
+                <FolderTree className="h-3.5 w-3.5 text-blue-400" />
+                <span className="text-[10px] text-zinc-500 uppercase tracking-wide">Kategori</span>
+              </div>
+              <p className="text-sm text-zinc-300">
+                {anaKategori ? (
+                  <>
+                    {anaKategori}
+                    {altKategori && <span className="text-zinc-500"> &gt; {altKategori}</span>}
+                  </>
+                ) : (
+                  <span className="text-zinc-600 italic">Belirtilmemiş</span>
+                )}
+              </p>
+            </div>
+
+            {/* AI Kategori */}
+            <div className="bg-zinc-800/50 rounded-lg p-3">
+              <div className="flex items-center gap-1.5 mb-1">
+                <FolderTree className="h-3.5 w-3.5 text-orange-400" />
+                <span className="text-[10px] text-zinc-500 uppercase tracking-wide">AI Kategori</span>
+              </div>
+              <p className="text-sm text-zinc-300">
+                {aiKategori || <span className="text-zinc-600 italic">Henüz belirlenmedi</span>}
+              </p>
+            </div>
+
+            {/* Stok */}
+            <div className="bg-zinc-800/50 rounded-lg p-3">
+              <div className="flex items-center gap-1.5 mb-1">
+                <BarChart3 className="h-3.5 w-3.5 text-cyan-400" />
+                <span className="text-[10px] text-zinc-500 uppercase tracking-wide">Stok</span>
+              </div>
+              <p className="text-sm text-zinc-300 font-medium">
+                {product.stok !== null ? product.stok : <span className="text-zinc-600 italic">Belirtilmemiş</span>}
+              </p>
+            </div>
+          </div>
         </div>
-        <ImageGallery images={product.images} type="yeni" />
+
+        {/* Sağ taraf - Resimler */}
+        <div className="lg:w-80 shrink-0 space-y-3">
+          {/* Eski Resimler */}
+          <div className="bg-zinc-800/30 rounded-lg p-3">
+            <div className="flex items-center gap-2 mb-2">
+              <ImageIcon className="h-3.5 w-3.5 text-amber-400" />
+              <span className="text-xs text-zinc-400">Eski Resimler</span>
+              <span className="text-xs text-zinc-600">({eskiResimler.length})</span>
+            </div>
+            {eskiResimler.length > 0 ? (
+              <div className="flex flex-wrap gap-1.5">
+                {eskiResimler.map((img) => (
+                  <ImageThumbnail
+                    key={img.id}
+                    image={img}
+                    type="eski"
+                    onHover={onImageHover}
+                    onLeave={onImageLeave}
+                  />
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-zinc-600 italic">Resim yok</p>
+            )}
+          </div>
+
+          {/* Yeni Resimler */}
+          <div className="bg-zinc-800/30 rounded-lg p-3">
+            <div className="flex items-center gap-2 mb-2">
+              <ImageIcon className="h-3.5 w-3.5 text-emerald-400" />
+              <span className="text-xs text-zinc-400">Yeni Resimler</span>
+              <span className="text-xs text-zinc-600">({yeniResimler.length})</span>
+            </div>
+            {yeniResimler.length > 0 ? (
+              <div className="flex flex-wrap gap-1.5">
+                {yeniResimler.map((img) => (
+                  <ImageThumbnail
+                    key={img.id}
+                    image={img}
+                    type="yeni"
+                    onHover={onImageHover}
+                    onLeave={onImageLeave}
+                  />
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-zinc-600 italic">Henüz işlenmedi</p>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -244,6 +369,10 @@ export function ProductDataGrid({ onProductSelect, onProductEdit }: ProductDataG
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal] = useState(0);
 
+  // Image preview state
+  const [previewImage, setPreviewImage] = useState<string | null>(null);
+  const [previewPosition, setPreviewPosition] = useState<{ x: number; y: number } | null>(null);
+
   // Unused props warning'i önlemek için
   void onProductSelect;
   void onProductEdit;
@@ -253,7 +382,7 @@ export function ProductDataGrid({ onProductSelect, onProductEdit }: ProductDataG
     try {
       const params = new URLSearchParams({
         page: String(page),
-        limit: "20",
+        limit: "10",
       });
       if (search) params.set("search", search);
       if (durum && durum !== "all") params.set("durum", durum);
@@ -284,130 +413,156 @@ export function ProductDataGrid({ onProductSelect, onProductEdit }: ProductDataG
     fetchProducts();
   }, [fetchProducts]);
 
+  const handleImageHover = useCallback((url: string, e: React.MouseEvent) => {
+    setPreviewImage(url);
+    setPreviewPosition({ x: e.clientX, y: e.clientY });
+  }, []);
+
+  const handleImageLeave = useCallback(() => {
+    setPreviewImage(null);
+    setPreviewPosition(null);
+  }, []);
+
   return (
-    <Card className="border-zinc-800 bg-zinc-950">
-      <CardHeader className="pb-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <CardTitle className="flex items-center gap-2 text-lg">
-            <Package className="h-5 w-5 text-emerald-400" />
-            Ürünler
-            <span className="text-sm font-normal text-zinc-500">
-              ({total.toLocaleString()})
-            </span>
-          </CardTitle>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={fetchProducts}
-            disabled={loading}
-            className="shrink-0"
-          >
-            <RefreshCw className={`h-4 w-4 mr-2 ${loading ? "animate-spin" : ""}`} />
-            Yenile
-          </Button>
-        </div>
-
-        {/* Filters */}
-        <form onSubmit={handleSearch} className="flex flex-col sm:flex-row gap-2 mt-4">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-500" />
-            <Input
-              placeholder="Ürün kodu ara..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="pl-9 bg-zinc-900 border-zinc-800"
-            />
-          </div>
-          <div className="flex gap-2">
-            <Select
-              value={durum}
-              onValueChange={(value) => {
-                setDurum(value);
-                setPage(1);
-              }}
+    <>
+      <Card className="border-zinc-800 bg-zinc-950">
+        <CardHeader className="pb-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <Package className="h-5 w-5 text-emerald-400" />
+              Ürünler
+              <span className="text-sm font-normal text-zinc-500">
+                ({total.toLocaleString()})
+              </span>
+            </CardTitle>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={fetchProducts}
+              disabled={loading}
+              className="shrink-0"
             >
-              <SelectTrigger className="w-[120px] bg-zinc-900 border-zinc-800">
-                <SelectValue placeholder="Durum" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Tümü</SelectItem>
-                <SelectItem value="AKTIF">Aktif</SelectItem>
-                <SelectItem value="PASIF">Pasif</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select
-              value={processingStatus}
-              onValueChange={(value) => {
-                setProcessingStatus(value);
-                setPage(1);
-              }}
-            >
-              <SelectTrigger className="w-[130px] bg-zinc-900 border-zinc-800">
-                <SelectValue placeholder="İşlem" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Tümü</SelectItem>
-                <SelectItem value="pending">Bekliyor</SelectItem>
-                <SelectItem value="done">Tamamlandı</SelectItem>
-                <SelectItem value="error">Hatalı</SelectItem>
-              </SelectContent>
-            </Select>
-            <Button type="submit" size="sm">Ara</Button>
+              <RefreshCw className={`h-4 w-4 mr-2 ${loading ? "animate-spin" : ""}`} />
+              Yenile
+            </Button>
           </div>
-        </form>
-      </CardHeader>
 
-      <CardContent>
-        {loading ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-            {[...Array(8)].map((_, i) => (
-              <Skeleton key={i} className="h-52 w-full rounded-xl" />
-            ))}
-          </div>
-        ) : products.length === 0 ? (
-          <div className="text-center py-16">
-            <Package className="h-12 w-12 text-zinc-700 mx-auto mb-3" />
-            <p className="text-zinc-400">Ürün bulunamadı</p>
-            <p className="text-sm text-zinc-600 mt-1">
-              Excel dosyası yükleyerek başlayın
-            </p>
-          </div>
-        ) : (
-          <>
-            {/* Ürün Grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-              {products.map((product) => (
-                <ProductCard key={product.id} product={product} />
+          {/* Filters */}
+          <form onSubmit={handleSearch} className="flex flex-col sm:flex-row gap-2 mt-4">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-500" />
+              <Input
+                placeholder="Ürün kodu, isim veya barkod ara..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="pl-9 bg-zinc-900 border-zinc-800"
+              />
+            </div>
+            <div className="flex gap-2">
+              <Select
+                value={durum}
+                onValueChange={(value) => {
+                  setDurum(value);
+                  setPage(1);
+                }}
+              >
+                <SelectTrigger className="w-[120px] bg-zinc-900 border-zinc-800">
+                  <SelectValue placeholder="Durum" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Tümü</SelectItem>
+                  <SelectItem value="AKTIF">Aktif</SelectItem>
+                  <SelectItem value="PASIF">Pasif</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select
+                value={processingStatus}
+                onValueChange={(value) => {
+                  setProcessingStatus(value);
+                  setPage(1);
+                }}
+              >
+                <SelectTrigger className="w-[130px] bg-zinc-900 border-zinc-800">
+                  <SelectValue placeholder="İşlem" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Tümü</SelectItem>
+                  <SelectItem value="pending">Bekliyor</SelectItem>
+                  <SelectItem value="done">Tamamlandı</SelectItem>
+                  <SelectItem value="error">Hatalı</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button type="submit" size="sm">Ara</Button>
+            </div>
+          </form>
+        </CardHeader>
+
+        <CardContent>
+          {loading ? (
+            <div className="space-y-3">
+              {[...Array(5)].map((_, i) => (
+                <Skeleton key={i} className="h-48 w-full rounded-xl" />
               ))}
             </div>
-
-            {/* Pagination */}
-            <div className="flex items-center justify-between mt-6 pt-4 border-t border-zinc-800">
-              <p className="text-sm text-zinc-500">
-                Sayfa {page} / {totalPages}
+          ) : products.length === 0 ? (
+            <div className="text-center py-16">
+              <Package className="h-12 w-12 text-zinc-700 mx-auto mb-3" />
+              <p className="text-zinc-400">Ürün bulunamadı</p>
+              <p className="text-sm text-zinc-600 mt-1">
+                Excel dosyası yükleyerek başlayın
               </p>
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setPage((p) => Math.max(1, p - 1))}
-                  disabled={page === 1}
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                  disabled={page === totalPages}
-                >
-                  <ChevronRight className="h-4 w-4" />
-                </Button>
-              </div>
             </div>
-          </>
-        )}
-      </CardContent>
-    </Card>
+          ) : (
+            <>
+              {/* Ürün Listesi */}
+              <div className="space-y-3">
+                {products.map((product) => (
+                  <ProductRow
+                    key={product.id}
+                    product={product}
+                    onImageHover={handleImageHover}
+                    onImageLeave={handleImageLeave}
+                  />
+                ))}
+              </div>
+
+              {/* Pagination */}
+              <div className="flex items-center justify-between mt-6 pt-4 border-t border-zinc-800">
+                <p className="text-sm text-zinc-500">
+                  Sayfa {page} / {totalPages} ({total} ürün)
+                </p>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    disabled={page === 1}
+                  >
+                    <ChevronLeft className="h-4 w-4 mr-1" />
+                    Önceki
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                    disabled={page === totalPages}
+                  >
+                    Sonraki
+                    <ChevronRight className="h-4 w-4 ml-1" />
+                  </Button>
+                </div>
+              </div>
+            </>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Global Image Preview */}
+      <ImagePreview
+        imageUrl={previewImage}
+        position={previewPosition}
+        onClose={handleImageLeave}
+      />
+    </>
   );
 }
