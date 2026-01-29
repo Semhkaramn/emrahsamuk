@@ -334,7 +334,7 @@ export function ExcelUploader() {
     }));
   }, []);
 
-  const renderProgressContent = (state: UploadState) => {
+  const renderProgressContent = (state: UploadState, fileTypeId: string) => {
     const isUploading = state.uploadPhase === 'uploading';
     const isProcessing = state.uploadPhase === 'processing';
 
@@ -362,7 +362,7 @@ export function ExcelUploader() {
             <div className="flex items-center justify-between text-xs text-zinc-400">
               <span className="flex items-center gap-1">
                 <Database className="h-3 w-3" />
-                Veritabanına yaziliyor
+                Veritabanina yaziliyor
               </span>
               <span className="font-medium text-emerald-400">{state.processingProgress}%</span>
             </div>
@@ -388,9 +388,7 @@ export function ExcelUploader() {
         <Button
           variant="outline"
           size="sm"
-          onClick={() => {
-            // This will be called from the parent context with the correct fileType.id
-          }}
+          onClick={() => handleCancelUpload(fileTypeId)}
           className="mt-1"
         >
           Iptal
@@ -399,7 +397,7 @@ export function ExcelUploader() {
     );
   };
 
-  const renderResultContent = (state: UploadState) => {
+  const renderResultContent = (state: UploadState, fileTypeId: string) => {
     const result = state.result;
     if (!result) return null;
 
@@ -464,7 +462,7 @@ export function ExcelUploader() {
           variant="outline"
           size="sm"
           className="mt-2"
-          onClick={() => resetState}
+          onClick={() => resetState(fileTypeId)}
         >
           Tekrar Yukle
         </Button>
@@ -502,9 +500,9 @@ export function ExcelUploader() {
                 className="border-2 border-dashed border-zinc-700 rounded-lg p-6 text-center hover:border-zinc-600 transition-colors cursor-pointer min-h-[200px] flex items-center justify-center"
               >
                 {isActive && !isComplete ? (
-                  renderProgressContent(state)
+                  renderProgressContent(state, fileType.id)
                 ) : isComplete ? (
-                  renderResultContent(state)
+                  renderResultContent(state, fileType.id)
                 ) : (
                   <label className="flex flex-col items-center gap-2 cursor-pointer">
                     <Upload className="h-8 w-8 text-zinc-500" />
