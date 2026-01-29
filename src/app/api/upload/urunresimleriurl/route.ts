@@ -48,7 +48,7 @@ export async function POST(request: NextRequest) {
     const data: UrunResimRow[] = XLSX.utils.sheet_to_json(sheet);
 
     let productsProcessed = 0;
-    let imagesCreated = 0;
+    const imagesCreated = 0;
     let imagesUpdated = 0;
     let skipped = 0;
     let failed = 0;
