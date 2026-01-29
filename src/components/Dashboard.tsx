@@ -67,7 +67,7 @@ export function Dashboard() {
       } else {
         setError(data.error);
       }
-    } catch (err) {
+    } catch {
       setError("İstatistikler yüklenirken hata oluştu");
     } finally {
       setLoading(false);
