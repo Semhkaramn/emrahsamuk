@@ -3,8 +3,8 @@ import prisma from "@/lib/db";
 import * as XLSX from "xlsx";
 import { Prisma } from "@prisma/client";
 
-// Route segment config - timeout ve body size ayarları
-export const maxDuration = 300; // 5 dakika timeout
+// Route segment config
+export const maxDuration = 300;
 export const dynamic = 'force-dynamic';
 
 interface UrunBilgisiRow {
@@ -68,8 +68,20 @@ interface UrunBilgisiRow {
   VITRINDURUMU?: string;
 }
 
-// Batch işleme boyutu - büyük dosyalar için optimize edilmiş
-const BATCH_SIZE = 500;
+// Daha küçük batch boyutu - veritabanı yükünü azaltır
+const BATCH_SIZE = 200;
+
+// Paralel işlem limiti
+const PARALLEL_LIMIT = 20;
+
+// Yardımcı: Diziyi chunk'lara böl
+function chunkArray<T>(array: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let i = 0; i < array.length; i += size) {
+    chunks.push(array.slice(i, i + size));
+  }
+  return chunks;
+}
 
 export async function POST(request: NextRequest) {
   const encoder = new TextEncoder();
@@ -111,7 +123,7 @@ export async function POST(request: NextRequest) {
           message: `${total} ürün bulundu, işlem başlıyor...`
         });
 
-        // Önce tüm mevcut ürünlerin ID'lerini al (performans için)
+        // Tüm mevcut ürünlerin ID'lerini al
         const allIds = data.filter(row => row.ID).map(row => Number(row.ID));
         const existingProducts = await prisma.product.findMany({
           where: { urunId: { in: allIds } },
@@ -119,9 +131,23 @@ export async function POST(request: NextRequest) {
         });
         const existingIdSet = new Set(existingProducts.map(p => p.urunId));
 
+        // Mevcut fiyat kayıtlarını al
+        const existingPrices = await prisma.productPrice.findMany({
+          where: { urunId: { in: allIds } },
+          select: { urunId: true }
+        });
+        const existingPriceIdSet = new Set(existingPrices.map(p => p.urunId));
+
+        // Mevcut SEO kayıtlarını al
+        const existingSeo = await prisma.productSeo.findMany({
+          where: { urunId: { in: allIds } },
+          select: { urunId: true }
+        });
+        const existingSeoIdSet = new Set(existingSeo.map(p => p.urunId));
+
         sendProgress({
           type: 'status',
-          message: `${existingIdSet.size} mevcut ürün bulundu, batch işleme başlıyor...`
+          message: `${existingIdSet.size} mevcut ürün bulundu, yükleme başlıyor...`
         });
 
         // Batch işleme
@@ -129,11 +155,12 @@ export async function POST(request: NextRequest) {
           const batchEnd = Math.min(batchStart + BATCH_SIZE, data.length);
           const batch = data.slice(batchStart, batchEnd);
 
-          // Her batch için ürünleri hazırla
           const productsToCreate: Prisma.ProductCreateManyInput[] = [];
-          const productsToUpdate: { urunId: number; data: Omit<Prisma.ProductCreateManyInput, 'urunId'> }[] = [];
-          const priceOperations: { urunId: number; data: Omit<Prisma.ProductPriceCreateInput, 'product'> }[] = [];
-          const seoOperations: { urunId: number; data: Omit<Prisma.ProductSeoCreateInput, 'product'> }[] = [];
+          const productsToUpdate: { urunId: number; data: Prisma.ProductUpdateInput }[] = [];
+          const pricesToCreate: Prisma.ProductPriceCreateManyInput[] = [];
+          const pricesToUpdate: { urunId: number; data: Prisma.ProductPriceUpdateInput }[] = [];
+          const seosToCreate: Prisma.ProductSeoCreateManyInput[] = [];
+          const seosToUpdate: { urunId: number; data: Prisma.ProductSeoUpdateInput }[] = [];
 
           for (let i = 0; i < batch.length; i++) {
             const row = batch[i];
@@ -153,7 +180,6 @@ export async function POST(request: NextRequest) {
               const isExisting = existingIdSet.has(urunId);
 
               const productData = {
-                urunId,
                 urunKodu,
                 barkodNo: row.BARKODNO || null,
                 eskiAdi: row.ADI || null,
@@ -181,13 +207,11 @@ export async function POST(request: NextRequest) {
               };
 
               if (isExisting) {
-                // eslint-disable-next-line @typescript-eslint/no-unused-vars
-                const { urunId: _, ...updateData } = productData;
-                productsToUpdate.push({ urunId, data: updateData });
+                productsToUpdate.push({ urunId, data: productData });
                 updated++;
               } else {
-                productsToCreate.push(productData);
-                existingIdSet.add(urunId); // Yeni eklenenler için set'i güncelle
+                productsToCreate.push({ urunId, ...productData });
+                existingIdSet.add(urunId);
                 created++;
               }
 
@@ -225,9 +249,15 @@ export async function POST(request: NextRequest) {
                 bayiFiyati3: row.BAYIFIYATI3 || null,
                 bayiFiyati4: row.BAYIFIYATI4 || null,
               };
-              priceOperations.push({ urunId, data: priceData });
 
-              // SEO bilgileri (varsa)
+              if (existingPriceIdSet.has(urunId)) {
+                pricesToUpdate.push({ urunId, data: priceData });
+              } else {
+                pricesToCreate.push({ urunId, ...priceData });
+                existingPriceIdSet.add(urunId);
+              }
+
+              // SEO bilgileri
               if (row.SEOBASLIK || row.SEOANAHTARKELIME || row.SEOACIKLAMA) {
                 const seoData = {
                   seoBaslik: row.SEOBASLIK || null,
@@ -235,7 +265,13 @@ export async function POST(request: NextRequest) {
                   seoAciklama: row.SEOACIKLAMA || null,
                   seoUrl: row.URL || null,
                 };
-                seoOperations.push({ urunId, data: seoData });
+
+                if (existingSeoIdSet.has(urunId)) {
+                  seosToUpdate.push({ urunId, data: seoData });
+                } else {
+                  seosToCreate.push({ urunId, ...seoData });
+                  existingSeoIdSet.add(urunId);
+                }
               }
 
             } catch (err) {
@@ -248,51 +284,80 @@ export async function POST(request: NextRequest) {
             }
           }
 
-          // Transaction ile batch işleme
+          // Veritabanı işlemleri - createMany ile toplu ekleme (çok hızlı!)
           try {
-            await prisma.$transaction(async (tx) => {
-              // 1. Yeni ürünleri toplu ekle
-              if (productsToCreate.length > 0) {
-                await tx.product.createMany({
-                  data: productsToCreate,
-                  skipDuplicates: true,
-                });
+            // 1. Yeni ürünleri toplu ekle (TEK SORGU)
+            if (productsToCreate.length > 0) {
+              await prisma.product.createMany({
+                data: productsToCreate,
+                skipDuplicates: true,
+              });
+            }
+
+            // 2. Mevcut ürünleri güncelle - sınırlı paralel
+            if (productsToUpdate.length > 0) {
+              const updateChunks = chunkArray(productsToUpdate, PARALLEL_LIMIT);
+              for (const chunk of updateChunks) {
+                await Promise.all(
+                  chunk.map(({ urunId, data }) =>
+                    prisma.product.update({
+                      where: { urunId },
+                      data,
+                    }).catch(() => null)
+                  )
+                );
               }
+            }
 
-              // 2. Mevcut ürünleri güncelle (paralel)
-              const updatePromises = productsToUpdate.map(({ urunId, data }) =>
-                tx.product.update({
-                  where: { urunId },
-                  data,
-                }).catch(() => null) // Hata olursa null dön, işleme devam et
-              );
-              await Promise.all(updatePromises);
+            // 3. Yeni fiyatları toplu ekle (TEK SORGU)
+            if (pricesToCreate.length > 0) {
+              await prisma.productPrice.createMany({
+                data: pricesToCreate,
+                skipDuplicates: true,
+              });
+            }
 
-              // 3. Fiyatları upsert et (paralel)
-              const pricePromises = priceOperations.map(({ urunId, data }) =>
-                tx.productPrice.upsert({
-                  where: { urunId },
-                  update: data,
-                  create: { urunId, ...data },
-                }).catch(() => null)
-              );
-              await Promise.all(pricePromises);
+            // 4. Mevcut fiyatları güncelle - sınırlı paralel
+            if (pricesToUpdate.length > 0) {
+              const priceChunks = chunkArray(pricesToUpdate, PARALLEL_LIMIT);
+              for (const chunk of priceChunks) {
+                await Promise.all(
+                  chunk.map(({ urunId, data }) =>
+                    prisma.productPrice.update({
+                      where: { urunId },
+                      data,
+                    }).catch(() => null)
+                  )
+                );
+              }
+            }
 
-              // 4. SEO bilgilerini upsert et (paralel)
-              const seoPromises = seoOperations.map(({ urunId, data }) =>
-                tx.productSeo.upsert({
-                  where: { urunId },
-                  update: data,
-                  create: { urunId, ...data },
-                }).catch(() => null)
-              );
-              await Promise.all(seoPromises);
-            }, {
-              timeout: 60000, // 60 saniye transaction timeout
-            });
-          } catch (txError) {
-            console.error("Transaction error:", txError);
-            // Transaction hatası olursa, batch'teki ürünleri tek tek işle
+            // 5. Yeni SEO'ları toplu ekle (TEK SORGU)
+            if (seosToCreate.length > 0) {
+              await prisma.productSeo.createMany({
+                data: seosToCreate,
+                skipDuplicates: true,
+              });
+            }
+
+            // 6. Mevcut SEO'ları güncelle - sınırlı paralel
+            if (seosToUpdate.length > 0) {
+              const seoChunks = chunkArray(seosToUpdate, PARALLEL_LIMIT);
+              for (const chunk of seoChunks) {
+                await Promise.all(
+                  chunk.map(({ urunId, data }) =>
+                    prisma.productSeo.update({
+                      where: { urunId },
+                      data,
+                    }).catch(() => null)
+                  )
+                );
+              }
+            }
+
+          } catch (batchError) {
+            console.error("Batch error:", batchError);
+            // Hata durumunda tek tek dene
             for (const product of productsToCreate) {
               try {
                 await prisma.product.create({ data: product });
@@ -318,7 +383,7 @@ export async function POST(request: NextRequest) {
           });
         }
 
-        // Log the upload
+        // Log
         try {
           await prisma.processingLog.create({
             data: {
@@ -328,7 +393,7 @@ export async function POST(request: NextRequest) {
             },
           });
         } catch (logErr) {
-          console.error("Log create error:", logErr);
+          console.error("Log error:", logErr);
         }
 
         sendProgress({
@@ -346,7 +411,7 @@ export async function POST(request: NextRequest) {
 
         controller.close();
       } catch (error) {
-        console.error("Upload urunbilgisi error:", error);
+        console.error("Upload error:", error);
         sendProgress({
           type: 'error',
           message: error instanceof Error ? error.message : "Dosya işlenirken hata oluştu"
