@@ -105,7 +105,8 @@ export async function POST(request: NextRequest) {
         }
 
         // Call OpenAI for SEO optimization with image analysis
-        const seoResult = await optimizeSEOWithVision(productName, imageUrl, apiKey);
+        // Pass useImageFromSettings to control prompt behavior
+        const seoResult = await optimizeSEOWithVision(productName, imageUrl, apiKey, useImageFromSettings);
 
         if (seoResult) {
           // Save to database using urunId
@@ -308,7 +309,8 @@ export async function GET() {
 async function optimizeSEOWithVision(
   productName: string,
   imageUrl: string | undefined,
-  apiKey: string
+  apiKey: string,
+  useImageSetting: boolean
 ): Promise<{
   seoTitle: string;
   seoKeywords: string;
@@ -316,7 +318,9 @@ async function optimizeSEOWithVision(
   seoUrl: string;
   category: string;
 } | null> {
-  const systemPrompt = `Sen Türkiye'nin EN İYİ e-ticaret SEO uzmanısın. Trendyol, Hepsiburada, N11'de 1. sıraya çıkacak profesyonel ürün başlıkları oluşturuyorsun.
+
+  // GÖRSEL AYARI AÇIK - Tam analiz prompt'u
+  const systemPromptWithImage = `Sen Türkiye'nin EN İYİ e-ticaret SEO uzmanısın. Trendyol, Hepsiburada, N11'de 1. sıraya çıkacak profesyonel ürün başlıkları oluşturuyorsun.
 
 🚫 ÇIKARILACAKLAR (Yeni isimde ASLA olmamalı):
 - Marka adları (Nike, Adidas, Zara, LC Waikiki, Koton, DeFacto, Mavi, vs.)
@@ -367,7 +371,56 @@ Yanıtını tam olarak bu JSON formatında ver:
   "category": "Ana Kategori > Alt Kategori > Alt Alt Kategori"
 }`;
 
-  const userPrompt = `Ürün adı: "${productName || "Belirtilmemiş"}"
+  // GÖRSEL AYARI KAPALI - Sadece isimdeki bilgilerden SEO yapan prompt
+  const systemPromptNameOnly = `Sen Türkiye'nin EN İYİ e-ticaret SEO uzmanısın. Ürün isimlerini SEO uyumlu hale getiriyorsun.
+
+⚠️ ÖNEMLİ KURAL - SADECE İSİMDEKİ BİLGİLERİ KULLAN:
+- SADECE ürün adında AÇIKÇA YAZILAN bilgileri kullan
+- Ürün adında YAZMAYAN hiçbir özellik EKLEME
+- Tahmin yapma, varsayım yapma, yorum yapma
+- Örnek: "Siyah Pantolon" yazıyorsa, pamuklu, yüksek bel, slim fit gibi şeyler EKLEME
+
+🚫 ÇIKARILACAKLAR (Yeni isimde ASLA olmamalı):
+- Marka adları (Nike, Adidas, Zara, LC Waikiki, Koton, DeFacto, Mavi, vs.)
+- Ürün kodları, stok kodları, SKU (ABC123, BRN-001, KV2025, vs.)
+- Barkod numaraları
+- Anlamsız kısaltmalar
+
+✅ YAPILACAKLAR:
+1. Marka ve kodları temizle
+2. İsimdeki bilgileri düzgün sırala
+3. Kategori kelimesi ekle (Kadın Giyim, Erkek Giyim, vs.)
+4. SEO uyumlu format yap
+
+🎯 ÖRNEKLER:
+❌ "Nike Air Max 90 Siyah ABC123"
+✅ "Siyah Spor Ayakkabı Erkek Ayakkabı" (Air Max'ın özelliklerini bilmiyoruz, ekleme)
+
+❌ "KOTON Mavi Gömlek 456789"
+✅ "Mavi Gömlek Erkek Giyim" (Pamuklu, slim fit vs. yazmıyorsa EKLEME)
+
+❌ "BRN-KV2025010044 Siyah Deri Pantolon"
+✅ "Siyah Deri Pantolon Kadın Giyim" (Deri isimde yazıyor, onu kullan)
+
+❌ "Elbise Kırmızı 12345"
+✅ "Kırmızı Elbise Kadın Giyim" (Sadece renk ve ürün tipi var)
+
+❌ "Pamuk Tişört Beyaz"
+✅ "Beyaz Pamuk Tişört Kadın Giyim" (Pamuk isimde yazıyor, kullanabilirsin)
+
+Yanıtını tam olarak bu JSON formatında ver:
+{
+  "seoTitle": "Sadece isimdeki bilgilerle SEO uyumlu başlık (50-80 karakter)",
+  "seoKeywords": "isimdeki kelimelere dayalı anahtar kelimeler, virgülle ayrılmış",
+  "seoDescription": "SEO meta açıklaması (max 160 karakter)",
+  "seoUrl": "seo-uyumlu-url-slug",
+  "category": "Ana Kategori > Alt Kategori"
+}`;
+
+  // Görsel ayarına göre prompt seç
+  const systemPrompt = useImageSetting ? systemPromptWithImage : systemPromptNameOnly;
+
+  const userPromptWithImage = `Ürün adı: "${productName || "Belirtilmemiş"}"
 
 🔍 ADIM ADIM GÖREV:
 
@@ -393,9 +446,38 @@ Yanıtını tam olarak bu JSON formatında ver:
 ⚠️ UNUTMA: Başlık MUTLAKA şunları içermeli:
 - Renk + Malzeme + Detay + Ürün Tipi + Kesim + Kullanım Alanı + Kategori Kelimesi`;
 
+  const userPromptNameOnly = `Ürün adı: "${productName || "Belirtilmemiş"}"
+
+⚠️ ÇOK ÖNEMLİ - SADECE İSİMDEKİ BİLGİLERİ KULLAN:
+
+1. 🚫 **TEMİZLE**: Marka adı, ürün kodu, barkod, SKU → HEPSİNİ ÇIKAR
+
+2. ✨ **SADECE İSİMDEKİ BİLGİLERLE BAŞLIK OLUŞTUR**:
+   - İsimde ne yazıyorsa onu kullan
+   - Tahmin yapma, yeni özellik ekleme
+   - Örnek: "Siyah Pantolon" → "Siyah Pantolon Kadın Giyim" (pamuklu, yüksek bel ekleme!)
+   - Örnek: "Mavi Pamuklu Gömlek" → "Mavi Pamuklu Gömlek Erkek Giyim" (pamuklu isimde var, kullan)
+
+3. 🎯 **ANAHTAR KELİMELER**: Sadece isimdeki kelimelerden türet
+
+4. 📝 **SEO AÇIKLAMASI**: İsimdeki bilgilerle açıklama yaz
+
+5. 🔗 **URL SLUG**: Türkçe karaktersiz, tire ile ayrılmış
+
+6. 📂 **KATEGORİ**: Ürün tipine göre kategori tahmin et
+
+⛔ ASLA YAPMA:
+- İsimde "pamuk" yazmıyorsa "pamuklu" deme
+- İsimde "deri" yazmıyorsa "deri" deme
+- İsimde "slim fit" yazmıyorsa "slim fit" deme
+- Hiçbir yeni özellik ekleme!`;
+
+  // Görsel ayarına göre user prompt seç
+  const userPrompt = useImageSetting ? userPromptWithImage : userPromptNameOnly;
+
   try {
-    // Görsel varsa GPT-4 Vision kullan
-    if (imageUrl) {
+    // Görsel varsa VE görsel ayarı açıksa GPT-4 Vision kullan
+    if (imageUrl && useImageSetting) {
       const response = await fetch("https://api.openai.com/v1/chat/completions", {
         method: "POST",
         headers: {
@@ -436,7 +518,7 @@ Yanıtını tam olarak bu JSON formatında ver:
       }
     }
 
-    // Görsel yoksa veya hata olduysa, sadece isimle dene
+    // Görsel yoksa veya görsel ayarı kapalıysa sadece isimle dene
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -449,7 +531,7 @@ Yanıtını tam olarak bu JSON formatında ver:
           { role: "system", content: systemPrompt },
           { role: "user", content: userPrompt },
         ],
-        temperature: 0.7,
+        temperature: 0.3, // Daha düşük sıcaklık - daha deterministik
         max_tokens: 500,
       }),
     });
