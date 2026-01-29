@@ -237,7 +237,7 @@ export function ExcelUploader() {
                     <Loader2 className="h-8 w-8 text-amber-400 animate-spin" />
                     <div className="w-full space-y-2">
                       <div className="flex justify-between text-xs text-zinc-400">
-                        <span className="truncate max-w-[150px]">{state.fileName}</span>
+                        <span className="break-all">{state.fileName}</span>
                         <span className="font-medium text-amber-400">{state.progress}%</span>
                       </div>
                       <Progress value={state.progress} className="h-2" />
