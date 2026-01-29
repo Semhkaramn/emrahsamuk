@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
+import { getCloudinarySettings, type CloudinarySettings } from "@/lib/settings-cache";
 
 // POST - Toplu resim işleme başlat
 export async function POST(request: NextRequest) {
@@ -7,29 +8,16 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { batchSize = 20, uploadToCloudinary = false } = body;
 
-    // Get Cloudinary settings if upload is enabled
-    let cloudinarySettings: { cloudName: string; apiKey: string; apiSecret: string; folder: string } | null = null;
+    // Get Cloudinary settings from cache if upload is enabled
+    let cloudinarySettings: CloudinarySettings | null = null;
     if (uploadToCloudinary) {
-      const [cloudName, apiKey, apiSecret, folder] = await Promise.all([
-        prisma.settings.findUnique({ where: { key: "cloudinary_cloud_name" } }),
-        prisma.settings.findUnique({ where: { key: "cloudinary_api_key" } }),
-        prisma.settings.findUnique({ where: { key: "cloudinary_api_secret" } }),
-        prisma.settings.findUnique({ where: { key: "cloudinary_folder" } }),
-      ]);
-
-      if (!cloudName?.value || !apiKey?.value || !apiSecret?.value) {
+      cloudinarySettings = await getCloudinarySettings();
+      if (!cloudinarySettings) {
         return NextResponse.json(
           { success: false, error: "Cloudinary ayarları eksik" },
           { status: 400 }
         );
       }
-
-      cloudinarySettings = {
-        cloudName: cloudName.value,
-        apiKey: apiKey.value,
-        apiSecret: apiSecret.value,
-        folder: folder?.value || "products",
-      };
     }
 
     // Get images to process (pending status)
