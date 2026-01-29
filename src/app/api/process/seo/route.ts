@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
-import { getOpenAIApiKey } from "@/lib/settings-cache";
+import { getOpenAIApiKey, isImageUsedForNaming } from "@/lib/settings-cache";
 
 // POST - Toplu SEO işleme başlat
 export async function POST(request: NextRequest) {
@@ -16,6 +16,9 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
+
+    // Check if image should be used from settings
+    const useImageFromSettings = await isImageUsedForNaming();
 
     // Get products to process
     const whereClause = onlyPending
@@ -69,7 +72,10 @@ export async function POST(request: NextRequest) {
     for (const product of products) {
       try {
         const productName = product.eskiAdi || product.urunKodu || "";
-        const imageUrl = product.images[0]?.yeniUrl || product.images[0]?.eskiUrl || undefined;
+        // Only use image if setting is enabled
+        const imageUrl = useImageFromSettings
+          ? (product.images[0]?.yeniUrl || product.images[0]?.eskiUrl || undefined)
+          : undefined;
 
         // Eski ve yeni resim URL'lerini al
         const eskiResimler = product.images
