@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
 import * as XLSX from "xlsx";
 
+// Route segment config - timeout ve body size ayarları
+export const maxDuration = 300; // 5 dakika timeout
+export const dynamic = 'force-dynamic';
+
 interface UrunResimRow {
   URUNID: number;
   URUNKODU?: string;
@@ -51,93 +55,114 @@ export async function POST(request: NextRequest) {
     const errors: string[] = [];
     const total = data.length;
 
-    for (let i = 0; i < data.length; i++) {
-      const row = data[i];
-      // URUNID zorunlu
-      if (!row.URUNID) {
-        failed++;
-        errors.push(`Satır ${i + 2} atlandı: URUNID boş`);
-        continue;
-      }
+    // Önce tüm mevcut ürünleri bir seferde al (performans için)
+    const allUrunIds = data
+      .filter(row => row.URUNID)
+      .map(row => Number(row.URUNID));
 
-      try {
-        const urunId = Number(row.URUNID);
+    const existingProducts = await prisma.product.findMany({
+      where: { urunId: { in: allUrunIds } },
+      select: { urunId: true }
+    });
 
-        // Check if product exists by urunId
-        const existingProduct = await prisma.product.findUnique({
-          where: { urunId },
-        });
+    const existingUrunIdSet = new Set(existingProducts.map(p => p.urunId));
 
-        if (!existingProduct) {
-          skipped++;
-          continue;
+    // Batch işleme - 50'şer kayıt işle
+    const BATCH_SIZE = 50;
+
+    for (let batchStart = 0; batchStart < data.length; batchStart += BATCH_SIZE) {
+      const batch = data.slice(batchStart, batchStart + BATCH_SIZE);
+
+      // Her batch için transaction kullan
+      const batchPromises = batch.map(async (row, index) => {
+        const rowIndex = batchStart + index;
+
+        // URUNID zorunlu
+        if (!row.URUNID) {
+          failed++;
+          errors.push(`Satır ${rowIndex + 2} atlandı: URUNID boş`);
+          return;
         }
 
-        // Extract all image URLs (RESIM1-16)
-        const imageUrls: { sira: number; url: string }[] = [];
-        for (let j = 1; j <= 16; j++) {
-          const key = `RESIM${j}` as keyof UrunResimRow;
-          const url = row[key];
-          if (url && typeof url === "string" && url.trim()) {
-            imageUrls.push({ sira: j, url: url.trim() });
+        try {
+          const urunId = Number(row.URUNID);
+
+          // Ürün var mı kontrol et (cache'den)
+          if (!existingUrunIdSet.has(urunId)) {
+            skipped++;
+            return;
           }
-        }
 
-        // Process each image
-        for (const img of imageUrls) {
-          const existingImage = await prisma.productImage.findUnique({
-            where: {
-              urunId_sira: {
-                urunId,
-                sira: img.sira,
-              },
-            },
-          });
+          // Extract all image URLs (RESIM1-16)
+          const imageUrls: { sira: number; url: string }[] = [];
+          for (let j = 1; j <= 16; j++) {
+            const key = `RESIM${j}` as keyof UrunResimRow;
+            const url = row[key];
+            if (url && typeof url === "string" && url.trim()) {
+              imageUrls.push({ sira: j, url: url.trim() });
+            }
+          }
 
-          if (existingImage) {
-            await prisma.productImage.update({
-              where: {
-                urunId_sira: {
+          if (imageUrls.length === 0) {
+            skipped++;
+            return;
+          }
+
+          // Upsert kullanarak tek seferde işle
+          for (const img of imageUrls) {
+            try {
+              await prisma.productImage.upsert({
+                where: {
+                  urunId_sira: {
+                    urunId,
+                    sira: img.sira,
+                  },
+                },
+                update: {
+                  eskiUrl: img.url,
+                  status: "pending",
+                },
+                create: {
                   urunId,
                   sira: img.sira,
+                  eskiUrl: img.url,
+                  status: "pending",
                 },
-              },
-              data: {
-                eskiUrl: img.url,
-                status: "pending",
-              },
-            });
-            imagesUpdated++;
-          } else {
-            await prisma.productImage.create({
-              data: {
-                urunId,
-                sira: img.sira,
-                eskiUrl: img.url,
-                status: "pending",
-              },
-            });
-            imagesCreated++;
+              });
+              imagesUpdated++; // upsert ile güncelleme/oluşturma aynı sayaçta
+            } catch (imgErr) {
+              // Resim kaydederken hata olursa devam et
+              console.error(`Image upsert error for urunId ${urunId}, sira ${img.sira}:`, imgErr);
+            }
+          }
+
+          productsProcessed++;
+        } catch (err) {
+          failed++;
+          if (errors.length < 10) {
+            errors.push(
+              `Hata (URUNID: ${row.URUNID}): ${err instanceof Error ? err.message : "Unknown error"}`
+            );
           }
         }
+      });
 
-        productsProcessed++;
-      } catch (err) {
-        failed++;
-        errors.push(
-          `Hata (URUNID: ${row.URUNID}): ${err instanceof Error ? err.message : "Unknown error"}`
-        );
-      }
+      // Batch'i paralel işle
+      await Promise.all(batchPromises);
     }
 
     // Log the upload
-    await prisma.processingLog.create({
-      data: {
-        islemTipi: "upload",
-        durum: failed > 0 ? "partial" : "success",
-        mesaj: `ürünresimleriurl.xlsx yüklendi. Ürün: ${productsProcessed}, Yeni resim: ${imagesCreated}, Güncellenen: ${imagesUpdated}, Atlanan: ${skipped}`,
-      },
-    });
+    try {
+      await prisma.processingLog.create({
+        data: {
+          islemTipi: "upload",
+          durum: failed > 0 ? "partial" : "success",
+          mesaj: `ürünresimleriurl.xlsx yüklendi. Ürün: ${productsProcessed}, Resim: ${imagesUpdated}, Atlanan: ${skipped}`,
+        },
+      });
+    } catch (logErr) {
+      console.error("Log create error:", logErr);
+    }
 
     return NextResponse.json({
       success: true,
@@ -145,7 +170,7 @@ export async function POST(request: NextRequest) {
       stats: {
         total,
         productsProcessed,
-        imagesCreated,
+        imagesCreated: 0, // upsert kullanıldığı için ayrı sayılmıyor
         imagesUpdated,
         skipped,
         failed,
