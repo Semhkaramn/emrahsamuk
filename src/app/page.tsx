@@ -7,7 +7,9 @@ import { Dashboard } from "@/components/Dashboard";
 import { ExcelUploader } from "@/components/ExcelUploader";
 import { ProductDataGrid } from "@/components/ProductDataGrid";
 import { SettingsPanel } from "@/components/SettingsPanel";
-import { LiveProcessingPanel } from "@/components/LiveProcessingPanel";
+import { NameProcessingPanel } from "@/components/NameProcessingPanel";
+import { ImageProcessingPanel } from "@/components/ImageProcessingPanel";
+import { CategoryProcessingPanel } from "@/components/CategoryProcessingPanel";
 import { ExportPanel } from "@/components/ExportPanel";
 import {
   LayoutDashboard,
@@ -15,10 +17,8 @@ import {
   Package,
   Download,
   Settings,
-  FileSpreadsheet,
-  Image as ImageIcon,
   Sparkles,
-  Zap,
+  Image as ImageIcon,
   FolderTree,
   Loader2,
   CheckCircle2,
@@ -28,7 +28,7 @@ import {
 } from "lucide-react";
 
 type ExportType = "pcden" | "full" | "urunbilgisi" | "urunkategori";
-type ActivePage = "dashboard" | "process" | "upload" | "products" | "export" | "settings";
+type ActivePage = "dashboard" | "name-process" | "image-process" | "category-process" | "upload" | "products" | "export" | "settings";
 
 interface ExportState {
   loading: boolean;
@@ -41,14 +41,17 @@ interface NavItem {
   label: string;
   icon: React.ComponentType<{ className?: string }>;
   description: string;
+  category?: string;
 }
 
 const navItems: NavItem[] = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, description: "Genel bakış ve istatistikler" },
-  { id: "process", label: "İşlem", icon: Zap, description: "SEO ve resim işleme" },
-  { id: "upload", label: "Yükle", icon: Upload, description: "Excel dosyası yükleme" },
-  { id: "products", label: "Ürünler", icon: Package, description: "Ürün listesi ve detayları" },
-  { id: "export", label: "Export", icon: Download, description: "Veri dışa aktarma" },
+  { id: "name-process", label: "İsim Yapma", icon: Sparkles, description: "AI ile isim değiştirme", category: "İşlemler" },
+  { id: "image-process", label: "Resim Yapma", icon: ImageIcon, description: "Cloudinary'ye yükleme", category: "İşlemler" },
+  { id: "category-process", label: "Kategori Yapma", icon: FolderTree, description: "AI ile kategori belirleme", category: "İşlemler" },
+  { id: "upload", label: "Yükle", icon: Upload, description: "Excel dosyası yükleme", category: "Veri" },
+  { id: "products", label: "Ürünler", icon: Package, description: "Ürün listesi ve detayları", category: "Veri" },
+  { id: "export", label: "Export", icon: Download, description: "Veri dışa aktarma", category: "Veri" },
   { id: "settings", label: "Ayarlar", icon: Settings, description: "Sistem ayarları" },
 ];
 
@@ -104,7 +107,6 @@ export default function Home() {
         [type]: { loading: false, success: true, error: null },
       }));
 
-      // Reset success after 3 seconds
       setTimeout(() => {
         setExportStates((prev) => ({
           ...prev,
@@ -156,8 +158,12 @@ export default function Home() {
     switch (activePage) {
       case "dashboard":
         return <Dashboard />;
-      case "process":
-        return <LiveProcessingPanel />;
+      case "name-process":
+        return <NameProcessingPanel />;
+      case "image-process":
+        return <ImageProcessingPanel />;
+      case "category-process":
+        return <CategoryProcessingPanel />;
       case "upload":
         return (
           <div className="space-y-4">
@@ -208,6 +214,14 @@ export default function Home() {
     }
   };
 
+  // Group nav items by category
+  const groupedNavItems = navItems.reduce((acc, item) => {
+    const category = item.category || "Genel";
+    if (!acc[category]) acc[category] = [];
+    acc[category].push(item);
+    return acc;
+  }, {} as Record<string, NavItem[]>);
+
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100 flex">
       {/* Mobile Sidebar Overlay */}
@@ -244,44 +258,66 @@ export default function Home() {
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
-          {navItems.map((item) => {
-            const Icon = item.icon;
-            const isActive = activePage === item.id;
-            return (
-              <button
-                key={item.id}
-                onClick={() => {
-                  setActivePage(item.id);
-                  setMobileSidebarOpen(false);
-                }}
-                className={`
-                  w-full flex items-center gap-3 px-3 py-3 rounded-xl
-                  transition-all duration-200 group
-                  ${isActive
-                    ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
-                    : "text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100"
-                  }
-                `}
-              >
-                <Icon className={`w-5 h-5 shrink-0 ${isActive ? "text-emerald-400" : ""}`} />
-                {sidebarOpen && (
-                  <>
-                    <div className="flex-1 text-left overflow-hidden">
-                      <div className="font-medium truncate">{item.label}</div>
-                      <div className="text-xs text-zinc-500 truncate">{item.description}</div>
-                    </div>
-                    {isActive && (
-                      <ChevronRight className="w-4 h-4 text-emerald-400 shrink-0" />
-                    )}
-                  </>
-                )}
-              </button>
-            );
-          })}
+        <nav className="flex-1 p-3 space-y-4 overflow-y-auto">
+          {Object.entries(groupedNavItems).map(([category, items]) => (
+            <div key={category}>
+              {sidebarOpen && category !== "Genel" && (
+                <p className="px-3 py-1 text-xs font-semibold text-zinc-500 uppercase tracking-wider">
+                  {category}
+                </p>
+              )}
+              <div className="space-y-1">
+                {items.map((item) => {
+                  const Icon = item.icon;
+                  const isActive = activePage === item.id;
+
+                  // Color mapping for process pages
+                  const colorMap: Record<string, { bg: string; text: string; border: string }> = {
+                    "name-process": { bg: "bg-purple-500/10", text: "text-purple-400", border: "border-purple-500/20" },
+                    "image-process": { bg: "bg-blue-500/10", text: "text-blue-400", border: "border-blue-500/20" },
+                    "category-process": { bg: "bg-orange-500/10", text: "text-orange-400", border: "border-orange-500/20" },
+                  };
+                  const colors = colorMap[item.id];
+
+                  return (
+                    <button
+                      key={item.id}
+                      onClick={() => {
+                        setActivePage(item.id);
+                        setMobileSidebarOpen(false);
+                      }}
+                      className={`
+                        w-full flex items-center gap-3 px-3 py-3 rounded-xl
+                        transition-all duration-200 group
+                        ${isActive
+                          ? colors
+                            ? `${colors.bg} ${colors.text} border ${colors.border}`
+                            : "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+                          : "text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100"
+                        }
+                      `}
+                    >
+                      <Icon className={`w-5 h-5 shrink-0 ${isActive && colors ? colors.text : isActive ? "text-emerald-400" : ""}`} />
+                      {sidebarOpen && (
+                        <>
+                          <div className="flex-1 text-left overflow-hidden">
+                            <div className="font-medium truncate">{item.label}</div>
+                            <div className="text-xs text-zinc-500 truncate">{item.description}</div>
+                          </div>
+                          {isActive && (
+                            <ChevronRight className={`w-4 h-4 shrink-0 ${colors ? colors.text : "text-emerald-400"}`} />
+                          )}
+                        </>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
         </nav>
 
-        {/* Sidebar Footer - Toggle Button */}
+        {/* Sidebar Footer */}
         <div className="p-3 border-t border-zinc-800">
           <button
             onClick={() => setSidebarOpen(!sidebarOpen)}
@@ -318,8 +354,18 @@ export default function Home() {
             <div className="flex items-center gap-3">
               {activeNavItem && (
                 <>
-                  <div className="p-2 rounded-lg bg-emerald-500/10">
-                    <activeNavItem.icon className="w-5 h-5 text-emerald-400" />
+                  <div className={`p-2 rounded-lg ${
+                    activePage === "name-process" ? "bg-purple-500/10" :
+                    activePage === "image-process" ? "bg-blue-500/10" :
+                    activePage === "category-process" ? "bg-orange-500/10" :
+                    "bg-emerald-500/10"
+                  }`}>
+                    <activeNavItem.icon className={`w-5 h-5 ${
+                      activePage === "name-process" ? "text-purple-400" :
+                      activePage === "image-process" ? "text-blue-400" :
+                      activePage === "category-process" ? "text-orange-400" :
+                      "text-emerald-400"
+                    }`} />
                   </div>
                   <div>
                     <h1 className="text-xl font-bold">{activeNavItem.label}</h1>
