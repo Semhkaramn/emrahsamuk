@@ -47,6 +47,7 @@ interface ImageLog {
   timestamp: Date;
   aiProcessed?: boolean;
   prompt?: string;
+  errorMessage?: string; // Hata mesajı eklendi
 }
 
 interface SelectedImage {
@@ -280,12 +281,26 @@ export function ImageProcessingPanel() {
           timestamp: new Date(),
           aiProcessed: result.aiProcessed,
           prompt: result.prompt,
+          errorMessage: result.error || undefined, // Hata mesajını kaydet
         };
 
         setLogs((prev) => [newLog, ...prev].slice(0, 50));
         setProcessedCount((c) => c + 1);
       } catch (error) {
         console.error("Image processing error:", error);
+        // Catch bloğundaki hata için de log ekle
+        const errorLog: ImageLog = {
+          id: `${Date.now()}-${image.imageId}-error`,
+          urunKodu: image.urunKodu,
+          sira: image.sira,
+          eskiUrl: image.eskiUrl,
+          yeniUrl: "-",
+          success: false,
+          timestamp: new Date(),
+          errorMessage: error instanceof Error ? error.message : "Bağlantı hatası veya bilinmeyen hata",
+        };
+        setLogs((prev) => [errorLog, ...prev].slice(0, 50));
+        setProcessedCount((c) => c + 1);
       }
 
       currentIndexRef.current++;
@@ -663,7 +678,14 @@ export function ImageProcessingPanel() {
                             </div>
                           </>
                         ) : (
-                          <p className="text-xs text-red-400">İşlem başarısız</p>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-xs font-medium text-red-400">İşlem başarısız</p>
+                            {log.errorMessage && (
+                              <p className="text-xs text-red-300/80 mt-1 break-words">
+                                <span className="font-medium">Hata:</span> {log.errorMessage}
+                              </p>
+                            )}
+                          </div>
                         )}
                       </div>
                     </div>
