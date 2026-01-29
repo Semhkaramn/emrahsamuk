@@ -366,6 +366,7 @@ async function optimizeCategoryWithVision(
 3. Mevcut kategorilerde uygun bir kategori varsa, ONU KULLAN - yeni kategori yapısı oluşturma
 4. Kategori isimleri TÜRKÇE ve BÜYÜK HARFLE başlamalı (örn: KADIN, ERKEK, ÇOCUK)
 5. Maksimum 5-6 seviye derinlik kullan
+6. ürün isminde ne yazıyorsa öncelik onu kullan kategori atarken 
 
 Kategori formatı: Ana Kategori > Alt Kategori 1 > Alt Kategori 2 > ... (en fazla 10 seviye)
 
