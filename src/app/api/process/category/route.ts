@@ -33,6 +33,45 @@ function parseCategory(categoryString: string): ParsedCategory {
   };
 }
 
+// Mevcut kategorileri getir (tutarlılık için)
+async function getExistingCategories(): Promise<string[]> {
+  const categories = await prisma.productCategory.findMany({
+    where: {
+      yeniAnaKategori: { not: null },
+      processingStatus: "done",
+    },
+    select: {
+      yeniAnaKategori: true,
+      yeniAltKategori1: true,
+      yeniAltKategori2: true,
+      yeniAltKategori3: true,
+      yeniAltKategori4: true,
+      yeniAltKategori5: true,
+    },
+    distinct: ["yeniAnaKategori", "yeniAltKategori1", "yeniAltKategori2"],
+  });
+
+  // Kategori yollarını oluştur
+  const categoryPaths = new Set<string>();
+
+  for (const cat of categories) {
+    const parts = [
+      cat.yeniAnaKategori,
+      cat.yeniAltKategori1,
+      cat.yeniAltKategori2,
+      cat.yeniAltKategori3,
+      cat.yeniAltKategori4,
+      cat.yeniAltKategori5,
+    ].filter(Boolean);
+
+    if (parts.length > 0) {
+      categoryPaths.add(parts.join(" > "));
+    }
+  }
+
+  return Array.from(categoryPaths).slice(0, 50); // En fazla 50 kategori gönder
+}
+
 // POST - Kategori işleme
 export async function POST(request: NextRequest) {
   try {
@@ -46,6 +85,9 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
+
+    // Mevcut kategorileri al (tutarlılık için)
+    const existingCategories = await getExistingCategories();
 
     // Get products without processed category
     const products = await prisma.product.findMany({
@@ -93,11 +135,12 @@ export async function POST(request: NextRequest) {
         // İlk resim URL'sini al (önce yeniUrl, yoksa eskiUrl)
         const imageUrl = product.images[0]?.yeniUrl || product.images[0]?.eskiUrl || null;
 
-        // AI ile kategori belirle (isim + görsel analizi)
+        // AI ile kategori belirle (isim + görsel analizi + mevcut kategoriler)
         const categoryResult = await optimizeCategoryWithVision(
           productName,
           imageUrl,
           currentCategory,
+          existingCategories,
           apiKey
         );
 
@@ -259,30 +302,49 @@ export async function GET() {
   }
 }
 
-// AI ile kategori belirleme (görsel + isim analizi)
+// AI ile kategori belirleme (görsel + isim analizi + mevcut kategoriler)
 async function optimizeCategoryWithVision(
   productName: string,
   imageUrl: string | null,
   currentCategory: string | null,
+  existingCategories: string[],
   apiKey: string
 ): Promise<string | null> {
-  const systemPrompt = `Sen bir e-ticaret kategori uzmanısın. Ürünleri doğru kategorilere yerleştiriyorsun.
+  // Mevcut kategori listesini oluştur
+  const existingCategoryList = existingCategories.length > 0
+    ? `\n\nMEVCUT KATEGORİLER (Tutarlılık için bu kategorileri tercih et, benzer ürünleri aynı kategoriye koy):\n${existingCategories.map(c => `- ${c}`).join("\n")}`
+    : "";
+
+  const systemPrompt = `Sen bir e-ticaret kategori uzmanısın. Ürünleri doğru ve TUTARLI kategorilere yerleştiriyorsun.
+
+ÖNEMLI KURALLAR:
+1. Benzer ürünler MUTLAKA aynı kategori yapısında olmalı
+2. Örneğin: Tüm elbiseler "KADIN > Giyim > Elbise" altında olmalı, "KADIN > Üst Giyim > Elbise" gibi farklı yapılar KULLANMA
+3. Mevcut kategorilerde uygun bir kategori varsa, ONU KULLAN - yeni kategori yapısı oluşturma
+4. Kategori isimleri TÜRKÇE ve BÜYÜK HARFLE başlamalı (örn: KADIN, ERKEK, ÇOCUK)
+5. Maksimum 5-6 seviye derinlik kullan
 
 Kategori formatı: Ana Kategori > Alt Kategori 1 > Alt Kategori 2 > ... (en fazla 10 seviye)
 
-Örnek kategoriler:
-- KADIN > Giyim > Elbise > Yazlık Elbise
-- ERKEK > Ayakkabı > Spor Ayakkabı
-- ANNE & ÇOCUK > Bebek Giyim > Takım
-- EV & YAŞAM > Mutfak > Pişirme Gereçleri
-- ELEKTRONİK > Telefon > Aksesuarlar
+Standart Ana Kategoriler:
+- KADIN
+- ERKEK
+- ÇOCUK
+- ANNE & BEBEK
+- EV & YAŞAM
+- ELEKTRONİK
+- AKSESUAR
+- AYAKKABI & ÇANTA
+- KOZMETİK & KİŞİSEL BAKIM
+- SPOR & OUTDOOR
+${existingCategoryList}
 
 Sadece kategori yolunu döndür, başka bir şey yazma.`;
 
   const userPrompt = `Ürün adı: "${productName}"
 ${currentCategory ? `Mevcut kategori: ${currentCategory}` : "Mevcut kategori yok"}
 
-Bu ürün için en uygun e-ticaret kategorisini belirle.`;
+Bu ürün için en uygun e-ticaret kategorisini belirle. Mevcut kategorilerden uygun olan varsa onu kullan.`;
 
   try {
     // Eğer görsel varsa, vision modeli kullan
@@ -311,7 +373,7 @@ Bu ürün için en uygun e-ticaret kategorisini belirle.`;
               ],
             },
           ],
-          temperature: 0.2,
+          temperature: 0.1, // Daha tutarlı sonuçlar için düşük temperature
           max_tokens: 150,
         }),
       });
@@ -319,7 +381,7 @@ Bu ürün için en uygun e-ticaret kategorisini belirle.`;
       if (response.ok) {
         const data = await response.json();
         const result = data.choices[0]?.message?.content?.trim();
-        if (result) return result;
+        if (result) return normalizeCategory(result, existingCategories);
       }
     }
 
@@ -336,7 +398,7 @@ Bu ürün için en uygun e-ticaret kategorisini belirle.`;
           { role: "system", content: systemPrompt },
           { role: "user", content: userPrompt },
         ],
-        temperature: 0.2,
+        temperature: 0.1,
         max_tokens: 150,
       }),
     });
@@ -344,9 +406,77 @@ Bu ürün için en uygun e-ticaret kategorisini belirle.`;
     if (!response.ok) return null;
 
     const data = await response.json();
-    return data.choices[0]?.message?.content?.trim() || null;
+    const result = data.choices[0]?.message?.content?.trim();
+    return result ? normalizeCategory(result, existingCategories) : null;
   } catch (error) {
     console.error("Category optimization error:", error);
     return null;
   }
+}
+
+// Kategoriyi normalize et - mevcut kategorilere benzer olanı bul
+function normalizeCategory(category: string, existingCategories: string[]): string {
+  if (existingCategories.length === 0) return category;
+
+  // Kategoriyi parçala
+  const parts = category.split(">").map(s => s.trim());
+
+  // Mevcut kategorilerde tam eşleşme ara
+  for (const existing of existingCategories) {
+    const existingParts = existing.split(">").map(s => s.trim());
+
+    // İlk 2-3 seviye eşleşiyorsa, mevcut kategoriyi kullan
+    if (parts.length >= 2 && existingParts.length >= 2) {
+      if (parts[0].toLowerCase() === existingParts[0].toLowerCase() &&
+          parts[1].toLowerCase() === existingParts[1].toLowerCase()) {
+        // Alt seviyeler de benzer mi kontrol et
+        if (parts.length >= 3 && existingParts.length >= 3) {
+          // 3. seviye benzerliği kontrol et
+          const similarity = calculateSimilarity(parts[2], existingParts[2]);
+          if (similarity > 0.7) {
+            // Mevcut kategori yapısını kullan
+            return existing;
+          }
+        }
+      }
+    }
+  }
+
+  return category;
+}
+
+// İki string arasındaki benzerliği hesapla (0-1 arası)
+function calculateSimilarity(str1: string, str2: string): number {
+  const s1 = str1.toLowerCase();
+  const s2 = str2.toLowerCase();
+
+  if (s1 === s2) return 1;
+
+  // Levenshtein mesafesi ile benzerlik
+  const maxLen = Math.max(s1.length, s2.length);
+  if (maxLen === 0) return 1;
+
+  const distance = levenshteinDistance(s1, s2);
+  return 1 - distance / maxLen;
+}
+
+function levenshteinDistance(str1: string, str2: string): number {
+  const m = str1.length;
+  const n = str2.length;
+  const dp: number[][] = Array(m + 1).fill(null).map(() => Array(n + 1).fill(0));
+
+  for (let i = 0; i <= m; i++) dp[i][0] = i;
+  for (let j = 0; j <= n; j++) dp[0][j] = j;
+
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      if (str1[i - 1] === str2[j - 1]) {
+        dp[i][j] = dp[i - 1][j - 1];
+      } else {
+        dp[i][j] = 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
+      }
+    }
+  }
+
+  return dp[m][n];
 }
