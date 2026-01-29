@@ -16,26 +16,26 @@ export interface ImageStyle {
   negativePrompt?: string;
 }
 
-// Trendyol için optimize edilmiş resim stilleri
+// Trendyol için optimize edilmiş resim stilleri - ARKA PLAN DEĞİŞİKLİĞİ için
 export const IMAGE_STYLES: Record<string, ImageStyle> = {
   professional: {
     name: "Profesyonel",
-    prompt: "Professional e-commerce product photo, pure white background, studio lighting, high resolution, clean and crisp, centered product, soft shadows, commercial photography style, attractive for online shopping",
+    prompt: "Change ONLY the background to a clean pure white studio background with soft professional lighting. Keep the product and any model wearing it EXACTLY as they are - do not modify the product in any way.",
     negativePrompt: "blurry, low quality, messy background, dark, amateur",
   },
   lifestyle: {
     name: "Yaşam Tarzı",
-    prompt: "Lifestyle product photography, natural warm lighting, elegant home setting, aspirational feel, inviting atmosphere, high-end commercial style, appealing for e-commerce",
+    prompt: "Change ONLY the background to an elegant lifestyle setting with warm natural lighting. Keep the product and any model wearing it EXACTLY as they are - do not modify the product in any way.",
     negativePrompt: "artificial, cold, sterile, cluttered",
   },
   minimal: {
     name: "Minimal",
-    prompt: "Minimalist product photography, clean white or light gray background, simple composition, modern aesthetic, premium feel, soft natural lighting, e-commerce ready",
+    prompt: "Change ONLY the background to a minimalist light gray or white gradient background with soft shadows. Keep the product and any model wearing it EXACTLY as they are - do not modify the product in any way.",
     negativePrompt: "busy, cluttered, colorful background, distracting elements",
   },
   luxury: {
     name: "Lüks",
-    prompt: "Luxury product photography, dramatic lighting, premium feel, elegant dark or gradient background, sophisticated mood, high-end commercial style, exclusive look",
+    prompt: "Change ONLY the background to a luxurious dark marble or elegant gradient background with dramatic lighting. Keep the product and any model wearing it EXACTLY as they are - do not modify the product in any way.",
     negativePrompt: "cheap looking, bright, casual, ordinary",
   },
 };
@@ -60,30 +60,38 @@ export async function analyzeAndGeneratePrompt(
         messages: [
           {
             role: "system",
-            content: `Sen bir e-ticaret ürün fotoğrafçısı ve görsel uzmanısın. Ürün resimlerini analiz edip, Trendyol gibi e-ticaret platformları için daha çekici hale getirmek amacıyla DALL-E promptları oluşturuyorsun.
+            content: `Sen bir e-ticaret ürün fotoğrafçısı ve görsel uzmanısın.
 
-Analiz yaparken şunlara dikkat et:
-- Ürünün ne olduğu (kategori, tip)
-- Ürünün rengi, şekli, özellikleri
-- Mevcut arka plan ve ışıklandırma durumu
-- Nasıl daha çekici hale getirilebileceği
+ÖNEMLİ KURALLAR:
+1. ÜRÜNÜ KESİNLİKLE DEĞİŞTİRME - Ürünün şekli, rengi, deseni, detayları AYNI kalmalı
+2. Model varsa modeli de DEĞİŞTİRME - Sadece arka planı değiştir
+3. Sadece ARKA PLAN ve IŞIKLANDIRMA değiştirilecek
+4. Ürünün orijinal görünümü %100 korunmalı
 
-Prompt oluştururken:
-- Ürünü AYNI şekilde koru, sadece arka planı ve ışıklandırmayı değiştir
-- E-ticaret için optimize et
-- Profesyonel görünüm sağla
-- Trendyol'da dikkat çekecek şekilde tasarla`,
+Analiz yaparken:
+- Ürünün tam olarak ne olduğunu tespit et
+- Ürünün rengini, desenini, detaylarını not et
+- Model üzerinde mi yoksa düz mü çekilmiş
+- Mevcut arka plan durumu
+
+Prompt oluştururken İNGİLİZCE yaz ve şunları MUTLAKA belirt:
+- "Keep the product EXACTLY as it is"
+- "Do NOT modify the product shape, color, pattern or any details"
+- "ONLY change the background"
+- Eğer model varsa "Keep the model exactly as shown"`,
           },
           {
             role: "user",
             content: [
               {
                 type: "text",
-                text: `Bu ürün resmini analiz et. Ürün adı: "${productName}". İstenen stil: ${style}.
+                text: `Bu ürün resmini analiz et. Ürün adı: "${productName}". İstenen arka plan stili: ${style}.
+
+SADECE ARKA PLANI DEĞİŞTİR, ÜRÜNÜ AYNEN KORU!
 
 Lütfen şu formatta yanıt ver:
-ANALIZ: [Ürün hakkında kısa analiz]
-PROMPT: [DALL-E için İngilizce prompt - ürünü aynı tut, arka planı ve ışığı değiştir]`,
+ANALIZ: [Ürün hakkında kısa analiz - ne olduğu, rengi, deseni, model var mı]
+PROMPT: [İngilizce prompt - ÜRÜNÜ AYNEN KORU, SADECE ARKA PLANI DEĞİŞTİR]`,
               },
               {
                 type: "image_url",
@@ -117,9 +125,11 @@ PROMPT: [DALL-E için İngilizce prompt - ürünü aynı tut, arka planı ve ı�
     const analysis = analysisMatch?.[1]?.trim() || "";
     let prompt = promptMatch?.[1]?.trim() || "";
 
-    // Stil bazlı prompt eklemeleri
+    // Stil bazlı prompt eklemeleri - arka plan değişikliği vurgusu
     const styleConfig = IMAGE_STYLES[style] || IMAGE_STYLES.professional;
-    prompt = `${prompt}. Style: ${styleConfig.prompt}`;
+
+    // Ürünü koruma talimatlarını ekle
+    prompt = `IMPORTANT: Keep the product and model (if any) EXACTLY as shown in the original image. Do NOT modify, recreate, or change the product in any way. ${prompt}. Background style: ${styleConfig.prompt}`;
 
     return {
       success: true,
@@ -132,80 +142,6 @@ PROMPT: [DALL-E için İngilizce prompt - ürünü aynı tut, arka planı ve ı�
       error: error instanceof Error ? error.message : "Analiz hatası",
     };
   }
-}
-
-// DALL-E ile resim oluştur (edit modu)
-export async function generateEditedImage(
-  originalImageUrl: string,
-  prompt: string,
-  openaiApiKey: string
-): Promise<{ success: boolean; imageUrl?: string; error?: string }> {
-  try {
-    // DALL-E 3 ile yeni resim oluştur
-    const response = await fetch("https://api.openai.com/v1/images/generations", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${openaiApiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "dall-e-3",
-        prompt: prompt,
-        n: 1,
-        size: "1024x1024",
-        quality: "standard",
-        response_format: "url",
-      }),
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      return {
-        success: false,
-        error: `DALL-E hatası: ${errorData.error?.message || response.status}`,
-      };
-    }
-
-    const data = await response.json();
-    const imageUrl = data.data?.[0]?.url;
-
-    if (!imageUrl) {
-      return {
-        success: false,
-        error: "DALL-E resim URL'si alınamadı",
-      };
-    }
-
-    return {
-      success: true,
-      imageUrl,
-    };
-  } catch (error) {
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : "DALL-E hatası",
-    };
-  }
-}
-
-// URL'den format belirleme
-function getFormatFromUrl(url: string): string {
-  const urlLower = url.toLowerCase();
-  if (urlLower.includes('.webp') || urlLower.includes('format=webp')) return 'webp';
-  if (urlLower.includes('.png')) return 'png';
-  if (urlLower.includes('.jpg') || urlLower.includes('.jpeg')) return 'jpg';
-  if (urlLower.includes('.gif')) return 'gif';
-  return 'webp'; // varsayılan webp
-}
-
-// Content-type'dan format belirleme
-function getFormatFromContentType(contentType: string | null): string {
-  if (!contentType) return 'webp';
-  if (contentType.includes('webp')) return 'webp';
-  if (contentType.includes('png')) return 'png';
-  if (contentType.includes('jpeg') || contentType.includes('jpg')) return 'jpg';
-  if (contentType.includes('gif')) return 'gif';
-  return 'webp';
 }
 
 // Fetch with timeout and retry
@@ -249,7 +185,179 @@ async function fetchWithRetry(
   throw new Error('Max retries exceeded');
 }
 
-// Cloudinary'ye yükle
+// OpenAI Image Edit API ile resmi düzenle (ürünü koruyarak sadece arka planı değiştir)
+export async function generateEditedImage(
+  originalImageUrl: string,
+  prompt: string,
+  openaiApiKey: string
+): Promise<{ success: boolean; imageUrl?: string; error?: string }> {
+  try {
+    console.log(`[AI Edit] Downloading original image...`);
+
+    // Önce orijinal resmi indir
+    const imageResponse = await fetchWithRetry(originalImageUrl, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+      },
+    }, 3, 30000);
+
+    const imageBuffer = await imageResponse.arrayBuffer();
+    const uint8Array = new Uint8Array(imageBuffer);
+
+    console.log(`[AI Edit] Image downloaded, size: ${uint8Array.length} bytes`);
+
+    // Resmi PNG formatına dönüştür (OpenAI Edit API PNG istiyor)
+    // Not: Eğer resim zaten PNG değilse, bu bir sorun olabilir
+    // Ancak çoğu durumda OpenAI farklı formatları da kabul ediyor
+
+    // FormData oluştur
+    const formData = new FormData();
+
+    // Blob oluştur - image/png olarak gönder
+    const imageBlob = new Blob([uint8Array], { type: 'image/png' });
+    formData.append('image', imageBlob, 'image.png');
+
+    // Prompt'u ekle - ürünü koruma talimatlarıyla
+    const editPrompt = `${prompt}. CRITICAL: The product must remain EXACTLY as it appears in the original image. Only modify the background.`;
+    formData.append('prompt', editPrompt);
+
+    // Model seç - gpt-image-1 daha iyi sonuç verir
+    formData.append('model', 'gpt-image-1');
+    formData.append('size', '1024x1024');
+    formData.append('quality', 'high');
+
+    console.log(`[AI Edit] Sending to OpenAI Image Edit API...`);
+    console.log(`[AI Edit] Prompt: ${editPrompt.substring(0, 200)}...`);
+
+    // OpenAI Image Edit API'ye gönder
+    const response = await fetch("https://api.openai.com/v1/images/edits", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${openaiApiKey}`,
+      },
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      console.error(`[AI Edit] OpenAI Error:`, errorData);
+
+      // Eğer gpt-image-1 başarısız olursa, dall-e-2 ile dene
+      if (errorData.error?.message?.includes('model') || response.status === 400) {
+        console.log(`[AI Edit] Trying with dall-e-2...`);
+
+        const formData2 = new FormData();
+        formData2.append('image', imageBlob, 'image.png');
+        formData2.append('prompt', editPrompt);
+        formData2.append('model', 'dall-e-2');
+        formData2.append('size', '1024x1024');
+
+        const response2 = await fetch("https://api.openai.com/v1/images/edits", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${openaiApiKey}`,
+          },
+          body: formData2,
+        });
+
+        if (!response2.ok) {
+          const errorData2 = await response2.json().catch(() => ({}));
+          return {
+            success: false,
+            error: `OpenAI Edit API hatası: ${errorData2.error?.message || response2.status}`,
+          };
+        }
+
+        const data2 = await response2.json();
+        const imageUrl2 = data2.data?.[0]?.url || data2.data?.[0]?.b64_json;
+
+        if (!imageUrl2) {
+          return {
+            success: false,
+            error: "OpenAI resim URL'si alınamadı",
+          };
+        }
+
+        // Eğer base64 ise, URL'ye dönüştür
+        const finalUrl2 = imageUrl2.startsWith('http')
+          ? imageUrl2
+          : `data:image/png;base64,${imageUrl2}`;
+
+        console.log(`[AI Edit] Successfully edited with dall-e-2`);
+
+        return {
+          success: true,
+          imageUrl: finalUrl2,
+        };
+      }
+
+      return {
+        success: false,
+        error: `OpenAI Edit API hatası: ${errorData.error?.message || response.status}`,
+      };
+    }
+
+    const data = await response.json();
+    const imageUrl = data.data?.[0]?.url || data.data?.[0]?.b64_json;
+
+    if (!imageUrl) {
+      return {
+        success: false,
+        error: "OpenAI resim URL'si alınamadı",
+      };
+    }
+
+    // Eğer base64 ise, URL'ye dönüştür
+    const finalUrl = imageUrl.startsWith('http')
+      ? imageUrl
+      : `data:image/png;base64,${imageUrl}`;
+
+    console.log(`[AI Edit] Successfully edited image with gpt-image-1`);
+
+    return {
+      success: true,
+      imageUrl: finalUrl,
+    };
+  } catch (error) {
+    console.error(`[AI Edit] Error:`, error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Resim düzenleme hatası",
+    };
+  }
+}
+
+// URL'den format belirleme
+function getFormatFromUrl(url: string): string {
+  const urlLower = url.toLowerCase();
+  if (urlLower.includes('.webp') || urlLower.includes('format=webp')) return 'webp';
+  if (urlLower.includes('.png')) return 'png';
+  if (urlLower.includes('.jpg') || urlLower.includes('.jpeg')) return 'jpg';
+  if (urlLower.includes('.gif')) return 'gif';
+  return 'webp'; // varsayılan webp
+}
+
+// Content-type'dan format belirleme
+function getFormatFromContentType(contentType: string | null): string {
+  if (!contentType) return 'webp';
+  if (contentType.includes('webp')) return 'webp';
+  if (contentType.includes('png')) return 'png';
+  if (contentType.includes('jpeg') || contentType.includes('jpg')) return 'jpg';
+  if (contentType.includes('gif')) return 'gif';
+  return 'webp';
+}
+
+// Trendyol görsel boyutları
+export const TRENDYOL_IMAGE_SIZES = {
+  // Ana görsel - dikey format (2:3 oran)
+  main: { width: 1200, height: 1800 },
+  // Detay görsel - kare format (1:1 oran)
+  detail: { width: 1200, height: 1200 },
+  // Minimum kabul edilen
+  minimum: { width: 600, height: 800 },
+};
+
+// Cloudinary'ye yükle - Trendyol uyumlu boyutlarda ve WebP formatında
 export async function uploadToCloudinary(
   imageUrl: string,
   cloudinarySettings: {
@@ -259,7 +367,7 @@ export async function uploadToCloudinary(
     folder: string;
   },
   publicId: string,
-  forceFormat?: string // 'webp', 'png', 'jpg' gibi
+  imageType: 'main' | 'detail' = 'main' // Ana görsel veya detay görsel
 ): Promise<{ success: boolean; url?: string; publicId?: string; error?: string }> {
   try {
     // Önce resmi indir - retry ve timeout ile
@@ -270,30 +378,32 @@ export async function uploadToCloudinary(
     const imageBuffer = await imageResponse.arrayBuffer();
     const base64Image = Buffer.from(imageBuffer).toString("base64");
 
-    // Format belirleme - öncelik sırası: forceFormat > URL > content-type > webp
+    // Trendyol için WebP formatı ve boyut ayarları
+    const format = 'webp';
+    const targetSize = TRENDYOL_IMAGE_SIZES[imageType];
+
+    console.log(`[Cloudinary] Target size: ${targetSize.width}x${targetSize.height}, Format: ${format}`);
+
+    // MIME type - kaynak resim için
     const contentType = imageResponse.headers.get("content-type");
-    const format = forceFormat || getFormatFromUrl(imageUrl) || getFormatFromContentType(contentType);
+    const sourceMimeType = contentType || 'image/png';
+    const dataUri = `data:${sourceMimeType};base64,${base64Image}`;
 
-    // MIME type belirleme
-    const mimeTypeMap: Record<string, string> = {
-      'webp': 'image/webp',
-      'png': 'image/png',
-      'jpg': 'image/jpeg',
-      'jpeg': 'image/jpeg',
-      'gif': 'image/gif',
-    };
-    const mimeType = mimeTypeMap[format] || 'image/webp';
-    const dataUri = `data:${mimeType};base64,${base64Image}`;
+    // Cloudinary transformation parametreleri - Trendyol uyumlu
+    // c_pad: Resmi orantılı şekilde boyutlandır ve beyaz arka planla doldur
+    // b_white: Beyaz arka plan (Trendyol zorunluluğu)
+    // f_webp: WebP formatı
+    // q_auto:good: Otomatik kalite optimizasyonu
+    const transformation = `c_pad,w_${targetSize.width},h_${targetSize.height},b_white,f_webp,q_auto:good`;
 
-    console.log(`[Cloudinary] Format: ${format}, MIME: ${mimeType}`);
-
-    // Cloudinary imza oluştur - format parametresi ile
+    // Cloudinary imza oluştur
     const timestamp = Math.floor(Date.now() / 1000);
     const paramsToSign: Record<string, string | number> = {
       folder: cloudinarySettings.folder,
-      format: format, // WebP formatını zorla
+      format: format,
       public_id: publicId,
       timestamp: timestamp,
+      transformation: transformation,
     };
 
     const signature = await generateCloudinarySignature(paramsToSign, cloudinarySettings.apiSecret);
@@ -306,9 +416,11 @@ export async function uploadToCloudinary(
     formData.append("signature", signature);
     formData.append("folder", cloudinarySettings.folder);
     formData.append("public_id", publicId);
-    formData.append("format", format); // Format parametresi eklendi
+    formData.append("format", format);
+    formData.append("transformation", transformation);
 
     console.log(`[Cloudinary] Uploading to ${cloudinarySettings.cloudName}/${cloudinarySettings.folder}/${publicId}.${format}`);
+    console.log(`[Cloudinary] Transformation: ${transformation}`);
 
     const uploadResponse = await fetchWithRetry(
       `https://api.cloudinary.com/v1_1/${cloudinarySettings.cloudName}/image/upload`,
@@ -329,11 +441,21 @@ export async function uploadToCloudinary(
       };
     }
 
-    console.log(`[Cloudinary] Upload successful: ${uploadData.secure_url}`);
+    // Trendyol uyumlu URL oluştur (transformation ile)
+    // Örnek: https://res.cloudinary.com/xxx/image/upload/c_pad,w_1200,h_1800,b_white,f_webp,q_auto:good/folder/publicId.webp
+    const baseUrl = uploadData.secure_url;
+    const transformedUrl = baseUrl.replace(
+      '/upload/',
+      `/upload/c_pad,w_${targetSize.width},h_${targetSize.height},b_white,f_webp,q_auto:good/`
+    );
+
+    console.log(`[Cloudinary] Upload successful!`);
+    console.log(`[Cloudinary] Original URL: ${baseUrl}`);
+    console.log(`[Cloudinary] Trendyol URL (${targetSize.width}x${targetSize.height}): ${transformedUrl}`);
 
     return {
       success: true,
-      url: uploadData.secure_url,
+      url: transformedUrl, // Trendyol uyumlu boyutlandırılmış URL
       publicId: uploadData.public_id,
     };
   } catch (error) {
@@ -409,8 +531,8 @@ export async function processImageWithAI(
 
     console.log(`[AI] Generated prompt: ${analysisResult.prompt.substring(0, 100)}...`);
 
-    // 2. DALL-E ile yeni resim oluştur
-    console.log(`[AI] Generating new image with DALL-E...`);
+    // 2. OpenAI Image Edit API ile yeni resim oluştur
+    console.log(`[AI] Generating new image with OpenAI Edit API...`);
     const generateResult = await generateEditedImage(
       originalUrl,
       analysisResult.prompt,
@@ -426,16 +548,18 @@ export async function processImageWithAI(
       };
     }
 
-    console.log(`[AI] DALL-E image generated successfully`);
+    console.log(`[AI] OpenAI image edited successfully`);
 
-    // 3. Cloudinary'ye yükle (DALL-E genellikle PNG döner, ama biz webp olarak kaydet)
-    console.log(`[AI] Uploading to Cloudinary...`);
+    // 3. Cloudinary'ye yükle - Trendyol uyumlu boyutlarda (1200x1800) ve WebP formatında
+    console.log(`[AI] Uploading to Cloudinary with Trendyol dimensions (1200x1800)...`);
     const publicId = `${urunKodu}_${imageSira}_ai`;
+    // imageSira 1 ise ana görsel (1200x1800), diğerleri detay görsel (1200x1200)
+    const imageType = imageSira === 1 ? 'main' : 'detail';
     const uploadResult = await uploadToCloudinary(
       generateResult.imageUrl,
       cloudinarySettings,
       publicId,
-      'webp' // WebP formatında kaydet
+      imageType
     );
 
     if (!uploadResult.success || !uploadResult.url) {
