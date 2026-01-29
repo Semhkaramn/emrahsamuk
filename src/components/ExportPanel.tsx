@@ -90,8 +90,8 @@ export function ExportPanel() {
       const response = await fetch(endpoints[type]);
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: "Indirme hatasi" }));
-        throw new Error(errorData.error || "Indirme hatasi");
+        const errorData = await response.json().catch(() => ({ error: "İndirme hatası" }));
+        throw new Error(errorData.error || "İndirme hatası");
       }
 
       const blob = await response.blob();
@@ -121,7 +121,7 @@ export function ExportPanel() {
         [type]: {
           loading: false,
           success: false,
-          error: error instanceof Error ? error.message : "Indirme hatasi",
+          error: error instanceof Error ? error.message : "İndirme hatası",
         },
       }));
     }
@@ -140,12 +140,12 @@ export function ExportPanel() {
           {state.loading ? (
             <>
               <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              Indiriliyor...
+              İndiriliyor...
             </>
           ) : state.success ? (
             <>
               <CheckCircle2 className="w-4 h-4 mr-2 text-emerald-400" />
-              Indirildi!
+              İndirildi!
             </>
           ) : (
             children
@@ -164,15 +164,15 @@ export function ExportPanel() {
   const getFilterDescription = () => {
     switch (filterType) {
       case "all":
-        return "Tum urunler indirilecek";
+        return "Tüm ürünler indirilecek";
       case "processed":
-        return "Sadece islenmis urunler indirilecek";
+        return "Sadece işlenmiş ürünler indirilecek";
       case "unprocessed":
-        return "Sadece islenmemis urunler indirilecek";
+        return "Sadece işlenmemiş ürünler indirilecek";
       case "recentUpload":
-        return "Son 24 saat icinde yuklenen urunler indirilecek";
+        return "Son 24 saat içinde yüklenen ürünler indirilecek";
       case "dateRange":
-        return sinceDate ? `${sinceDate} tarihinden itibaren islenen urunler` : "Tarih aralig secin";
+        return sinceDate ? `${sinceDate} tarihinden itibaren işlenen ürünler` : "Tarih aralığı seçin";
       default:
         return "";
     }
@@ -187,7 +187,7 @@ export function ExportPanel() {
           Veri Export
         </h2>
         <p className="text-sm text-zinc-500 mt-1">
-          Islenmis verileri Excel formatinda indirin
+          İşlenmiş verileri Excel formatında indirin
         </p>
       </div>
 
@@ -199,9 +199,9 @@ export function ExportPanel() {
               <Filter className="h-5 w-5 text-amber-400" />
             </div>
             <div>
-              <CardTitle className="text-base">Filtre Secenekleri</CardTitle>
+              <CardTitle className="text-base">Filtre Seçenekleri</CardTitle>
               <CardDescription className="text-xs">
-                Indirilecek urunleri filtreleyebilirsiniz
+                İndirilecek ürünleri filtreleyebilirsiniz
               </CardDescription>
             </div>
           </div>
@@ -212,37 +212,37 @@ export function ExportPanel() {
               <Label>Filtre Tipi</Label>
               <Select value={filterType} onValueChange={(v) => setFilterType(v as FilterType)}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Filtre secin" />
+                  <SelectValue placeholder="Filtre seçin" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">
                     <div className="flex items-center gap-2">
                       <Package className="w-4 h-4" />
-                      Tum Urunler
+                      Tüm Ürünler
                     </div>
                   </SelectItem>
                   <SelectItem value="processed">
                     <div className="flex items-center gap-2">
                       <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                      Sadece Islenmis
+                      Sadece İşlenmiş
                     </div>
                   </SelectItem>
                   <SelectItem value="unprocessed">
                     <div className="flex items-center gap-2">
                       <Clock className="w-4 h-4 text-amber-400" />
-                      Sadece Islenmemis
+                      Sadece İşlenmemiş
                     </div>
                   </SelectItem>
                   <SelectItem value="recentUpload">
                     <div className="flex items-center gap-2">
                       <Calendar className="w-4 h-4 text-blue-400" />
-                      Son 24 Saat Yuklenen
+                      Son 24 Saat Yüklenen
                     </div>
                   </SelectItem>
                   <SelectItem value="dateRange">
                     <div className="flex items-center gap-2">
                       <Calendar className="w-4 h-4 text-purple-400" />
-                      Tarih Araligi
+                      Tarih Aralığı
                     </div>
                   </SelectItem>
                 </SelectContent>
@@ -252,7 +252,7 @@ export function ExportPanel() {
             {filterType === "dateRange" && (
               <>
                 <div className="space-y-2">
-                  <Label>Baslangic Tarihi</Label>
+                  <Label>Başlangıç Tarihi</Label>
                   <Input
                     type="date"
                     value={sinceDate}
@@ -261,7 +261,7 @@ export function ExportPanel() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>Bitis Tarihi (Opsiyonel)</Label>
+                  <Label>Bitiş Tarihi (Opsiyonel)</Label>
                   <Input
                     type="date"
                     value={untilDate}
@@ -275,10 +275,10 @@ export function ExportPanel() {
 
           <div className="flex items-center gap-2 p-3 bg-zinc-800/50 rounded-lg">
             <Badge variant="outline" className="text-xs">
-              {filterType === "all" ? "Tumu" :
-               filterType === "processed" ? "Islenmis" :
-               filterType === "unprocessed" ? "Islenmemis" :
-               filterType === "recentUpload" ? "Son 24 Saat" : "Tarih Araligi"}
+              {filterType === "all" ? "Tümü" :
+               filterType === "processed" ? "İşlenmiş" :
+               filterType === "unprocessed" ? "İşlenmemiş" :
+               filterType === "recentUpload" ? "Son 24 Saat" : "Tarih Aralığı"}
             </Badge>
             <span className="text-sm text-zinc-400">{getFilterDescription()}</span>
           </div>
@@ -290,11 +290,11 @@ export function ExportPanel() {
       {/* Excel Exports */}
       <h3 className="text-lg font-semibold text-zinc-300 flex items-center gap-2">
         <FileSpreadsheet className="w-5 h-5 text-emerald-400" />
-        Excel Dosyalari
+        Excel Dosyaları
       </h3>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {/* Urun Bilgisi Export */}
+        {/* Ürün Bilgisi Export */}
         <Card className="border-zinc-800 bg-zinc-900/50">
           <CardHeader>
             <div className="flex items-center gap-3">
@@ -302,21 +302,21 @@ export function ExportPanel() {
                 <Package className="h-5 w-5 text-emerald-400" />
               </div>
               <div>
-                <CardTitle className="text-base">Urun Bilgisi</CardTitle>
+                <CardTitle className="text-base">Ürün Bilgisi</CardTitle>
                 <CardDescription className="text-xs">
-                  Yeni isimlerle urun verileri
+                  Yeni isimlerle ürün verileri
                 </CardDescription>
               </div>
             </div>
           </CardHeader>
           <CardContent>
             <p className="text-sm text-zinc-400 mb-4">
-              SEO isim, fiyat, stok bilgileri ve islem tarihleri.
-              Orijinal urunbilgisi.xlsx formatinda.
+              SEO isim, fiyat, stok bilgileri ve işlem tarihleri.
+              Orijinal urunbilgisi.xlsx formatında.
             </p>
             <ExportButton type="urunbilgisi">
               <FileSpreadsheet className="w-4 h-4 mr-2" />
-              urunbilgisi.xlsx Indir
+              urunbilgisi.xlsx İndir
             </ExportButton>
           </CardContent>
         </Card>
@@ -329,21 +329,21 @@ export function ExportPanel() {
                 <FolderTree className="h-5 w-5 text-purple-400" />
               </div>
               <div>
-                <CardTitle className="text-base">Urun Kategorisi</CardTitle>
+                <CardTitle className="text-base">Ürün Kategorisi</CardTitle>
                 <CardDescription className="text-xs">
-                  AI tarafindan belirlenen kategoriler
+                  AI tarafından belirlenen kategoriler
                 </CardDescription>
               </div>
             </div>
           </CardHeader>
           <CardContent>
             <p className="text-sm text-zinc-400 mb-4">
-              Orijinal ve AI tarafindan belirlenen kategoriler.
-              Onerilen kategori sutunlari dahil.
+              Orijinal ve AI tarafından belirlenen kategoriler.
+              Önerilen kategori sütunları dahil.
             </p>
             <ExportButton type="urunkategori">
               <FileSpreadsheet className="w-4 h-4 mr-2" />
-              urunkategori.xlsx Indir
+              urunkategori.xlsx İndir
             </ExportButton>
           </CardContent>
         </Card>
@@ -356,21 +356,21 @@ export function ExportPanel() {
                 <ImageIcon className="h-5 w-5 text-blue-400" />
               </div>
               <div>
-                <CardTitle className="text-base">Resim Dosya Adlari</CardTitle>
+                <CardTitle className="text-base">Resim Dosya Adları</CardTitle>
                 <CardDescription className="text-xs">
-                  urunresimleripcden.xlsx formati
+                  urunresimleripcden.xlsx formatı
                 </CardDescription>
               </div>
             </div>
           </CardHeader>
           <CardContent>
             <p className="text-sm text-zinc-400 mb-4">
-              URUNID, URUNKODU, ADI, RESIM1-16 ve islem tarihi.
-              PC&apos;ye indirilen resimlerle eslesir.
+              URUNID, URUNKODU, ADI, RESIM1-16 ve işlem tarihi.
+              PC&apos;ye indirilen resimlerle eşleşir.
             </p>
             <ExportButton type="pcden">
               <FileSpreadsheet className="w-4 h-4 mr-2" />
-              urunresimleripcden.xlsx Indir
+              urunresimleripcden.xlsx İndir
             </ExportButton>
           </CardContent>
         </Card>
@@ -385,19 +385,19 @@ export function ExportPanel() {
               <div>
                 <CardTitle className="text-base">Tam Veri Export</CardTitle>
                 <CardDescription className="text-xs">
-                  Tum bilgiler + SEO + Kategoriler
+                  Tüm bilgiler + SEO + Kategoriler
                 </CardDescription>
               </div>
             </div>
           </CardHeader>
           <CardContent>
             <p className="text-sm text-zinc-400 mb-4">
-              Tum urun bilgileri, SEO, kategoriler ve fiyatlar.
-              Birden fazla sayfa icerir.
+              Tüm ürün bilgileri, SEO, kategoriler ve fiyatlar.
+              Birden fazla sayfa içerir.
             </p>
             <ExportButton type="full">
               <FileSpreadsheet className="w-4 h-4 mr-2" />
-              Tam Export Indir
+              Tam Export İndir
             </ExportButton>
           </CardContent>
         </Card>
@@ -415,23 +415,23 @@ export function ExportPanel() {
           <div className="text-sm text-zinc-400 space-y-2">
             <p className="flex items-start gap-2">
               <span className="text-emerald-400">*</span>
-              <span>Urun isimleri SEO optimizasyonu ile guncellenmis haliyle indirilir.</span>
+              <span>Ürün isimleri SEO optimizasyonu ile güncellenmiş haliyle indirilir.</span>
             </p>
             <p className="flex items-start gap-2">
               <span className="text-purple-400">*</span>
-              <span>Kategoriler AI tarafindan belirlenen onerilerle birlikte gelir.</span>
+              <span>Kategoriler AI tarafından belirlenen önerilerle birlikte gelir.</span>
             </p>
             <p className="flex items-start gap-2">
               <span className="text-blue-400">*</span>
-              <span>Resimler Cloudinary uzerinden islenip saklanir.</span>
+              <span>Resimler Cloudinary üzerinden işlenip saklanır.</span>
             </p>
             <p className="flex items-start gap-2">
               <span className="text-amber-400">*</span>
-              <span>Islem tarihi ve yukleme tarihi Excel dosyalarinda yer alir.</span>
+              <span>İşlem tarihi ve yükleme tarihi Excel dosyalarında yer alır.</span>
             </p>
             <p className="flex items-start gap-2">
               <span className="text-teal-400">*</span>
-              <span>Filtreleme ile sadece belirli urunleri indirebilirsiniz.</span>
+              <span>Filtreleme ile sadece belirli ürünleri indirebilirsiniz.</span>
             </p>
           </div>
         </CardContent>
