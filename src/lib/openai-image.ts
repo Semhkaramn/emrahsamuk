@@ -272,7 +272,7 @@ export async function uploadToCloudinary(
 
     // Format belirleme - öncelik sırası: forceFormat > URL > content-type > webp
     const contentType = imageResponse.headers.get("content-type");
-    let format = forceFormat || getFormatFromUrl(imageUrl) || getFormatFromContentType(contentType);
+    const format = forceFormat || getFormatFromUrl(imageUrl) || getFormatFromContentType(contentType);
 
     // MIME type belirleme
     const mimeTypeMap: Record<string, string> = {
