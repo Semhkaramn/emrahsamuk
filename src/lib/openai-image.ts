@@ -174,7 +174,21 @@ async function fetchWithRetry(
         continue;
       }
 
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      // Daha detaylı HTTP hata mesajları
+      const statusMessages: Record<number, string> = {
+        400: "Geçersiz istek",
+        401: "Yetkilendirme hatası - API anahtarını kontrol edin",
+        403: "Erişim reddedildi",
+        404: "Kaynak bulunamadı - URL geçersiz olabilir",
+        408: "Zaman aşımı",
+        429: "Çok fazla istek - Rate limit aşıldı",
+        500: "Sunucu hatası",
+        502: "Gateway hatası",
+        503: "Hizmet kullanılamıyor",
+        504: "Gateway zaman aşımı",
+      };
+      const errorDetail = statusMessages[response.status] || response.statusText;
+      throw new Error(`HTTP ${response.status}: ${errorDetail}`);
     } catch (error) {
       if (i === retries - 1) throw error;
 
@@ -500,7 +514,7 @@ export async function processImageWithAI(
       return {
         success: false,
         originalUrl,
-        error: "OpenAI API anahtarı ayarlanmamış",
+        error: "OpenAI API anahtarı ayarlanmamış. Ayarlar sayfasından OpenAI API anahtarınızı girin.",
       };
     }
 
@@ -508,7 +522,7 @@ export async function processImageWithAI(
       return {
         success: false,
         originalUrl,
-        error: "Cloudinary ayarları eksik",
+        error: "Cloudinary ayarları eksik. Ayarlar sayfasından Cloud Name, API Key, API Secret ve Folder bilgilerini girin.",
       };
     }
 
@@ -525,7 +539,7 @@ export async function processImageWithAI(
       return {
         success: false,
         originalUrl,
-        error: analysisResult.error || "Prompt oluşturulamadı",
+        error: `GPT-4 Vision analiz hatası: ${analysisResult.error || "Prompt oluşturulamadı"}`,
       };
     }
 
@@ -543,7 +557,7 @@ export async function processImageWithAI(
       return {
         success: false,
         originalUrl,
-        error: generateResult.error || "Resim oluşturulamadı",
+        error: `OpenAI resim düzenleme hatası: ${generateResult.error || "Resim oluşturulamadı"}`,
         prompt: analysisResult.prompt,
       };
     }
@@ -567,7 +581,7 @@ export async function processImageWithAI(
         success: false,
         originalUrl,
         editedUrl: generateResult.imageUrl,
-        error: uploadResult.error || "Cloudinary yükleme başarısız",
+        error: `Cloudinary yükleme hatası: ${uploadResult.error || "Yükleme başarısız oldu"}`,
         prompt: analysisResult.prompt,
       };
     }
