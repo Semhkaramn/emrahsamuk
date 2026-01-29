@@ -18,6 +18,8 @@ const DEFAULT_SETTINGS: Record<string, string | null> = {
   cloudinary_api_key: "",
   cloudinary_api_secret: "",
   cloudinary_folder: "urunler",
+  use_image_for_naming: "true",
+  use_image_for_category: "true",
 };
 
 // Cloudinary settings interface
@@ -97,6 +99,8 @@ export interface FullAppSettings {
   cloudinaryApiKey: string;
   cloudinaryApiSecret: string;
   cloudinaryFolder: string;
+  useImageForNaming: boolean;
+  useImageForCategory: boolean;
 }
 
 /**
@@ -128,7 +132,25 @@ export async function getFullAppSettings(): Promise<FullAppSettings> {
     cloudinaryApiKey: settings.cloudinary_api_key || "",
     cloudinaryApiSecret: settings.cloudinary_api_secret || "",
     cloudinaryFolder: settings.cloudinary_folder || "urunler",
+    useImageForNaming: settings.use_image_for_naming !== "false",
+    useImageForCategory: settings.use_image_for_category !== "false",
   };
+}
+
+/**
+ * Check if image should be used for naming - uses cache
+ */
+export async function isImageUsedForNaming(): Promise<boolean> {
+  const setting = await getSetting("use_image_for_naming");
+  return setting !== "false";
+}
+
+/**
+ * Check if image should be used for category - uses cache
+ */
+export async function isImageUsedForCategory(): Promise<boolean> {
+  const setting = await getSetting("use_image_for_category");
+  return setting !== "false";
 }
 
 /**
