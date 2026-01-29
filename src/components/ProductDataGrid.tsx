@@ -34,7 +34,6 @@ import {
   CheckCircle2,
   Clock,
   AlertCircle,
-  ArrowRight,
 } from "lucide-react";
 
 interface ProductImage {
@@ -75,35 +74,33 @@ function ImageThumbnail({
   image,
   productName,
   onHover,
-  onLeave
+  onLeave,
+  isProcessed
 }: {
   image: ProductImage;
   productName: string;
   onHover: (url: string, sira: number, isProcessed: boolean) => void;
   onLeave: () => void;
+  isProcessed?: boolean;
 }) {
   // Yeni URL varsa onu göster, yoksa eski URL'yi göster
-  const displayUrl = image.yeniUrl || image.eskiUrl;
+  const displayUrl = isProcessed ? image.yeniUrl : image.eskiUrl;
 
   if (!displayUrl) {
-    return (
-      <div className="w-10 h-10 bg-zinc-800 rounded flex items-center justify-center shrink-0">
-        <ImageIcon className="w-4 h-4 text-zinc-600" />
-      </div>
-    );
+    return null;
   }
 
   return (
     <div
       className="relative shrink-0"
-      onMouseEnter={() => onHover(displayUrl, image.sira, !!image.yeniUrl)}
+      onMouseEnter={() => onHover(displayUrl, image.sira, !!isProcessed)}
       onMouseLeave={onLeave}
     >
       <img
         src={displayUrl}
         alt={productName}
-        className={`w-10 h-10 object-cover rounded cursor-pointer transition-all duration-200 hover:scale-110 hover:z-10 ${
-          image.yeniUrl ? 'ring-2 ring-emerald-500' : ''
+        className={`w-8 h-8 object-cover rounded cursor-pointer transition-all duration-200 hover:scale-110 hover:z-10 ${
+          isProcessed ? 'ring-1 ring-emerald-500' : ''
         }`}
       />
     </div>
@@ -147,8 +144,8 @@ export function ProductDataGrid({ onProductSelect, onProductEdit }: ProductDataG
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const [durum, setDurum] = useState("");
-  const [processingStatus, setProcessingStatus] = useState("");
+  const [durum, setDurum] = useState<string>("all");
+  const [processingStatus, setProcessingStatus] = useState<string>("all");
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal] = useState(0);
@@ -165,8 +162,8 @@ export function ProductDataGrid({ onProductSelect, onProductEdit }: ProductDataG
         limit: "20",
       });
       if (search) params.set("search", search);
-      if (durum) params.set("durum", durum);
-      if (processingStatus) params.set("processingStatus", processingStatus);
+      if (durum && durum !== "all") params.set("durum", durum);
+      if (processingStatus && processingStatus !== "all") params.set("processingStatus", processingStatus);
 
       const response = await fetch(`/api/products?${params}`);
       const data = await response.json();
@@ -293,9 +290,9 @@ export function ProductDataGrid({ onProductSelect, onProductEdit }: ProductDataG
               />
             </div>
             <Select
-              value={durum || "all"}
+              value={durum}
               onValueChange={(value) => {
-                setDurum(value === "all" ? "" : value);
+                setDurum(value);
                 setPage(1);
               }}
             >
@@ -309,9 +306,9 @@ export function ProductDataGrid({ onProductSelect, onProductEdit }: ProductDataG
               </SelectContent>
             </Select>
             <Select
-              value={processingStatus || "all"}
+              value={processingStatus}
               onValueChange={(value) => {
-                setProcessingStatus(value === "all" ? "" : value);
+                setProcessingStatus(value);
                 setPage(1);
               }}
             >
@@ -401,18 +398,18 @@ export function ProductDataGrid({ onProductSelect, onProductEdit }: ProductDataG
                               )}
                             </div>
                           </TableCell>
-                          <TableCell className="max-w-[150px]">
-                            <span className="text-sm text-zinc-400 line-clamp-2">
+                          <TableCell className="max-w-[200px]">
+                            <span className="text-sm text-zinc-400 whitespace-normal break-words">
                               {product.eskiAdi || "-"}
                             </span>
                           </TableCell>
-                          <TableCell className="max-w-[150px]">
-                            <span className="text-sm text-zinc-200 font-medium line-clamp-2">
+                          <TableCell className="max-w-[200px]">
+                            <span className="text-sm text-zinc-200 font-medium whitespace-normal break-words">
                               {product.yeniAdi || "-"}
                             </span>
                           </TableCell>
-                          <TableCell className="max-w-[120px]">
-                            <span className="text-xs text-zinc-400 line-clamp-2">
+                          <TableCell className="max-w-[150px]">
+                            <span className="text-xs text-zinc-400 whitespace-normal break-words">
                               {product.categories?.anaKategori || "-"}
                               {product.categories?.altKategori1 && (
                                 <span className="block text-zinc-500">
@@ -421,54 +418,46 @@ export function ProductDataGrid({ onProductSelect, onProductEdit }: ProductDataG
                               )}
                             </span>
                           </TableCell>
-                          <TableCell className="max-w-[120px]">
-                            <span className="text-xs text-emerald-400 line-clamp-2">
+                          <TableCell className="max-w-[150px]">
+                            <span className="text-xs text-emerald-400 whitespace-normal break-words">
                               {product.categories?.aiKategori || "-"}
                             </span>
                           </TableCell>
                           <TableCell>
-                            {/* Eski resimler - yan yana */}
-                            <div className="flex items-center gap-1 flex-nowrap overflow-x-auto max-w-[150px] py-1">
+                            {/* Eski resimler - küçük grid yan yana */}
+                            <div className="flex flex-wrap items-center gap-0.5 max-w-[120px]">
                               {eskiResimler.length > 0 ? (
-                                eskiResimler.slice(0, 4).map((img) => (
+                                eskiResimler.map((img) => (
                                   <ImageThumbnail
                                     key={`eski-${img.id}`}
-                                    image={{...img, yeniUrl: null}} // Sadece eski URL'yi göster
+                                    image={img}
                                     productName={product.eskiAdi || "Ürün"}
-                                    onHover={(url, sira) => handleImageHover(img.eskiUrl || '', sira, false)}
+                                    onHover={handleImageHover}
                                     onLeave={handleImageLeave}
+                                    isProcessed={false}
                                   />
                                 ))
                               ) : (
                                 <span className="text-xs text-zinc-500">-</span>
-                              )}
-                              {eskiResimler.length > 4 && (
-                                <div className="w-10 h-10 bg-zinc-800 rounded flex items-center justify-center text-xs text-zinc-400 shrink-0">
-                                  +{eskiResimler.length - 4}
-                                </div>
                               )}
                             </div>
                           </TableCell>
                           <TableCell>
-                            {/* Yeni resimler - yan yana */}
-                            <div className="flex items-center gap-1 flex-nowrap overflow-x-auto max-w-[150px] py-1">
+                            {/* Yeni resimler - küçük grid yan yana */}
+                            <div className="flex flex-wrap items-center gap-0.5 max-w-[120px]">
                               {yeniResimler.length > 0 ? (
-                                yeniResimler.slice(0, 4).map((img) => (
+                                yeniResimler.map((img) => (
                                   <ImageThumbnail
                                     key={`yeni-${img.id}`}
                                     image={img}
                                     productName={product.yeniAdi || "Ürün"}
-                                    onHover={(url, sira) => handleImageHover(img.yeniUrl || '', sira, true)}
+                                    onHover={handleImageHover}
                                     onLeave={handleImageLeave}
+                                    isProcessed={true}
                                   />
                                 ))
                               ) : (
                                 <span className="text-xs text-zinc-500">-</span>
-                              )}
-                              {yeniResimler.length > 4 && (
-                                <div className="w-10 h-10 bg-zinc-800 rounded flex items-center justify-center text-xs text-zinc-400 shrink-0">
-                                  +{yeniResimler.length - 4}
-                                </div>
                               )}
                             </div>
                           </TableCell>
