@@ -147,7 +147,7 @@ export async function POST(request: NextRequest) {
     const cloudinarySettings = await getCloudinarySettings();
     if (!cloudinarySettings) {
       return NextResponse.json(
-        { success: false, error: "Cloudinary ayarları eksik" },
+        { success: false, error: "Cloudinary ayarları eksik. Ayarlar sayfasından Cloud Name, API Key, API Secret ve Folder bilgilerini girin." },
         { status: 400 }
       );
     }
