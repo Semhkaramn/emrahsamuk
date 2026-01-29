@@ -3,12 +3,40 @@ import prisma from "@/lib/db";
 import * as XLSX from "xlsx";
 import type { Prisma } from "@prisma/client";
 
+// Helper: Resimleri sırala - güncellenmiş resimler önce
+function reorderImages(images: Array<{ sira: number; eskiUrl: string | null; yeniUrl: string | null; status: string | null; processedAt: Date | null }>) {
+  // Tüm resimleri al
+  const allImages = [...images];
+
+  // İşlenmiş (yeniUrl'si olan) resimleri ayır ve processedAt'e göre sırala (en yeni önce)
+  const processedImages = allImages
+    .filter(img => img.yeniUrl && img.status === "done")
+    .sort((a, b) => {
+      // processedAt'e göre sırala, en yeni önce
+      if (a.processedAt && b.processedAt) {
+        return new Date(b.processedAt).getTime() - new Date(a.processedAt).getTime();
+      }
+      if (a.processedAt) return -1;
+      if (b.processedAt) return 1;
+      return a.sira - b.sira;
+    });
+
+  // İşlenmemiş resimleri ayır (orijinal sıraya göre)
+  const unprocessedImages = allImages
+    .filter(img => !img.yeniUrl || img.status !== "done")
+    .sort((a, b) => a.sira - b.sira);
+
+  // Önce işlenmiş, sonra işlenmemiş resimler
+  return [...processedImages, ...unprocessedImages];
+}
+
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
     const filterType = searchParams.get("filterType") || "all";
     const sinceDate = searchParams.get("sinceDate");
     const untilDate = searchParams.get("untilDate");
+    const reorderProcessed = searchParams.get("reorderProcessed") !== "false"; // Varsayılan true
 
     // Build where clause based on filters
     const whereClause: Prisma.ProductWhereInput = {};
@@ -48,8 +76,14 @@ export async function GET(request: NextRequest) {
       orderBy: { urunId: "asc" },
     });
 
-    // Create Excel data matching original ürünresimleriurl.xlsx format EXACTLY
+    // Create Excel data matching original ürünresimleriurl.xlsx format
+    // with reordering: processed images first
     const excelData = products.map((product) => {
+      // Resimleri yeniden sırala (güncellenmiş olanlar önce)
+      const orderedImages = reorderProcessed
+        ? reorderImages(product.images)
+        : product.images.sort((a, b) => a.sira - b.sira);
+
       const row: Record<string, string | number | null> = {
         URUNID: product.urunId,
         URUNKODU: product.urunKodu || "",
@@ -57,11 +91,16 @@ export async function GET(request: NextRequest) {
         ADI: product.yeniAdi || product.eskiAdi || "",
       };
 
-      // Add RESIM1-16 columns with Cloudinary URLs (yeniUrl) if available
-      for (let i = 1; i <= 16; i++) {
-        const image = product.images.find((img) => img.sira === i);
-        // Eğer yeniUrl varsa (Cloudinary URL) onu kullan, yoksa eskiUrl'i kullan
-        row[`RESIM${i}`] = image?.yeniUrl || image?.eskiUrl || "";
+      // Add RESIM1-16 columns with reordered images
+      // Güncellenen resimler önce gelecek şekilde
+      for (let i = 0; i < 16; i++) {
+        const image = orderedImages[i];
+        if (image) {
+          // Eğer yeniUrl varsa (AI ile işlenmiş) onu kullan, yoksa eskiUrl'i kullan
+          row[`RESIM${i + 1}`] = image.yeniUrl || image.eskiUrl || "";
+        } else {
+          row[`RESIM${i + 1}`] = "";
+        }
       }
 
       return row;
@@ -100,12 +139,18 @@ export async function GET(request: NextRequest) {
     // Generate buffer
     const buffer = XLSX.write(workbook, { type: "buffer", bookType: "xlsx" });
 
+    // Count processed images
+    let totalProcessedImages = 0;
+    for (const product of products) {
+      totalProcessedImages += product.images.filter(img => img.yeniUrl && img.status === "done").length;
+    }
+
     // Log the export
     await prisma.processingLog.create({
       data: {
         islemTipi: "export",
         durum: "success",
-        mesaj: `ürünresimleriurl.xlsx export edildi. ${products.length} ürün (Filtre: ${filterType})`,
+        mesaj: `ürünresimleriurl.xlsx export edildi. ${products.length} ürün, ${totalProcessedImages} işlenmiş resim (Filtre: ${filterType}, Sıralama: ${reorderProcessed ? 'Güncellenmiş önce' : 'Orijinal'})`,
       },
     });
 
@@ -116,6 +161,8 @@ export async function GET(request: NextRequest) {
         "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         "Content-Disposition": `attachment; filename="${filename}"`,
         "X-Total-Products": String(products.length),
+        "X-Total-Processed-Images": String(totalProcessedImages),
+        "X-Reordered": String(reorderProcessed),
       },
     });
   } catch (error) {
