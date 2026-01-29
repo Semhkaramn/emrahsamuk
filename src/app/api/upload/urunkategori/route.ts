@@ -24,10 +24,17 @@ interface UrunKategoriRow {
   ALT_KATEGORI_9?: string;
 }
 
-// 50 bin ürün için optimize edilmiş değerler
-const BATCH_SIZE = 300; // Kategori daha hafif, biraz daha büyük batch
+// PERFORMANS: Daha büyük batch boyutları
+const BATCH_SIZE = 1000; // 300'den 1000'e çıkarıldı - kategori hafif veri
 const MAX_RETRIES = 3;
-const EXISTING_CHECK_BATCH = 5000;
+const EXISTING_CHECK_BATCH = 10000; // 5000'den 10000'e çıkarıldı
+
+// SQL escape fonksiyonları
+function escapeSql(value: string | null | undefined): string {
+  if (value === null || value === undefined) return 'NULL';
+  const escaped = String(value).replace(/'/g, "''").replace(/\\/g, '\\\\');
+  return `'${escaped}'`;
+}
 
 // Cursor-based pagination ile ID'leri al
 async function getExistingIds(
@@ -70,49 +77,65 @@ async function getExistingIds(
   return idSet;
 }
 
-// Retry mekanizmalı batch ekleme
-async function createBatchWithRetry<T>(
-  createFn: () => Promise<T>,
-  retries: number = MAX_RETRIES
-): Promise<{ success: boolean; error?: string }> {
-  for (let attempt = 1; attempt <= retries; attempt++) {
+// PERFORMANS: Raw SQL ile toplu kategori ekleme
+async function bulkCreateCategories(
+  categories: Array<{
+    urunId: number;
+    row: UrunKategoriRow;
+  }>
+): Promise<{ created: number; failed: number }> {
+  if (categories.length === 0) return { created: 0, failed: 0 };
+
+  try {
+    const values = categories.map(c => `(
+      ${c.urunId},
+      ${escapeSql(c.row.ANA_KATEGORI)},
+      ${escapeSql(c.row.ALT_KATEGORI_1)},
+      ${escapeSql(c.row.ALT_KATEGORI_2)},
+      ${escapeSql(c.row.ALT_KATEGORI_3)},
+      ${escapeSql(c.row.ALT_KATEGORI_4)},
+      ${escapeSql(c.row.ALT_KATEGORI_5)},
+      ${escapeSql(c.row.ALT_KATEGORI_6)},
+      ${escapeSql(c.row.ALT_KATEGORI_7)},
+      ${escapeSql(c.row.ALT_KATEGORI_8)},
+      ${escapeSql(c.row.ALT_KATEGORI_9)}
+    )`).join(',');
+
+    const sql = `INSERT INTO product_categories (
+      urun_id, ana_kategori, alt_kategori_1, alt_kategori_2, alt_kategori_3,
+      alt_kategori_4, alt_kategori_5, alt_kategori_6, alt_kategori_7,
+      alt_kategori_8, alt_kategori_9
+    ) VALUES ${values} ON CONFLICT (urun_id) DO NOTHING`;
+
+    await prisma.$executeRawUnsafe(sql);
+    return { created: categories.length, failed: 0 };
+  } catch (error) {
+    console.error('Bulk create categories error:', error);
+    // Fallback: Prisma createMany
     try {
-      await createFn();
-      return { success: true };
-    } catch (error) {
-      if (attempt === retries) {
-        return {
-          success: false,
-          error: error instanceof Error ? error.message : 'Bilinmeyen hata'
-        };
-      }
-      await new Promise(resolve => setTimeout(resolve, 100 * attempt));
+      const data = categories.map(c => ({
+        urunId: c.urunId,
+        anaKategori: c.row.ANA_KATEGORI || null,
+        altKategori1: c.row.ALT_KATEGORI_1 || null,
+        altKategori2: c.row.ALT_KATEGORI_2 || null,
+        altKategori3: c.row.ALT_KATEGORI_3 || null,
+        altKategori4: c.row.ALT_KATEGORI_4 || null,
+        altKategori5: c.row.ALT_KATEGORI_5 || null,
+        altKategori6: c.row.ALT_KATEGORI_6 || null,
+        altKategori7: c.row.ALT_KATEGORI_7 || null,
+        altKategori8: c.row.ALT_KATEGORI_8 || null,
+        altKategori9: c.row.ALT_KATEGORI_9 || null,
+      }));
+
+      await prisma.productCategory.createMany({
+        data,
+        skipDuplicates: true,
+      });
+      return { created: categories.length, failed: 0 };
+    } catch {
+      return { created: 0, failed: categories.length };
     }
   }
-  return { success: false, error: 'Max retry aşıldı' };
-}
-
-// Tek tek kayıt ekleme (fallback)
-async function createCategoriesOneByOne(
-  categories: Prisma.ProductCategoryCreateManyInput[]
-): Promise<{ created: number; failed: number; errors: string[] }> {
-  let created = 0;
-  let failed = 0;
-  const errors: string[] = [];
-
-  for (const category of categories) {
-    try {
-      await prisma.productCategory.create({ data: category });
-      created++;
-    } catch (err) {
-      failed++;
-      if (errors.length < 20) {
-        errors.push(`ID ${category.urunId}: ${err instanceof Error ? err.message : 'Hata'}`);
-      }
-    }
-  }
-
-  return { created, failed, errors };
 }
 
 export async function POST(request: NextRequest) {
@@ -192,7 +215,7 @@ export async function POST(request: NextRequest) {
           const batchEnd = Math.min(batchStart + BATCH_SIZE, data.length);
           const batch = data.slice(batchStart, batchEnd);
 
-          const categoriesToCreate: Prisma.ProductCategoryCreateManyInput[] = [];
+          const categoriesToCreate: Array<{ urunId: number; row: UrunKategoriRow }> = [];
           let batchSkipped = 0;
           let batchNoProduct = 0;
           let batchFailed = 0;
@@ -217,57 +240,19 @@ export async function POST(request: NextRequest) {
               continue;
             }
 
-            try {
-              categoriesToCreate.push({
-                urunId,
-                anaKategori: row.ANA_KATEGORI || null,
-                altKategori1: row.ALT_KATEGORI_1 || null,
-                altKategori2: row.ALT_KATEGORI_2 || null,
-                altKategori3: row.ALT_KATEGORI_3 || null,
-                altKategori4: row.ALT_KATEGORI_4 || null,
-                altKategori5: row.ALT_KATEGORI_5 || null,
-                altKategori6: row.ALT_KATEGORI_6 || null,
-                altKategori7: row.ALT_KATEGORI_7 || null,
-                altKategori8: row.ALT_KATEGORI_8 || null,
-                altKategori9: row.ALT_KATEGORI_9 || null,
-              });
-
-              existingCategoryIdSet.add(urunId);
-            } catch (err) {
-              batchFailed++;
-              if (errors.length < 20) {
-                errors.push(`Hazırlama hatası (URUNID: ${row.URUNID}): ${err instanceof Error ? err.message : "Bilinmeyen hata"}`);
-              }
-            }
+            categoriesToCreate.push({ urunId, row });
+            existingCategoryIdSet.add(urunId); // Tekrarı önle
           }
 
           skipped += batchSkipped;
           noProduct += batchNoProduct;
           failed += batchFailed;
 
-          // Toplu ekleme - Transaction ile
+          // PERFORMANS: Raw SQL ile toplu ekleme
           if (categoriesToCreate.length > 0) {
-            const batchResult = await createBatchWithRetry(async () => {
-              await prisma.productCategory.createMany({
-                data: categoriesToCreate,
-                skipDuplicates: true,
-              });
-            });
-
-            if (batchResult.success) {
-              created += categoriesToCreate.length;
-            } else {
-              // Batch başarısız - tek tek dene
-              sendProgress({
-                type: 'status',
-                message: `Batch ${batchStart}-${batchEnd} hatası, tek tek ekleniyor...`
-              });
-
-              const fallbackResult = await createCategoriesOneByOne(categoriesToCreate);
-              created += fallbackResult.created;
-              failed += fallbackResult.failed;
-              errors.push(...fallbackResult.errors);
-            }
+            const result = await bulkCreateCategories(categoriesToCreate);
+            created += result.created;
+            failed += result.failed;
           }
 
           processed = batchEnd;
@@ -285,9 +270,9 @@ export async function POST(request: NextRequest) {
             message: `${processed.toLocaleString()} / ${total.toLocaleString()} işlendi - ${created.toLocaleString()} yeni (${percent}%)`
           });
 
-          // Her 10 batch'te garbage collection'a izin ver
-          if ((batchStart / BATCH_SIZE) % 10 === 0) {
-            await new Promise(resolve => setTimeout(resolve, 10));
+          // Her 3 batch'te kısa bekleme
+          if ((batchStart / BATCH_SIZE) % 3 === 0) {
+            await new Promise(resolve => setTimeout(resolve, 5));
           }
         }
 
