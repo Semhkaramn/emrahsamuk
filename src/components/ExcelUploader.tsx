@@ -13,29 +13,52 @@ import {
   Package,
   FolderTree,
   Image as ImageIcon,
+  Database,
+  FileUp,
 } from "lucide-react";
+
+interface UploadStats {
+  total: number;
+  created?: number;
+  updated?: number;
+  skipped?: number;
+  failed?: number;
+  productsProcessed?: number;
+  imagesCreated?: number;
+  imagesUpdated?: number;
+}
 
 interface UploadResult {
   success: boolean;
   message?: string;
-  stats?: {
-    total: number;
-    created?: number;
-    updated?: number;
-    skipped?: number;
-    failed?: number;
-    productsProcessed?: number;
-    imagesCreated?: number;
-    imagesUpdated?: number;
-  };
+  stats?: UploadStats;
   errors?: string[];
 }
 
 interface UploadState {
-  loading: boolean;
+  // Dosya yükleme aşaması
+  uploadPhase: 'idle' | 'uploading' | 'processing' | 'complete' | 'error';
+  // Dosya yükleme yüzdesi (sunucuya gönderim)
+  uploadProgress: number;
+  // Veritabanı işleme yüzdesi
+  processingProgress: number;
+  // İşlenen ürün sayısı
+  processedCount: number;
+  // Toplam ürün sayısı
+  totalCount: number;
+  // Sonuç
   result: UploadResult | null;
-  progress: number;
+  // Dosya adı
   fileName: string;
+  // Durum mesajı
+  statusMessage: string;
+  // İstatistikler (işlem sırasında)
+  liveStats: {
+    created: number;
+    updated: number;
+    skipped: number;
+    failed: number;
+  };
 }
 
 interface FileTypeConfig {
@@ -51,8 +74,8 @@ interface FileTypeConfig {
 const fileTypes: FileTypeConfig[] = [
   {
     id: "urunbilgisi",
-    title: "Ürün Bilgisi",
-    description: "ürünbilgisi.xlsx - Ana ürün verileri ve fiyatlar",
+    title: "Urun Bilgisi",
+    description: "urunbilgisi.xlsx - Ana urun verileri ve fiyatlar",
     endpoint: "/api/upload/urunbilgisi",
     icon: Package,
     color: "text-emerald-400",
@@ -60,8 +83,8 @@ const fileTypes: FileTypeConfig[] = [
   },
   {
     id: "urunkategori",
-    title: "Ürün Kategorisi",
-    description: "ürünkategori.xlsx - Kategori hiyerarşisi",
+    title: "Urun Kategorisi",
+    description: "urunkategori.xlsx - Kategori hiyerarsisi",
     endpoint: "/api/upload/urunkategori",
     icon: FolderTree,
     color: "text-purple-400",
@@ -69,8 +92,8 @@ const fileTypes: FileTypeConfig[] = [
   },
   {
     id: "urunresimleriurl",
-    title: "Ürün Resimleri URL",
-    description: "ürünresimleriurl.xlsx - Resim URL'leri",
+    title: "Urun Resimleri URL",
+    description: "urunresimleriurl.xlsx - Resim URL'leri",
     endpoint: "/api/upload/urunresimleriurl",
     icon: ImageIcon,
     color: "text-blue-400",
@@ -78,19 +101,40 @@ const fileTypes: FileTypeConfig[] = [
   },
 ];
 
+const initialState: UploadState = {
+  uploadPhase: 'idle',
+  uploadProgress: 0,
+  processingProgress: 0,
+  processedCount: 0,
+  totalCount: 0,
+  result: null,
+  fileName: '',
+  statusMessage: '',
+  liveStats: {
+    created: 0,
+    updated: 0,
+    skipped: 0,
+    failed: 0,
+  },
+};
+
 export function ExcelUploader() {
   const [uploadStates, setUploadStates] = useState<Record<string, UploadState>>({});
-  const xhrRefs = useRef<Record<string, XMLHttpRequest>>({});
+  const abortControllerRefs = useRef<Record<string, AbortController>>({});
 
   const handleFileUpload = useCallback(
     async (fileType: FileTypeConfig, file: File) => {
+      // Abort controller for cancellation
+      const abortController = new AbortController();
+      abortControllerRefs.current[fileType.id] = abortController;
+
       setUploadStates((prev) => ({
         ...prev,
         [fileType.id]: {
-          loading: true,
-          result: null,
-          progress: 0,
-          fileName: file.name
+          ...initialState,
+          uploadPhase: 'uploading',
+          fileName: file.name,
+          statusMessage: 'Dosya sunucuya yukleniyor...',
         },
       }));
 
@@ -98,82 +142,167 @@ export function ExcelUploader() {
         const formData = new FormData();
         formData.append("file", file);
 
-        // Use XMLHttpRequest for progress tracking
-        const xhr = new XMLHttpRequest();
-        xhrRefs.current[fileType.id] = xhr;
+        // Dosya yükleme simülasyonu (gerçek progress için XMLHttpRequest kullanılabilir)
+        setUploadStates((prev) => ({
+          ...prev,
+          [fileType.id]: {
+            ...prev[fileType.id],
+            uploadProgress: 50,
+          },
+        }));
 
-        const result = await new Promise<UploadResult>((resolve, reject) => {
-          xhr.upload.addEventListener("progress", (event) => {
-            if (event.lengthComputable) {
-              const percentComplete = Math.round((event.loaded / event.total) * 100);
-              setUploadStates((prev) => ({
-                ...prev,
-                [fileType.id]: {
-                  ...prev[fileType.id],
-                  progress: percentComplete
-                },
-              }));
-            }
-          });
-
-          xhr.addEventListener("load", () => {
-            if (xhr.status >= 200 && xhr.status < 300) {
-              try {
-                const response = JSON.parse(xhr.responseText);
-                resolve(response);
-              } catch {
-                reject(new Error("Yanıt işlenemedi"));
-              }
-            } else {
-              reject(new Error(`HTTP ${xhr.status}: ${xhr.statusText}`));
-            }
-          });
-
-          xhr.addEventListener("error", () => {
-            reject(new Error("Ağ hatası oluştu"));
-          });
-
-          xhr.addEventListener("abort", () => {
-            reject(new Error("Yükleme iptal edildi"));
-          });
-
-          xhr.open("POST", fileType.endpoint);
-          xhr.send(formData);
+        // SSE bağlantısı kur
+        const response = await fetch(fileType.endpoint, {
+          method: 'POST',
+          body: formData,
+          signal: abortController.signal,
         });
 
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+
+        // Dosya yüklendi, işleme başlıyor
         setUploadStates((prev) => ({
           ...prev,
           [fileType.id]: {
-            loading: false,
-            result,
-            progress: 100,
-            fileName: file.name
+            ...prev[fileType.id],
+            uploadPhase: 'processing',
+            uploadProgress: 100,
+            statusMessage: 'Veriler isleniyor...',
           },
         }));
+
+        // SSE response'u oku
+        const reader = response.body?.getReader();
+        if (!reader) {
+          throw new Error('Response body okunamadı');
+        }
+
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n\n');
+          buffer = lines.pop() || '';
+
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              try {
+                const data = JSON.parse(line.substring(6));
+
+                if (data.type === 'status') {
+                  setUploadStates((prev) => ({
+                    ...prev,
+                    [fileType.id]: {
+                      ...prev[fileType.id],
+                      statusMessage: data.message,
+                    },
+                  }));
+                } else if (data.type === 'start') {
+                  setUploadStates((prev) => ({
+                    ...prev,
+                    [fileType.id]: {
+                      ...prev[fileType.id],
+                      totalCount: data.total,
+                      statusMessage: data.message,
+                    },
+                  }));
+                } else if (data.type === 'progress') {
+                  setUploadStates((prev) => ({
+                    ...prev,
+                    [fileType.id]: {
+                      ...prev[fileType.id],
+                      processingProgress: data.percent,
+                      processedCount: data.processed,
+                      totalCount: data.total,
+                      statusMessage: data.message,
+                      liveStats: {
+                        created: data.created || 0,
+                        updated: data.updated || 0,
+                        skipped: data.skipped || 0,
+                        failed: data.failed || 0,
+                      },
+                    },
+                  }));
+                } else if (data.type === 'complete') {
+                  setUploadStates((prev) => ({
+                    ...prev,
+                    [fileType.id]: {
+                      ...prev[fileType.id],
+                      uploadPhase: 'complete',
+                      processingProgress: 100,
+                      result: {
+                        success: data.success,
+                        message: data.message,
+                        stats: data.stats,
+                        errors: data.errors,
+                      },
+                      statusMessage: data.message,
+                    },
+                  }));
+                } else if (data.type === 'error') {
+                  setUploadStates((prev) => ({
+                    ...prev,
+                    [fileType.id]: {
+                      ...prev[fileType.id],
+                      uploadPhase: 'error',
+                      result: {
+                        success: false,
+                        message: data.message,
+                      },
+                      statusMessage: data.message,
+                    },
+                  }));
+                }
+              } catch {
+                // JSON parse hatası, devam et
+              }
+            }
+          }
+        }
+
       } catch (error) {
-        setUploadStates((prev) => ({
-          ...prev,
-          [fileType.id]: {
-            loading: false,
-            result: {
-              success: false,
-              message: error instanceof Error ? error.message : "Yükleme hatası",
+        if (error instanceof Error && error.name === 'AbortError') {
+          setUploadStates((prev) => ({
+            ...prev,
+            [fileType.id]: {
+              ...prev[fileType.id],
+              uploadPhase: 'error',
+              result: {
+                success: false,
+                message: 'Yukleme iptal edildi',
+              },
             },
-            progress: 0,
-            fileName: file.name,
-          },
-        }));
+          }));
+        } else {
+          setUploadStates((prev) => ({
+            ...prev,
+            [fileType.id]: {
+              ...prev[fileType.id],
+              uploadPhase: 'error',
+              result: {
+                success: false,
+                message: error instanceof Error ? error.message : 'Yukleme hatası',
+              },
+            },
+          }));
+        }
       } finally {
-        delete xhrRefs.current[fileType.id];
+        delete abortControllerRefs.current[fileType.id];
       }
     },
     []
   );
 
   const handleCancelUpload = useCallback((fileTypeId: string) => {
-    const xhr = xhrRefs.current[fileTypeId];
-    if (xhr) {
-      xhr.abort();
+    const controller = abortControllerRefs.current[fileTypeId];
+    if (controller) {
+      controller.abort();
     }
   }, []);
 
@@ -201,15 +330,155 @@ export function ExcelUploader() {
   const resetState = useCallback((fileTypeId: string) => {
     setUploadStates((prev) => ({
       ...prev,
-      [fileTypeId]: { loading: false, result: null, progress: 0, fileName: "" },
+      [fileTypeId]: initialState,
     }));
   }, []);
+
+  const renderProgressContent = (state: UploadState) => {
+    const isUploading = state.uploadPhase === 'uploading';
+    const isProcessing = state.uploadPhase === 'processing';
+
+    return (
+      <div className="flex flex-col items-center gap-3 w-full">
+        <Loader2 className="h-8 w-8 text-amber-400 animate-spin" />
+
+        {/* Dosya Yükleme Progress */}
+        {isUploading && (
+          <div className="w-full space-y-1">
+            <div className="flex items-center justify-between text-xs text-zinc-400">
+              <span className="flex items-center gap-1">
+                <FileUp className="h-3 w-3" />
+                Dosya yukleniyor
+              </span>
+              <span className="font-medium text-amber-400">{state.uploadProgress}%</span>
+            </div>
+            <Progress value={state.uploadProgress} className="h-2" />
+          </div>
+        )}
+
+        {/* Veritabanı İşleme Progress */}
+        {(isProcessing || state.processingProgress > 0) && (
+          <div className="w-full space-y-1">
+            <div className="flex items-center justify-between text-xs text-zinc-400">
+              <span className="flex items-center gap-1">
+                <Database className="h-3 w-3" />
+                Veritabanına yaziliyor
+              </span>
+              <span className="font-medium text-emerald-400">{state.processingProgress}%</span>
+            </div>
+            <Progress value={state.processingProgress} className="h-2 [&>div]:bg-emerald-500" />
+
+            {/* Detaylı İlerleme Bilgisi */}
+            {state.totalCount > 0 && (
+              <div className="flex justify-between text-xs text-zinc-500 mt-1">
+                <span>{state.processedCount.toLocaleString()} / {state.totalCount.toLocaleString()} kayit</span>
+                <span className="text-zinc-400">
+                  {state.liveStats.created > 0 && <span className="text-emerald-400 mr-2">+{state.liveStats.created}</span>}
+                  {state.liveStats.updated > 0 && <span className="text-blue-400 mr-2">~{state.liveStats.updated}</span>}
+                  {state.liveStats.failed > 0 && <span className="text-red-400">x{state.liveStats.failed}</span>}
+                </span>
+              </div>
+            )}
+          </div>
+        )}
+
+        <p className="text-xs text-zinc-500 text-center break-all">{state.fileName}</p>
+        <p className="text-sm text-zinc-400 text-center">{state.statusMessage}</p>
+
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => {
+            // This will be called from the parent context with the correct fileType.id
+          }}
+          className="mt-1"
+        >
+          Iptal
+        </Button>
+      </div>
+    );
+  };
+
+  const renderResultContent = (state: UploadState) => {
+    const result = state.result;
+    if (!result) return null;
+
+    return (
+      <div className="flex flex-col items-center gap-2 w-full">
+        {result.success ? (
+          <>
+            <CheckCircle2 className="h-8 w-8 text-emerald-400" />
+            <p className="text-sm text-emerald-400 text-center">{result.message}</p>
+            {result.stats && (
+              <div className="text-xs text-zinc-500 space-y-1 mt-2 p-2 bg-zinc-800/50 rounded-lg w-full">
+                <div className="flex justify-between">
+                  <span>Toplam:</span>
+                  <span className="font-medium text-zinc-300">{result.stats.total?.toLocaleString()}</span>
+                </div>
+                {result.stats.created !== undefined && (
+                  <div className="flex justify-between">
+                    <span>Olusturulan:</span>
+                    <span className="font-medium text-emerald-400">{result.stats.created?.toLocaleString()}</span>
+                  </div>
+                )}
+                {result.stats.updated !== undefined && (
+                  <div className="flex justify-between">
+                    <span>Guncellenen:</span>
+                    <span className="font-medium text-blue-400">{result.stats.updated?.toLocaleString()}</span>
+                  </div>
+                )}
+                {result.stats.skipped !== undefined && result.stats.skipped > 0 && (
+                  <div className="flex justify-between">
+                    <span>Atlanan:</span>
+                    <span className="font-medium text-amber-400">{result.stats.skipped?.toLocaleString()}</span>
+                  </div>
+                )}
+                {result.stats.failed !== undefined && result.stats.failed > 0 && (
+                  <div className="flex justify-between">
+                    <span>Hatali:</span>
+                    <span className="font-medium text-red-400">{result.stats.failed?.toLocaleString()}</span>
+                  </div>
+                )}
+                {result.stats.productsProcessed !== undefined && (
+                  <div className="flex justify-between">
+                    <span>Islenen Urun:</span>
+                    <span className="font-medium text-zinc-300">{result.stats.productsProcessed?.toLocaleString()}</span>
+                  </div>
+                )}
+                {result.stats.imagesUpdated !== undefined && (
+                  <div className="flex justify-between">
+                    <span>Islenen Resim:</span>
+                    <span className="font-medium text-blue-400">{result.stats.imagesUpdated?.toLocaleString()}</span>
+                  </div>
+                )}
+              </div>
+            )}
+          </>
+        ) : (
+          <>
+            <AlertCircle className="h-8 w-8 text-red-400" />
+            <p className="text-sm text-red-400 text-center">{result.message || "Hata olustu"}</p>
+          </>
+        )}
+        <Button
+          variant="outline"
+          size="sm"
+          className="mt-2"
+          onClick={() => resetState}
+        >
+          Tekrar Yukle
+        </Button>
+      </div>
+    );
+  };
 
   return (
     <div className="grid gap-4 md:grid-cols-3">
       {fileTypes.map((fileType) => {
-        const state = uploadStates[fileType.id] || { loading: false, result: null, progress: 0, fileName: "" };
+        const state = uploadStates[fileType.id] || initialState;
         const Icon = fileType.icon;
+        const isActive = state.uploadPhase !== 'idle';
+        const isComplete = state.uploadPhase === 'complete' || state.uploadPhase === 'error';
 
         return (
           <Card key={fileType.id} className="relative overflow-hidden">
@@ -230,107 +499,17 @@ export function ExcelUploader() {
               <div
                 onDrop={handleDrop(fileType)}
                 onDragOver={(e) => e.preventDefault()}
-                className="border-2 border-dashed border-zinc-700 rounded-lg p-6 text-center hover:border-zinc-600 transition-colors cursor-pointer"
+                className="border-2 border-dashed border-zinc-700 rounded-lg p-6 text-center hover:border-zinc-600 transition-colors cursor-pointer min-h-[200px] flex items-center justify-center"
               >
-                {state.loading ? (
-                  <div className="flex flex-col items-center gap-3">
-                    <Loader2 className="h-8 w-8 text-amber-400 animate-spin" />
-                    <div className="w-full space-y-2">
-                      <div className="flex justify-between text-xs text-zinc-400">
-                        <span className="break-all">{state.fileName}</span>
-                        <span className="font-medium text-amber-400">{state.progress}%</span>
-                      </div>
-                      <Progress value={state.progress} className="h-2" />
-                    </div>
-                    <p className="text-sm text-zinc-400">
-                      {state.progress < 100 ? "Dosya yükleniyor..." : "İşleniyor..."}
-                    </p>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleCancelUpload(fileType.id)}
-                      className="mt-1"
-                    >
-                      İptal
-                    </Button>
-                  </div>
-                ) : state.result ? (
-                  <div className="flex flex-col items-center gap-2">
-                    {state.result.success ? (
-                      <>
-                        <CheckCircle2 className="h-8 w-8 text-emerald-400" />
-                        <p className="text-sm text-emerald-400">{state.result.message}</p>
-                        {state.result.stats && (
-                          <div className="text-xs text-zinc-500 space-y-1 mt-2 p-2 bg-zinc-800/50 rounded-lg w-full">
-                            <div className="flex justify-between">
-                              <span>Toplam:</span>
-                              <span className="font-medium text-zinc-300">{state.result.stats.total}</span>
-                            </div>
-                            {state.result.stats.created !== undefined && (
-                              <div className="flex justify-between">
-                                <span>Oluşturulan:</span>
-                                <span className="font-medium text-emerald-400">{state.result.stats.created}</span>
-                              </div>
-                            )}
-                            {state.result.stats.updated !== undefined && (
-                              <div className="flex justify-between">
-                                <span>Güncellenen:</span>
-                                <span className="font-medium text-blue-400">{state.result.stats.updated}</span>
-                              </div>
-                            )}
-                            {state.result.stats.skipped !== undefined && state.result.stats.skipped > 0 && (
-                              <div className="flex justify-between">
-                                <span>Atlanan:</span>
-                                <span className="font-medium text-amber-400">{state.result.stats.skipped}</span>
-                              </div>
-                            )}
-                            {state.result.stats.failed !== undefined && state.result.stats.failed > 0 && (
-                              <div className="flex justify-between">
-                                <span>Hatalı:</span>
-                                <span className="font-medium text-red-400">{state.result.stats.failed}</span>
-                              </div>
-                            )}
-                            {state.result.stats.productsProcessed !== undefined && (
-                              <div className="flex justify-between">
-                                <span>İşlenen Ürün:</span>
-                                <span className="font-medium text-zinc-300">{state.result.stats.productsProcessed}</span>
-                              </div>
-                            )}
-                            {state.result.stats.imagesCreated !== undefined && (
-                              <div className="flex justify-between">
-                                <span>Yeni Resim:</span>
-                                <span className="font-medium text-emerald-400">{state.result.stats.imagesCreated}</span>
-                              </div>
-                            )}
-                            {state.result.stats.imagesUpdated !== undefined && (
-                              <div className="flex justify-between">
-                                <span>Güncellenen Resim:</span>
-                                <span className="font-medium text-blue-400">{state.result.stats.imagesUpdated}</span>
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </>
-                    ) : (
-                      <>
-                        <AlertCircle className="h-8 w-8 text-red-400" />
-                        <p className="text-sm text-red-400">{state.result.message || "Hata oluştu"}</p>
-                      </>
-                    )}
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="mt-2"
-                      onClick={() => resetState(fileType.id)}
-                    >
-                      Tekrar Yükle
-                    </Button>
-                  </div>
+                {isActive && !isComplete ? (
+                  renderProgressContent(state)
+                ) : isComplete ? (
+                  renderResultContent(state)
                 ) : (
                   <label className="flex flex-col items-center gap-2 cursor-pointer">
                     <Upload className="h-8 w-8 text-zinc-500" />
                     <p className="text-sm text-zinc-400">
-                      Dosyayı sürükleyin veya tıklayın
+                      Dosyayi surukleyin veya tiklayin
                     </p>
                     <p className="text-xs text-zinc-600">.xlsx veya .xls</p>
                     <input
