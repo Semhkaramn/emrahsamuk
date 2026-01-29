@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
 import {
-  getAppSettings,
+  getFullAppSettings,
   invalidateSettingsCache,
   updateSettingsCache,
 } from "@/lib/settings-cache";
@@ -19,7 +19,7 @@ function getSettingDescription(key: string): string {
 // GET - Tüm ayarları getir (cache'den)
 export async function GET() {
   try {
-    const frontendSettings = await getAppSettings();
+    const frontendSettings = await getFullAppSettings();
 
     return NextResponse.json({
       success: true,
@@ -38,7 +38,16 @@ export async function GET() {
 export async function PUT(request: NextRequest) {
   try {
     const body = await request.json();
-    const { openaiApiKey, enableSeoOptimization, enableImageEnhancement, imageStyle } = body;
+    const {
+      openaiApiKey,
+      enableSeoOptimization,
+      enableImageEnhancement,
+      imageStyle,
+      cloudinaryCloudName,
+      cloudinaryApiKey,
+      cloudinaryApiSecret,
+      cloudinaryFolder,
+    } = body;
 
     // Transform from frontend format to DB format
     const settingsToUpdate = [
@@ -46,6 +55,10 @@ export async function PUT(request: NextRequest) {
       { key: "enable_seo_optimization", value: String(enableSeoOptimization ?? true) },
       { key: "enable_image_enhancement", value: String(enableImageEnhancement ?? true) },
       { key: "image_style", value: imageStyle || "professional" },
+      { key: "cloudinary_cloud_name", value: cloudinaryCloudName || "" },
+      { key: "cloudinary_api_key", value: cloudinaryApiKey || "" },
+      { key: "cloudinary_api_secret", value: cloudinaryApiSecret || "" },
+      { key: "cloudinary_folder", value: cloudinaryFolder || "urunler" },
     ];
 
     // Upsert each setting in DB
