@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import prisma from "@/lib/db";
 import * as XLSX from "xlsx";
+import type { Prisma } from "@prisma/client";
 
 // Route segment config - timeout ve body size ayarları
 export const maxDuration = 300; // 5 dakika timeout
@@ -92,8 +93,8 @@ export async function POST(request: NextRequest) {
           const batchEnd = Math.min(batchStart + BATCH_SIZE, data.length);
           const batch = data.slice(batchStart, batchEnd);
 
-          const categoriesToCreate: Record<string, unknown>[] = [];
-          const categoriesToUpdate: { urunId: number; data: Record<string, unknown> }[] = [];
+          const categoriesToCreate: Prisma.ProductCategoryCreateManyInput[] = [];
+          const categoriesToUpdate: { urunId: number; data: Prisma.ProductCategoryUpdateInput }[] = [];
 
           for (let i = 0; i < batch.length; i++) {
             const row = batch[i];
