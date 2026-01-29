@@ -68,11 +68,9 @@ interface UrunBilgisiRow {
   VITRINDURUMU?: string;
 }
 
-// Daha küçük batch boyutu - veritabanı yükünü azaltır
-const BATCH_SIZE = 200;
-
-// Paralel işlem limiti
-const PARALLEL_LIMIT = 20;
+// 15.000+ ürün için optimize edilmiş değerler
+const BATCH_SIZE = 100;
+const PARALLEL_LIMIT = 10;
 
 // Yardımcı: Diziyi chunk'lara böl
 function chunkArray<T>(array: T[], size: number): T[][] {
