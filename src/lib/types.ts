@@ -9,6 +9,8 @@ export interface AISettings {
   cloudinaryApiKey: string;
   cloudinaryApiSecret: string;
   cloudinaryFolder: string;
+  useImageForNaming: boolean;
+  useImageForCategory: boolean;
 }
 
 export interface SEOData {
