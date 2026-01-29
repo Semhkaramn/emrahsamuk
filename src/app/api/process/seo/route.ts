@@ -310,45 +310,82 @@ async function optimizeSEOWithVision(
   seoUrl: string;
   category: string;
 } | null> {
-  const systemPrompt = `Sen Türkiye'deki e-ticaret siteleri için SEO optimizasyonu yapan bir uzmansın.
-Trendyol, Hepsiburada, N11 gibi pazaryerlerinde üst sıralarda çıkacak ürün başlıkları ve açıklamaları oluşturuyorsun.
+  const systemPrompt = `Sen Türkiye'nin EN İYİ e-ticaret SEO uzmanısın. Trendyol, Hepsiburada, N11'de 1. sıraya çıkacak profesyonel ürün başlıkları oluşturuyorsun.
 
-ÖNEMLİ KURALLAR:
-1. Ürün resmini dikkatlice analiz et. Renk, malzeme, desen, ürün tipi gibi tüm görsel detayları kullan.
-2. Ürün adı ile resim uyuşmuyorsa, RESİMDEKİ ürüne göre isim oluştur.
-3. **MARKA ADLARINI KALDIRMA**: Eski isimde geçen marka adlarını (örn: Nike, Adidas, Zara, LC Waikiki, Koton, DeFacto, vs.) YENİ İSİMDEN ÇIKAR.
-4. **ÜRÜN KODLARINI KALDIRMA**: Eski isimde geçen ürün kodlarını, stok kodlarını, SKU numaralarını (örn: ABC123, BRN-001, 12345678, vs.) YENİ İSİMDEN ÇIKAR.
-5. **BARKOD NUMARALARINI KALDIRMA**: Barkod numaralarını da çıkar.
-6. **SADECE ÜRÜN ÖZELLİKLERİ**: Yeni isimde sadece ürünün gerçek özellikleri olmalı: renk, malzeme, tip, tarz, beden türü, vs.
+🚫 ÇIKARILACAKLAR (Yeni isimde ASLA olmamalı):
+- Marka adları (Nike, Adidas, Zara, LC Waikiki, Koton, DeFacto, Mavi, vs.)
+- Ürün kodları, stok kodları, SKU (ABC123, BRN-001, KV2025, vs.)
+- Barkod numaraları
+- Anlamsız kısaltmalar
+
+✅ MUTLAKA EKLENMESİ GEREKENLER:
+1. **ÜRÜN TİPİ**: Ne olduğu (Elbise, Pantolon, Gömlek, Ceket, Bluz, Etek, vs.)
+2. **ANA KATEGORİ KELİMESİ**: Kadın Giyim, Erkek Giyim, Çocuk Giyim, Ayakkabı, Çanta, vs.
+3. **RENK**: Siyah, Beyaz, Kırmızı, Lacivert, Bej, vs.
+4. **MALZEME** (resimden analiz et): Deri, Pamuklu, Keten, Kadife, Saten, Şifon, Triko, Denim, vs.
+5. **KULLANIM ALANI**: Günlük, Ofis, Düğün, Davet, Spor, Plaj, Ev, İş, Casual, vs.
+6. **SEZON**: Yazlık, Kışlık, İlkbahar-Yaz, Sonbahar-Kış, Mevsimlik, 4 Mevsim, vs.
+7. **STİL/TARZ**: Şık, Elegans, Sportif, Klasik, Modern, Bohem, Vintage, Minimalist, vs.
+8. **KESİM/MODEL**: Slim Fit, Regular Fit, Oversize, A-Kesim, Kalem, Dökümlü, Bol, Dar, vs.
+9. **DETAYLAR** (resimden): Düğmeli, Fermuarlı, Cepli, Yakasız, V Yaka, Bisiklet Yaka, Kapüşonlu, vs.
+10. **ÖZEL ÖZELLİKLER**: Esnek, Rahat, Nefes Alır, Su Geçirmez, Yüksek Bel, vs.
+
+📸 RESİM ANALİZİ ÇOK ÖNEMLİ:
+- Resimde gördüğün AMA eski isimde YAZILMAYAN tüm detayları ekle
+- Desen varsa: Çizgili, Kareli, Çiçekli, Düz, Desenli, Puantiyeli, vs.
+- Aksesuar detayları: Kemer, Toka, Zincir, Boncuk, Payet, vs.
+- Kumaş dokusu: Parlak, Mat, Pütürlü, İpeksi, vs.
+
+🎯 MÜKEMMEL BAŞLIK FORMÜLÜ:
+[Renk] + [Malzeme] + [Özellik/Detay] + [Ürün Tipi] + [Kesim] + [Kullanım] + [Kategori Kelimesi]
 
 ÖRNEK DÖNÜŞÜMLER:
-- "Nike Air Max 90 Siyah Spor Ayakkabı ABC123" → "Siyah Spor Ayakkabı Air Max Tarzı Sneaker"
-- "KOTON 2024 Yaz Koleksiyonu Mavi Çizgili Gömlek 456789" → "Mavi Çizgili Pamuklu Yazlık Gömlek"
-- "BRN-KV2025010044 Siyah Deri Pantolon" → "Siyah Deri Pantolon Slim Fit"
+❌ "Nike Air Max 90 Siyah ABC123"
+✅ "Siyah Spor Ayakkabı Sneaker Günlük Rahat Yürüyüş Erkek Ayakkabı"
 
-Yanıtını tam olarak bu JSON formatında ver (başka hiçbir şey ekleme):
+❌ "KOTON Mavi Gömlek 456789"
+✅ "Mavi Pamuklu Slim Fit Uzun Kol Klasik Gömlek Ofis Erkek Giyim"
+
+❌ "BRN-KV2025010044 Siyah Deri Pantolon"
+✅ "Siyah Suni Deri Yüksek Bel Pantolon Slim Fit Şık Kadın Giyim"
+
+❌ "Elbise 12345"
+✅ "Kırmızı Saten Uzun Abiye Elbise V Yaka Düğün Davet Kadın Giyim"
+
+Yanıtını tam olarak bu JSON formatında ver:
 {
-  "seoTitle": "SEO uyumlu başlık (marka ve kod içermeyen, ürün özelliklerine dayalı)",
-  "seoKeywords": "anahtar, kelime, listesi",
-  "seoDescription": "SEO meta açıklaması (max 160 karakter)",
+  "seoTitle": "Çok detaylı, anahtar kelime dolu, SEO uyumlu profesyonel başlık (50-80 karakter)",
+  "seoKeywords": "en az 10 anahtar kelime, virgülle ayrılmış",
+  "seoDescription": "SEO meta açıklaması (max 160 karakter, ürünü tanıtan)",
   "seoUrl": "seo-uyumlu-url-slug",
-  "category": "Ana Kategori > Alt Kategori"
+  "category": "Ana Kategori > Alt Kategori > Alt Alt Kategori"
 }`;
 
   const userPrompt = `Ürün adı: "${productName || "Belirtilmemiş"}"
 
-Görevin:
-1. ${imageUrl ? "Önce ürün resmini dikkatlice analiz et - renk, desen, malzeme, ürün tipi" : "Ürün adına göre analiz yap"}
-2. **MARKA ADINI ÇIKAR**: Eski isimde marka adı varsa yeni isimde OLMAMALI
-3. **ÜRÜN KODUNU ÇIKAR**: Eski isimde ürün kodu, stok kodu, SKU varsa yeni isimde OLMAMALI
-4. **BARKOD ÇIKAR**: Sayısal kodları, barkodları çıkar
-5. Ürün adını SEO'ya uygun, arama motorlarında üst sıralara çıkacak şekilde yeniden yaz
-6. Anahtar kelimeler belirle (virgülle ayrılmış)
-7. SEO açıklaması yaz (max 160 karakter)
-8. URL-friendly slug oluştur (türkçe karakterler olmadan, tire ile ayrılmış)
-9. Muhtemel kategoriyi belirle
+🔍 ADIM ADIM GÖREV:
 
-DİKKAT: Yeni başlıkta marka adı, ürün kodu, barkod veya stok kodu OLMAMALI!`;
+1. ${imageUrl ? "📸 **RESMİ DİKKATLİCE ANALİZ ET**:\n   - Ürün tipi nedir?\n   - Rengi ne?\n   - Malzemesi ne gibi görünüyor?\n   - Deseni var mı?\n   - Özel detaylar (düğme, fermuar, cep, yaka tipi)?\n   - Kesimi nasıl (dar, bol, regular)?\n   - Hangi cinsiyet/yaş grubu için?\n   - Hangi ortamda giyilir (ofis, günlük, spor, davet)?" : "Ürün adına göre analiz yap"}
+
+2. 🚫 **TEMİZLE**: Marka adı, ürün kodu, barkod, SKU → HEPSİNİ ÇIKAR
+
+3. ✨ **ZENGİN BAŞLIK OLUŞTUR**:
+   - Resimde gördüğün ama eski isimde OLMAYAN özellikleri EKLE
+   - Kullanım alanını belirt (günlük, ofis, düğün, spor, vs.)
+   - Sezon belirt (yazlık, kışlık, 4 mevsim)
+   - Stil/tarz ekle (şık, sportif, klasik, modern)
+   - Kategori kelimesi ekle (Kadın Giyim, Erkek Giyim, vs.)
+
+4. 🎯 **10+ ANAHTAR KELİME**: Müşterinin arayabileceği tüm kelimeler
+
+5. 📝 **SEO AÇIKLAMASI**: Ürünü tanıtan, alışverişe teşvik eden 160 karakter
+
+6. 🔗 **URL SLUG**: Türkçe karaktersiz, tire ile ayrılmış
+
+7. 📂 **KATEGORİ**: Ana > Alt > Alt Alt şeklinde
+
+⚠️ UNUTMA: Başlık MUTLAKA şunları içermeli:
+- Renk + Malzeme + Detay + Ürün Tipi + Kesim + Kullanım Alanı + Kategori Kelimesi`;
 
   try {
     // Görsel varsa GPT-4 Vision kullan
