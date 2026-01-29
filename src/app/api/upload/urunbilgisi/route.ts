@@ -100,10 +100,11 @@ const defaultSettings: UploadSettings = {
   },
 };
 
-// 50 bin ürün için optimize edilmiş değerler
-const BATCH_SIZE = 200; // Daha küçük batch - bellek dostu
-const MAX_RETRIES = 3; // Hatalı batch için retry sayısı
-const EXISTING_CHECK_BATCH = 5000; // Mevcut kayıtları kontrol etmek için chunk
+// PERFORMANS: Daha büyük batch boyutları
+const BATCH_SIZE = 500; // 200'den 500'e çıkarıldı - daha hızlı
+const UPDATE_BATCH_SIZE = 200; // Güncelleme için batch boyutu
+const MAX_RETRIES = 3;
+const EXISTING_CHECK_BATCH = 10000; // 5000'den 10000'e çıkarıldı
 
 // Yardımcı: Mevcut ürünlerin map'ini al (matchBy alanına göre)
 async function getExistingProductsMap(
@@ -266,161 +267,398 @@ async function createRecordsOneByOne(
   return { created, failed, errors };
 }
 
-// Ürün güncelleme fonksiyonu
-async function updateProduct(
-  urunId: number,
-  row: UrunBilgisiRow,
-  columns: UpdateableColumns
-): Promise<{ success: boolean; error?: string }> {
+// SQL değer escape fonksiyonu
+function escapeSql(value: string | null | undefined): string {
+  if (value === null || value === undefined) return 'NULL';
+  // Tek tırnak ve backslash escape
+  const escaped = String(value).replace(/'/g, "''").replace(/\\/g, '\\\\');
+  return `'${escaped}'`;
+}
+
+function escapeNumber(value: number | string | null | undefined): string {
+  if (value === null || value === undefined) return 'NULL';
+  const num = Number(value);
+  if (Number.isNaN(num)) return 'NULL';
+  return String(num);
+}
+
+// PERFORMANS: Raw SQL ile toplu ürün güncelleme
+async function bulkUpdateProducts(
+  updates: Array<{ urunId: number; row: UrunBilgisiRow; columns: UpdateableColumns }>
+): Promise<{ updated: number; failed: number }> {
+  if (updates.length === 0) return { updated: 0, failed: 0 };
+
   try {
-    // Ürün güncelleme verisi
-    const productUpdate: Prisma.ProductUpdateInput = {};
+    // Her güncelleme için CASE WHEN ile tek SQL sorgusu oluştur
+    const urunIds = updates.map(u => u.urunId);
+    const columns = updates[0].columns;
+
+    const setClauses: string[] = [];
 
     if (columns.temelBilgiler) {
-      if (row.ADI !== undefined) productUpdate.eskiAdi = row.ADI || null;
-      if (row.FATURAADI !== undefined) productUpdate.faturaAdi = row.FATURAADI || null;
-      if (row.URL !== undefined) productUpdate.url = row.URL || null;
-      if (row.MARKA !== undefined) productUpdate.marka = row.MARKA || null;
-      if (row.ACIKLAMA !== undefined) productUpdate.aciklama = row.ACIKLAMA || null;
-      if (row.DURUM !== undefined) productUpdate.durum = row.DURUM || "AKTIF";
-      if (row.VITRINDURUMU !== undefined) productUpdate.vitrinDurumu = row.VITRINDURUMU || null;
-      if (row.KARGOODEME !== undefined) productUpdate.kargoOdeme = row.KARGOODEME || null;
-      if (row.ONDETAY !== undefined) productUpdate.onDetay = row.ONDETAY || null;
-      if (row.DEPOYERKODU !== undefined) productUpdate.depoYerKodu = row.DEPOYERKODU || null;
-      if (row.URETICIKODU !== undefined) productUpdate.ureticiKodu = row.URETICIKODU || null;
-      if (row.GTIP !== undefined) productUpdate.gtip = row.GTIP || null;
-      if (row.MODELKODU !== undefined) productUpdate.modelKodu = row.MODELKODU || null;
+      setClauses.push(`eski_adi = CASE urun_id ${updates.map(u =>
+        `WHEN ${u.urunId} THEN ${escapeSql(u.row.ADI)}`
+      ).join(' ')} ELSE eski_adi END`);
+
+      setClauses.push(`fatura_adi = CASE urun_id ${updates.map(u =>
+        `WHEN ${u.urunId} THEN ${escapeSql(u.row.FATURAADI)}`
+      ).join(' ')} ELSE fatura_adi END`);
+
+      setClauses.push(`url = CASE urun_id ${updates.map(u =>
+        `WHEN ${u.urunId} THEN ${escapeSql(u.row.URL)}`
+      ).join(' ')} ELSE url END`);
+
+      setClauses.push(`marka = CASE urun_id ${updates.map(u =>
+        `WHEN ${u.urunId} THEN ${escapeSql(u.row.MARKA)}`
+      ).join(' ')} ELSE marka END`);
+
+      setClauses.push(`aciklama = CASE urun_id ${updates.map(u =>
+        `WHEN ${u.urunId} THEN ${escapeSql(u.row.ACIKLAMA)}`
+      ).join(' ')} ELSE aciklama END`);
+
+      setClauses.push(`durum = CASE urun_id ${updates.map(u =>
+        `WHEN ${u.urunId} THEN ${escapeSql(u.row.DURUM || 'AKTIF')}`
+      ).join(' ')} ELSE durum END`);
+
+      setClauses.push(`vitrin_durumu = CASE urun_id ${updates.map(u =>
+        `WHEN ${u.urunId} THEN ${escapeSql(u.row.VITRINDURUMU)}`
+      ).join(' ')} ELSE vitrin_durumu END`);
+
+      setClauses.push(`kargo_odeme = CASE urun_id ${updates.map(u =>
+        `WHEN ${u.urunId} THEN ${escapeSql(u.row.KARGOODEME)}`
+      ).join(' ')} ELSE kargo_odeme END`);
+
+      setClauses.push(`on_detay = CASE urun_id ${updates.map(u =>
+        `WHEN ${u.urunId} THEN ${escapeSql(u.row.ONDETAY)}`
+      ).join(' ')} ELSE on_detay END`);
+
+      setClauses.push(`depo_yer_kodu = CASE urun_id ${updates.map(u =>
+        `WHEN ${u.urunId} THEN ${escapeSql(u.row.DEPOYERKODU)}`
+      ).join(' ')} ELSE depo_yer_kodu END`);
+
+      setClauses.push(`uretici_kodu = CASE urun_id ${updates.map(u =>
+        `WHEN ${u.urunId} THEN ${escapeSql(u.row.URETICIKODU)}`
+      ).join(' ')} ELSE uretici_kodu END`);
+
+      setClauses.push(`gtip = CASE urun_id ${updates.map(u =>
+        `WHEN ${u.urunId} THEN ${escapeSql(u.row.GTIP)}`
+      ).join(' ')} ELSE gtip END`);
+
+      setClauses.push(`model_kodu = CASE urun_id ${updates.map(u =>
+        `WHEN ${u.urunId} THEN ${escapeSql(u.row.MODELKODU)}`
+      ).join(' ')} ELSE model_kodu END`);
     }
 
     if (columns.stokBilgileri) {
-      if (row.STOK !== undefined) productUpdate.stok = row.STOK ? Number(row.STOK) : 0;
-      if (row.DESI !== undefined) productUpdate.desi = row.DESI ? Number(row.DESI) : null;
-      if (row.KDV !== undefined) productUpdate.kdv = row.KDV ? Number(row.KDV) : null;
-      if (row.SIRA !== undefined) productUpdate.sira = row.SIRA ? Number(row.SIRA) : 0;
+      setClauses.push(`stok = CASE urun_id ${updates.map(u =>
+        `WHEN ${u.urunId} THEN ${escapeNumber(u.row.STOK)}`
+      ).join(' ')} ELSE stok END`);
+
+      setClauses.push(`desi = CASE urun_id ${updates.map(u =>
+        `WHEN ${u.urunId} THEN ${escapeNumber(u.row.DESI)}`
+      ).join(' ')} ELSE desi END`);
+
+      setClauses.push(`kdv = CASE urun_id ${updates.map(u =>
+        `WHEN ${u.urunId} THEN ${escapeNumber(u.row.KDV)}`
+      ).join(' ')} ELSE kdv END`);
+
+      setClauses.push(`sira = CASE urun_id ${updates.map(u =>
+        `WHEN ${u.urunId} THEN ${escapeNumber(u.row.SIRA)}`
+      ).join(' ')} ELSE sira END`);
     }
 
     if (columns.kategoriBilgileri) {
-      if (row.KATEGORIID !== undefined) productUpdate.kategoriId = row.KATEGORIID ? Number(row.KATEGORIID) : null;
+      setClauses.push(`kategori_id = CASE urun_id ${updates.map(u =>
+        `WHEN ${u.urunId} THEN ${escapeNumber(u.row.KATEGORIID)}`
+      ).join(' ')} ELSE kategori_id END`);
     }
 
     if (columns.kodBilgileri) {
-      if (row.OZELKOD1 !== undefined) productUpdate.ozelKod1 = row.OZELKOD1 || null;
-      if (row.OZELKOD2 !== undefined) productUpdate.ozelKod2 = row.OZELKOD2 || null;
-      if (row.OZELKOD3 !== undefined) productUpdate.ozelKod3 = row.OZELKOD3 || null;
+      setClauses.push(`ozel_kod_1 = CASE urun_id ${updates.map(u =>
+        `WHEN ${u.urunId} THEN ${escapeSql(u.row.OZELKOD1)}`
+      ).join(' ')} ELSE ozel_kod_1 END`);
+
+      setClauses.push(`ozel_kod_2 = CASE urun_id ${updates.map(u =>
+        `WHEN ${u.urunId} THEN ${escapeSql(u.row.OZELKOD2)}`
+      ).join(' ')} ELSE ozel_kod_2 END`);
+
+      setClauses.push(`ozel_kod_3 = CASE urun_id ${updates.map(u =>
+        `WHEN ${u.urunId} THEN ${escapeSql(u.row.OZELKOD3)}`
+      ).join(' ')} ELSE ozel_kod_3 END`);
     }
 
-    // Ürünü güncelle
-    if (Object.keys(productUpdate).length > 0) {
-      await prisma.product.update({
-        where: { urunId },
-        data: productUpdate,
-      });
+    setClauses.push(`updated_at = NOW()`);
+
+    if (setClauses.length > 1) {
+      const sql = `UPDATE products SET ${setClauses.join(', ')} WHERE urun_id IN (${urunIds.join(',')})`;
+      await prisma.$executeRawUnsafe(sql);
     }
 
-    // Fiyatları güncelle
-    if (columns.fiyatlar) {
-      const priceUpdate: Prisma.ProductPriceUpdateInput = {};
+    return { updated: updates.length, failed: 0 };
+  } catch (error) {
+    console.error('Bulk update error:', error);
+    return { updated: 0, failed: updates.length };
+  }
+}
 
-      if (row.PIYASAFIYAT !== undefined) priceUpdate.piyasaFiyat = row.PIYASAFIYAT || null;
-      if (row.ALISFIYAT !== undefined) priceUpdate.alisFiyat = row.ALISFIYAT || null;
-      if (row.HIZLIFIYAT !== undefined) priceUpdate.hizliFiyat = row.HIZLIFIYAT || null;
-      if (row.SITEFIYAT !== undefined) priceUpdate.siteFiyat = row.SITEFIYAT || null;
-      if (row.SITEDOVIZ !== undefined) priceUpdate.siteDoviz = row.SITEDOVIZ || "TL";
-      if (row.N11FIYAT !== undefined) priceUpdate.n11Fiyat = row.N11FIYAT || null;
-      if (row.N11DOVIZ !== undefined) priceUpdate.n11Doviz = row.N11DOVIZ || "TL";
-      if (row.HBFIYAT !== undefined) priceUpdate.hbFiyat = row.HBFIYAT || null;
-      if (row.HBDOVIZ !== undefined) priceUpdate.hbDoviz = row.HBDOVIZ || "TL";
-      if (row.PTTFIYAT !== undefined) priceUpdate.pttFiyat = row.PTTFIYAT || null;
-      if (row.PTTDOVIZ !== undefined) priceUpdate.pttDoviz = row.PTTDOVIZ || "TL";
-      if (row.AMAZONTRFIYAT !== undefined) priceUpdate.amazonTrFiyat = row.AMAZONTRFIYAT || null;
-      if (row.AMAZONTRDOVIZ !== undefined) priceUpdate.amazonTrDoviz = row.AMAZONTRDOVIZ || "TL";
-      if (row.TRENDYOLFIYAT !== undefined) priceUpdate.trendyolFiyat = row.TRENDYOLFIYAT || null;
-      if (row.TRENDYOLDOVIZ !== undefined) priceUpdate.trendyolDoviz = row.TRENDYOLDOVIZ || "TL";
-      if (row.CICEKSEPETIFIYAT !== undefined) priceUpdate.cicekSepetiFiyat = row.CICEKSEPETIFIYAT || null;
-      if (row.CICEKSEPETIDOVIZ !== undefined) priceUpdate.cicekSepetiDoviz = row.CICEKSEPETIDOVIZ || "TL";
-      if (row.MODANISAFIYAT !== undefined) priceUpdate.modanisaFiyat = row.MODANISAFIYAT || null;
-      if (row.MODANISADOVIZ !== undefined) priceUpdate.modanisaDoviz = row.MODANISADOVIZ || "TL";
-      if (row.PAZARAMAFIYAT !== undefined) priceUpdate.pazaramaFiyat = row.PAZARAMAFIYAT || null;
-      if (row.PAZARAMADOVIZ !== undefined) priceUpdate.pazaramaDoviz = row.PAZARAMADOVIZ || "TL";
-      if (row.FARMAZONFIYAT !== undefined) priceUpdate.farmazonFiyat = row.FARMAZONFIYAT || null;
-      if (row.FARMAZONDOVIZ !== undefined) priceUpdate.farmazonDoviz = row.FARMAZONDOVIZ || "TL";
-      if (row.IDEFIXFIYAT !== undefined) priceUpdate.idefixFiyat = row.IDEFIXFIYAT || null;
-      if (row.IDEFIXDOVIZ !== undefined) priceUpdate.idefixDoviz = row.IDEFIXDOVIZ || "TL";
-      if (row.LCWFIYAT !== undefined) priceUpdate.lcwFiyat = row.LCWFIYAT || null;
-      if (row.LCWDOVIZ !== undefined) priceUpdate.lcwDoviz = row.LCWDOVIZ || "TL";
-      if (row.BAYIFIYATI1 !== undefined) priceUpdate.bayiFiyati1 = row.BAYIFIYATI1 || null;
-      if (row.BAYIFIYATI2 !== undefined) priceUpdate.bayiFiyati2 = row.BAYIFIYATI2 || null;
-      if (row.BAYIFIYATI3 !== undefined) priceUpdate.bayiFiyati3 = row.BAYIFIYATI3 || null;
-      if (row.BAYIFIYATI4 !== undefined) priceUpdate.bayiFiyati4 = row.BAYIFIYATI4 || null;
+// PERFORMANS: Raw SQL ile toplu fiyat güncelleme/ekleme (UPSERT)
+async function bulkUpsertPrices(
+  updates: Array<{ urunId: number; row: UrunBilgisiRow }>,
+  existingPriceIds: Set<number>
+): Promise<{ updated: number; created: number; failed: number }> {
+  if (updates.length === 0) return { updated: 0, created: 0, failed: 0 };
 
-      if (Object.keys(priceUpdate).length > 0) {
-        await prisma.productPrice.upsert({
-          where: { urunId },
-          update: priceUpdate,
-          create: {
-            urunId,
-            piyasaFiyat: row.PIYASAFIYAT || null,
-            alisFiyat: row.ALISFIYAT || null,
-            hizliFiyat: row.HIZLIFIYAT || null,
-            siteFiyat: row.SITEFIYAT || null,
-            siteDoviz: row.SITEDOVIZ || "TL",
-            n11Fiyat: row.N11FIYAT || null,
-            n11Doviz: row.N11DOVIZ || "TL",
-            hbFiyat: row.HBFIYAT || null,
-            hbDoviz: row.HBDOVIZ || "TL",
-            pttFiyat: row.PTTFIYAT || null,
-            pttDoviz: row.PTTDOVIZ || "TL",
-            amazonTrFiyat: row.AMAZONTRFIYAT || null,
-            amazonTrDoviz: row.AMAZONTRDOVIZ || "TL",
-            trendyolFiyat: row.TRENDYOLFIYAT || null,
-            trendyolDoviz: row.TRENDYOLDOVIZ || "TL",
-            cicekSepetiFiyat: row.CICEKSEPETIFIYAT || null,
-            cicekSepetiDoviz: row.CICEKSEPETIDOVIZ || "TL",
-            modanisaFiyat: row.MODANISAFIYAT || null,
-            modanisaDoviz: row.MODANISADOVIZ || "TL",
-            pazaramaFiyat: row.PAZARAMAFIYAT || null,
-            pazaramaDoviz: row.PAZARAMADOVIZ || "TL",
-            farmazonFiyat: row.FARMAZONFIYAT || null,
-            farmazonDoviz: row.FARMAZONDOVIZ || "TL",
-            idefixFiyat: row.IDEFIXFIYAT || null,
-            idefixDoviz: row.IDEFIXDOVIZ || "TL",
-            lcwFiyat: row.LCWFIYAT || null,
-            lcwDoviz: row.LCWDOVIZ || "TL",
-            bayiFiyati1: row.BAYIFIYATI1 || null,
-            bayiFiyati2: row.BAYIFIYATI2 || null,
-            bayiFiyati3: row.BAYIFIYATI3 || null,
-            bayiFiyati4: row.BAYIFIYATI4 || null,
-          },
-        });
+  try {
+    const toCreate = updates.filter(u => !existingPriceIds.has(u.urunId));
+    const toUpdate = updates.filter(u => existingPriceIds.has(u.urunId));
+
+    let created = 0;
+    let updated = 0;
+
+    // Yeni fiyatları toplu ekle
+    if (toCreate.length > 0) {
+      const values = toCreate.map(u => `(
+        ${u.urunId},
+        ${escapeNumber(u.row.PIYASAFIYAT)},
+        ${escapeNumber(u.row.ALISFIYAT)},
+        ${escapeNumber(u.row.HIZLIFIYAT)},
+        ${escapeNumber(u.row.SITEFIYAT)},
+        ${escapeSql(u.row.SITEDOVIZ || 'TL')},
+        ${escapeNumber(u.row.N11FIYAT)},
+        ${escapeSql(u.row.N11DOVIZ || 'TL')},
+        ${escapeNumber(u.row.HBFIYAT)},
+        ${escapeSql(u.row.HBDOVIZ || 'TL')},
+        ${escapeNumber(u.row.PTTFIYAT)},
+        ${escapeSql(u.row.PTTDOVIZ || 'TL')},
+        ${escapeNumber(u.row.AMAZONTRFIYAT)},
+        ${escapeSql(u.row.AMAZONTRDOVIZ || 'TL')},
+        ${escapeNumber(u.row.TRENDYOLFIYAT)},
+        ${escapeSql(u.row.TRENDYOLDOVIZ || 'TL')},
+        ${escapeNumber(u.row.CICEKSEPETIFIYAT)},
+        ${escapeSql(u.row.CICEKSEPETIDOVIZ || 'TL')},
+        ${escapeNumber(u.row.MODANISAFIYAT)},
+        ${escapeSql(u.row.MODANISADOVIZ || 'TL')},
+        ${escapeNumber(u.row.PAZARAMAFIYAT)},
+        ${escapeSql(u.row.PAZARAMADOVIZ || 'TL')},
+        ${escapeNumber(u.row.FARMAZONFIYAT)},
+        ${escapeSql(u.row.FARMAZONDOVIZ || 'TL')},
+        ${escapeNumber(u.row.IDEFIXFIYAT)},
+        ${escapeSql(u.row.IDEFIXDOVIZ || 'TL')},
+        ${escapeNumber(u.row.LCWFIYAT)},
+        ${escapeSql(u.row.LCWDOVIZ || 'TL')},
+        ${escapeNumber(u.row.BAYIFIYATI1)},
+        ${escapeNumber(u.row.BAYIFIYATI2)},
+        ${escapeNumber(u.row.BAYIFIYATI3)},
+        ${escapeNumber(u.row.BAYIFIYATI4)}
+      )`).join(',');
+
+      const insertSql = `INSERT INTO product_prices (
+        urun_id, piyasa_fiyat, alis_fiyat, hizli_fiyat, site_fiyat, site_doviz,
+        n11_fiyat, n11_doviz, hb_fiyat, hb_doviz, ptt_fiyat, ptt_doviz,
+        amazon_tr_fiyat, amazon_tr_doviz, trendyol_fiyat, trendyol_doviz,
+        ciceksepeti_fiyat, ciceksepeti_doviz, modanisa_fiyat, modanisa_doviz,
+        pazarama_fiyat, pazarama_doviz, farmazon_fiyat, farmazon_doviz,
+        idefix_fiyat, idefix_doviz, lcw_fiyat, lcw_doviz,
+        bayi_fiyati_1, bayi_fiyati_2, bayi_fiyati_3, bayi_fiyati_4
+      ) VALUES ${values} ON CONFLICT (urun_id) DO NOTHING`;
+
+      await prisma.$executeRawUnsafe(insertSql);
+      created = toCreate.length;
+
+      // Set'e ekle
+      for (const u of toCreate) {
+        existingPriceIds.add(u.urunId);
       }
     }
 
-    // SEO bilgilerini güncelle
-    if (columns.seoBilgileri && (row.SEOBASLIK || row.SEOANAHTARKELIME || row.SEOACIKLAMA)) {
-      await prisma.productSeo.upsert({
-        where: { urunId },
-        update: {
-          seoBaslik: row.SEOBASLIK || null,
-          seoKeywords: row.SEOANAHTARKELIME || null,
-          seoAciklama: row.SEOACIKLAMA || null,
-          seoUrl: row.URL || null,
-        },
-        create: {
-          urunId,
-          seoBaslik: row.SEOBASLIK || null,
-          seoKeywords: row.SEOANAHTARKELIME || null,
-          seoAciklama: row.SEOACIKLAMA || null,
-          seoUrl: row.URL || null,
-        },
-      });
+    // Mevcut fiyatları güncelle
+    if (toUpdate.length > 0) {
+      const urunIds = toUpdate.map(u => u.urunId);
+
+      const setClauses = [
+        `piyasa_fiyat = CASE urun_id ${toUpdate.map(u =>
+          `WHEN ${u.urunId} THEN ${escapeNumber(u.row.PIYASAFIYAT)}`
+        ).join(' ')} ELSE piyasa_fiyat END`,
+        `alis_fiyat = CASE urun_id ${toUpdate.map(u =>
+          `WHEN ${u.urunId} THEN ${escapeNumber(u.row.ALISFIYAT)}`
+        ).join(' ')} ELSE alis_fiyat END`,
+        `hizli_fiyat = CASE urun_id ${toUpdate.map(u =>
+          `WHEN ${u.urunId} THEN ${escapeNumber(u.row.HIZLIFIYAT)}`
+        ).join(' ')} ELSE hizli_fiyat END`,
+        `site_fiyat = CASE urun_id ${toUpdate.map(u =>
+          `WHEN ${u.urunId} THEN ${escapeNumber(u.row.SITEFIYAT)}`
+        ).join(' ')} ELSE site_fiyat END`,
+        `site_doviz = CASE urun_id ${toUpdate.map(u =>
+          `WHEN ${u.urunId} THEN ${escapeSql(u.row.SITEDOVIZ || 'TL')}`
+        ).join(' ')} ELSE site_doviz END`,
+        `n11_fiyat = CASE urun_id ${toUpdate.map(u =>
+          `WHEN ${u.urunId} THEN ${escapeNumber(u.row.N11FIYAT)}`
+        ).join(' ')} ELSE n11_fiyat END`,
+        `n11_doviz = CASE urun_id ${toUpdate.map(u =>
+          `WHEN ${u.urunId} THEN ${escapeSql(u.row.N11DOVIZ || 'TL')}`
+        ).join(' ')} ELSE n11_doviz END`,
+        `hb_fiyat = CASE urun_id ${toUpdate.map(u =>
+          `WHEN ${u.urunId} THEN ${escapeNumber(u.row.HBFIYAT)}`
+        ).join(' ')} ELSE hb_fiyat END`,
+        `hb_doviz = CASE urun_id ${toUpdate.map(u =>
+          `WHEN ${u.urunId} THEN ${escapeSql(u.row.HBDOVIZ || 'TL')}`
+        ).join(' ')} ELSE hb_doviz END`,
+        `trendyol_fiyat = CASE urun_id ${toUpdate.map(u =>
+          `WHEN ${u.urunId} THEN ${escapeNumber(u.row.TRENDYOLFIYAT)}`
+        ).join(' ')} ELSE trendyol_fiyat END`,
+        `trendyol_doviz = CASE urun_id ${toUpdate.map(u =>
+          `WHEN ${u.urunId} THEN ${escapeSql(u.row.TRENDYOLDOVIZ || 'TL')}`
+        ).join(' ')} ELSE trendyol_doviz END`,
+        `bayi_fiyati_1 = CASE urun_id ${toUpdate.map(u =>
+          `WHEN ${u.urunId} THEN ${escapeNumber(u.row.BAYIFIYATI1)}`
+        ).join(' ')} ELSE bayi_fiyati_1 END`,
+        `bayi_fiyati_2 = CASE urun_id ${toUpdate.map(u =>
+          `WHEN ${u.urunId} THEN ${escapeNumber(u.row.BAYIFIYATI2)}`
+        ).join(' ')} ELSE bayi_fiyati_2 END`,
+        `bayi_fiyati_3 = CASE urun_id ${toUpdate.map(u =>
+          `WHEN ${u.urunId} THEN ${escapeNumber(u.row.BAYIFIYATI3)}`
+        ).join(' ')} ELSE bayi_fiyati_3 END`,
+        `bayi_fiyati_4 = CASE urun_id ${toUpdate.map(u =>
+          `WHEN ${u.urunId} THEN ${escapeNumber(u.row.BAYIFIYATI4)}`
+        ).join(' ')} ELSE bayi_fiyati_4 END`,
+      ];
+
+      const updateSql = `UPDATE product_prices SET ${setClauses.join(', ')} WHERE urun_id IN (${urunIds.join(',')})`;
+      await prisma.$executeRawUnsafe(updateSql);
+      updated = toUpdate.length;
     }
 
-    return { success: true };
+    return { updated, created, failed: 0 };
   } catch (error) {
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : 'Bilinmeyen hata'
-    };
+    console.error('Bulk upsert prices error:', error);
+    return { updated: 0, created: 0, failed: updates.length };
+  }
+}
+
+// PERFORMANS: Raw SQL ile toplu SEO güncelleme/ekleme (UPSERT)
+async function bulkUpsertSeos(
+  updates: Array<{ urunId: number; row: UrunBilgisiRow }>,
+  existingSeoIds: Set<number>
+): Promise<{ updated: number; created: number; failed: number }> {
+  if (updates.length === 0) return { updated: 0, created: 0, failed: 0 };
+
+  try {
+    // SEO bilgisi olanları filtrele
+    const validUpdates = updates.filter(u =>
+      u.row.SEOBASLIK || u.row.SEOANAHTARKELIME || u.row.SEOACIKLAMA
+    );
+
+    if (validUpdates.length === 0) return { updated: 0, created: 0, failed: 0 };
+
+    const toCreate = validUpdates.filter(u => !existingSeoIds.has(u.urunId));
+    const toUpdate = validUpdates.filter(u => existingSeoIds.has(u.urunId));
+
+    let created = 0;
+    let updated = 0;
+
+    // Yeni SEO'ları toplu ekle
+    if (toCreate.length > 0) {
+      const values = toCreate.map(u => `(
+        ${u.urunId},
+        ${escapeSql(u.row.SEOBASLIK)},
+        ${escapeSql(u.row.SEOANAHTARKELIME)},
+        ${escapeSql(u.row.SEOACIKLAMA)},
+        ${escapeSql(u.row.URL)}
+      )`).join(',');
+
+      const insertSql = `INSERT INTO product_seo (
+        urun_id, seo_baslik, seo_keywords, seo_aciklama, seo_url
+      ) VALUES ${values} ON CONFLICT (urun_id) DO NOTHING`;
+
+      await prisma.$executeRawUnsafe(insertSql);
+      created = toCreate.length;
+
+      // Set'e ekle
+      for (const u of toCreate) {
+        existingSeoIds.add(u.urunId);
+      }
+    }
+
+    // Mevcut SEO'ları güncelle
+    if (toUpdate.length > 0) {
+      const urunIds = toUpdate.map(u => u.urunId);
+
+      const setClauses = [
+        `seo_baslik = CASE urun_id ${toUpdate.map(u =>
+          `WHEN ${u.urunId} THEN ${escapeSql(u.row.SEOBASLIK)}`
+        ).join(' ')} ELSE seo_baslik END`,
+        `seo_keywords = CASE urun_id ${toUpdate.map(u =>
+          `WHEN ${u.urunId} THEN ${escapeSql(u.row.SEOANAHTARKELIME)}`
+        ).join(' ')} ELSE seo_keywords END`,
+        `seo_aciklama = CASE urun_id ${toUpdate.map(u =>
+          `WHEN ${u.urunId} THEN ${escapeSql(u.row.SEOACIKLAMA)}`
+        ).join(' ')} ELSE seo_aciklama END`,
+        `seo_url = CASE urun_id ${toUpdate.map(u =>
+          `WHEN ${u.urunId} THEN ${escapeSql(u.row.URL)}`
+        ).join(' ')} ELSE seo_url END`,
+      ];
+
+      const updateSql = `UPDATE product_seo SET ${setClauses.join(', ')} WHERE urun_id IN (${urunIds.join(',')})`;
+      await prisma.$executeRawUnsafe(updateSql);
+      updated = toUpdate.length;
+    }
+
+    return { updated, created, failed: 0 };
+  } catch (error) {
+    console.error('Bulk upsert seos error:', error);
+    return { updated: 0, created: 0, failed: updates.length };
+  }
+}
+
+// PERFORMANS: Raw SQL ile toplu yeni ürün ekleme
+async function bulkCreateProducts(
+  products: Array<{ row: UrunBilgisiRow; urunId: number }>
+): Promise<{ created: number; failed: number }> {
+  if (products.length === 0) return { created: 0, failed: 0 };
+
+  try {
+    const values = products.map(p => `(
+      ${p.urunId},
+      ${escapeSql(p.row.URUNKODU)},
+      ${escapeSql(p.row.BARKODNO)},
+      ${escapeSql(p.row.ADI)},
+      ${escapeSql(p.row.FATURAADI)},
+      ${escapeSql(p.row.URL)},
+      ${escapeSql(p.row.KARGOODEME)},
+      ${escapeSql(p.row.MARKA)},
+      ${escapeSql(p.row.ACIKLAMA)},
+      ${escapeSql(p.row.DURUM || 'AKTIF')},
+      ${escapeSql(p.row.VITRINDURUMU)},
+      ${escapeNumber(p.row.KDV)},
+      ${escapeNumber(p.row.DESI)},
+      ${escapeNumber(p.row.STOK) || 0},
+      ${escapeSql(p.row.ONDETAY)},
+      ${escapeNumber(p.row.SIRA) || 0},
+      ${escapeSql(p.row.OZELKOD1)},
+      ${escapeSql(p.row.OZELKOD2)},
+      ${escapeSql(p.row.OZELKOD3)},
+      ${escapeNumber(p.row.KATEGORIID)},
+      ${escapeSql(p.row.DEPOYERKODU)},
+      ${escapeSql(p.row.URETICIKODU)},
+      ${escapeSql(p.row.GTIP)},
+      ${escapeSql(p.row.MODELKODU)},
+      NOW(),
+      NOW(),
+      NOW()
+    )`).join(',');
+
+    const sql = `INSERT INTO products (
+      urun_id, urun_kodu, barkod_no, eski_adi, fatura_adi, url, kargo_odeme,
+      marka, aciklama, durum, vitrin_durumu, kdv, desi, stok, on_detay, sira,
+      ozel_kod_1, ozel_kod_2, ozel_kod_3, kategori_id, depo_yer_kodu,
+      uretici_kodu, gtip, model_kodu, uploaded_at, created_at, updated_at
+    ) VALUES ${values} ON CONFLICT (urun_id) DO NOTHING`;
+
+    await prisma.$executeRawUnsafe(sql);
+    return { created: products.length, failed: 0 };
+  } catch (error) {
+    console.error('Bulk create products error:', error);
+    return { created: 0, failed: products.length };
   }
 }
 
@@ -517,171 +755,122 @@ export async function POST(request: NextRequest) {
           message: `Mevcut: ${existingIdSet.size.toLocaleString()} ürün, ${existingPriceIdSet.size.toLocaleString()} fiyat. İşlem başlıyor...`
         });
 
-        // Güncelleme modu: update_existing veya update_all
+        // PERFORMANS: Güncelleme modu için batch işleme
         if (settings.updateMode === 'update_existing' || settings.updateMode === 'update_all') {
-          // Tek tek güncelleme (batch güncelleme Prisma'da karmaşık)
-          for (const row of data) {
-            if (!row.ID && !row.URUNKODU && !row.BARKODNO) {
-              failed++;
-              processed++;
-              continue;
-            }
 
-            // Eşleştirme anahtarını bul
-            let matchKey: string | number | undefined;
-            if (settings.matchBy === 'urunId') {
-              matchKey = row.ID ? Number(row.ID) : undefined;
-            } else if (settings.matchBy === 'urunKodu') {
-              matchKey = row.URUNKODU ? String(row.URUNKODU) : undefined;
-            } else if (settings.matchBy === 'barkodNo') {
-              matchKey = row.BARKODNO ? String(row.BARKODNO) : undefined;
-            }
+          // Batch işleme - UPDATE_BATCH_SIZE'lık gruplar halinde
+          for (let batchStart = 0; batchStart < data.length; batchStart += UPDATE_BATCH_SIZE) {
+            const batchEnd = Math.min(batchStart + UPDATE_BATCH_SIZE, data.length);
+            const batch = data.slice(batchStart, batchEnd);
 
-            if (!matchKey) {
-              failed++;
-              processed++;
-              if (errors.length < 20) {
-                errors.push(`Satır ${processed}: Eşleştirme alanı (${settings.matchBy}) bulunamadı`);
+            const updateBatch: Array<{ urunId: number; row: UrunBilgisiRow; columns: UpdateableColumns }> = [];
+            const createBatch: Array<{ row: UrunBilgisiRow; urunId: number }> = [];
+            const priceBatch: Array<{ urunId: number; row: UrunBilgisiRow }> = [];
+            const seoBatch: Array<{ urunId: number; row: UrunBilgisiRow }> = [];
+
+            let batchSkipped = 0;
+            let batchFailed = 0;
+
+            for (const row of batch) {
+              if (!row.ID && !row.URUNKODU && !row.BARKODNO) {
+                batchFailed++;
+                continue;
               }
-              continue;
-            }
 
-            // Ürün veritabanında var mı?
-            const existingUrunId = existingProductsMap.get(matchKey);
+              // Eşleştirme anahtarını bul
+              let matchKey: string | number | undefined;
+              if (settings.matchBy === 'urunId') {
+                matchKey = row.ID ? Number(row.ID) : undefined;
+              } else if (settings.matchBy === 'urunKodu') {
+                matchKey = row.URUNKODU ? String(row.URUNKODU) : undefined;
+              } else if (settings.matchBy === 'barkodNo') {
+                matchKey = row.BARKODNO ? String(row.BARKODNO) : undefined;
+              }
 
-            if (existingUrunId) {
-              // Ürün mevcut - güncelle
-              const result = await updateProduct(existingUrunId, row, settings.columns);
-              if (result.success) {
-                updated++;
-              } else {
-                failed++;
+              if (!matchKey) {
+                batchFailed++;
                 if (errors.length < 20) {
-                  errors.push(`ID ${existingUrunId}: ${result.error}`);
+                  errors.push(`Satır: Eşleştirme alanı (${settings.matchBy}) bulunamadı`);
                 }
+                continue;
               }
-            } else if (settings.updateMode === 'update_all') {
-              // Ürün yok ve update_all modu - yeni ekle
-              try {
-                const urunId = row.ID ? Number(row.ID) : Date.now() + processed;
-                const urunKodu = row.URUNKODU ? String(row.URUNKODU) : null;
 
-                await prisma.product.create({
-                  data: {
-                    urunId,
-                    urunKodu,
-                    barkodNo: row.BARKODNO || null,
-                    eskiAdi: row.ADI || null,
-                    faturaAdi: row.FATURAADI || null,
-                    url: row.URL || null,
-                    kargoOdeme: row.KARGOODEME || null,
-                    marka: row.MARKA || null,
-                    aciklama: row.ACIKLAMA || null,
-                    durum: row.DURUM || "AKTIF",
-                    vitrinDurumu: row.VITRINDURUMU || null,
-                    kdv: row.KDV ? Number(row.KDV) : null,
-                    desi: row.DESI ? Number(row.DESI) : null,
-                    stok: row.STOK ? Number(row.STOK) : 0,
-                    onDetay: row.ONDETAY || null,
-                    sira: row.SIRA ? Number(row.SIRA) : 0,
-                    ozelKod1: row.OZELKOD1 || null,
-                    ozelKod2: row.OZELKOD2 || null,
-                    ozelKod3: row.OZELKOD3 || null,
-                    kategoriId: row.KATEGORIID ? Number(row.KATEGORIID) : null,
-                    depoYerKodu: row.DEPOYERKODU || null,
-                    ureticiKodu: row.URETICIKODU || null,
-                    gtip: row.GTIP || null,
-                    modelKodu: row.MODELKODU || null,
-                    uploadedAt: new Date(),
-                  },
-                });
+              // Ürün veritabanında var mı?
+              const existingUrunId = existingProductsMap.get(matchKey);
 
-                // Fiyat ekle
+              if (existingUrunId) {
+                // Ürün mevcut - güncelleme batch'ine ekle
+                updateBatch.push({ urunId: existingUrunId, row, columns: settings.columns });
+
                 if (settings.columns.fiyatlar) {
-                  await prisma.productPrice.create({
-                    data: {
-                      urunId,
-                      piyasaFiyat: row.PIYASAFIYAT || null,
-                      alisFiyat: row.ALISFIYAT || null,
-                      hizliFiyat: row.HIZLIFIYAT || null,
-                      siteFiyat: row.SITEFIYAT || null,
-                      siteDoviz: row.SITEDOVIZ || "TL",
-                      n11Fiyat: row.N11FIYAT || null,
-                      n11Doviz: row.N11DOVIZ || "TL",
-                      hbFiyat: row.HBFIYAT || null,
-                      hbDoviz: row.HBDOVIZ || "TL",
-                      pttFiyat: row.PTTFIYAT || null,
-                      pttDoviz: row.PTTDOVIZ || "TL",
-                      amazonTrFiyat: row.AMAZONTRFIYAT || null,
-                      amazonTrDoviz: row.AMAZONTRDOVIZ || "TL",
-                      trendyolFiyat: row.TRENDYOLFIYAT || null,
-                      trendyolDoviz: row.TRENDYOLDOVIZ || "TL",
-                      cicekSepetiFiyat: row.CICEKSEPETIFIYAT || null,
-                      cicekSepetiDoviz: row.CICEKSEPETIDOVIZ || "TL",
-                      modanisaFiyat: row.MODANISAFIYAT || null,
-                      modanisaDoviz: row.MODANISADOVIZ || "TL",
-                      pazaramaFiyat: row.PAZARAMAFIYAT || null,
-                      pazaramaDoviz: row.PAZARAMADOVIZ || "TL",
-                      farmazonFiyat: row.FARMAZONFIYAT || null,
-                      farmazonDoviz: row.FARMAZONDOVIZ || "TL",
-                      idefixFiyat: row.IDEFIXFIYAT || null,
-                      idefixDoviz: row.IDEFIXDOVIZ || "TL",
-                      lcwFiyat: row.LCWFIYAT || null,
-                      lcwDoviz: row.LCWDOVIZ || "TL",
-                      bayiFiyati1: row.BAYIFIYATI1 || null,
-                      bayiFiyati2: row.BAYIFIYATI2 || null,
-                      bayiFiyati3: row.BAYIFIYATI3 || null,
-                      bayiFiyati4: row.BAYIFIYATI4 || null,
-                    },
-                  });
+                  priceBatch.push({ urunId: existingUrunId, row });
                 }
-
-                // SEO ekle
-                if (settings.columns.seoBilgileri && (row.SEOBASLIK || row.SEOANAHTARKELIME || row.SEOACIKLAMA)) {
-                  await prisma.productSeo.create({
-                    data: {
-                      urunId,
-                      seoBaslik: row.SEOBASLIK || null,
-                      seoKeywords: row.SEOANAHTARKELIME || null,
-                      seoAciklama: row.SEOACIKLAMA || null,
-                      seoUrl: row.URL || null,
-                    },
-                  });
+                if (settings.columns.seoBilgileri) {
+                  seoBatch.push({ urunId: existingUrunId, row });
                 }
-
-                created++;
+              } else if (settings.updateMode === 'update_all') {
+                // Ürün yok ve update_all modu - yeni ekleme batch'ine ekle
+                const urunId = row.ID ? Number(row.ID) : Date.now() + processed + createBatch.length;
+                createBatch.push({ row, urunId });
+                priceBatch.push({ urunId, row });
+                seoBatch.push({ urunId, row });
                 existingProductsMap.set(matchKey, urunId);
-              } catch (err) {
-                failed++;
-                if (errors.length < 20) {
-                  errors.push(`Yeni ekleme hatası: ${err instanceof Error ? err.message : 'Hata'}`);
-                }
+                existingIdSet.add(urunId);
+              } else {
+                // update_existing modu ve ürün yok - atla
+                batchSkipped++;
               }
-            } else {
-              // update_existing modu ve ürün yok - atla
-              skipped++;
             }
 
-            processed++;
+            skipped += batchSkipped;
+            failed += batchFailed;
+
+            // PERFORMANS: Toplu güncelleme işlemleri
+            if (updateBatch.length > 0) {
+              const productResult = await bulkUpdateProducts(updateBatch);
+              updated += productResult.updated;
+              failed += productResult.failed;
+            }
+
+            // Yeni ürünleri toplu ekle
+            if (createBatch.length > 0) {
+              const createResult = await bulkCreateProducts(createBatch);
+              created += createResult.created;
+              failed += createResult.failed;
+            }
+
+            // Fiyatları toplu güncelle/ekle
+            if (priceBatch.length > 0 && settings.columns.fiyatlar) {
+              await bulkUpsertPrices(priceBatch, existingPriceIdSet);
+            }
+
+            // SEO'ları toplu güncelle/ekle
+            if (seoBatch.length > 0 && settings.columns.seoBilgileri) {
+              await bulkUpsertSeos(seoBatch, existingSeoIdSet);
+            }
+
+            processed = batchEnd;
             const percent = Math.round((processed / total) * 100);
 
-            if (processed % 50 === 0 || processed === total) {
-              sendProgress({
-                type: 'progress',
-                processed,
-                total,
-                percent,
-                created,
-                updated,
-                skipped,
-                failed,
-                message: `${processed.toLocaleString()} / ${total.toLocaleString()} işlendi (${percent}%)`
-              });
+            sendProgress({
+              type: 'progress',
+              processed,
+              total,
+              percent,
+              created,
+              updated,
+              skipped,
+              failed,
+              message: `${processed.toLocaleString()} / ${total.toLocaleString()} işlendi (${percent}%)`
+            });
+
+            // Her 5 batch'te kısa bekleme (connection pool yönetimi)
+            if ((batchStart / UPDATE_BATCH_SIZE) % 5 === 0) {
+              await new Promise(resolve => setTimeout(resolve, 5));
             }
           }
         } else {
-          // new_only modu - sadece yeni ürünleri ekle (mevcut kod)
-          // Batch işleme
+          // new_only modu - sadece yeni ürünleri ekle (optimize edilmiş)
           for (let batchStart = 0; batchStart < data.length; batchStart += BATCH_SIZE) {
             const batchEnd = Math.min(batchStart + BATCH_SIZE, data.length);
             const batch = data.slice(batchStart, batchEnd);
@@ -827,7 +1016,7 @@ export async function POST(request: NextRequest) {
                     });
                   }
                 }, {
-                  timeout: 60000, // 60 saniye transaction timeout
+                  timeout: 120000, // 120 saniye transaction timeout - artırıldı
                 });
               });
 
@@ -867,9 +1056,9 @@ export async function POST(request: NextRequest) {
               message: `${processed.toLocaleString()} / ${total.toLocaleString()} işlendi - ${created.toLocaleString()} yeni, ${skipped.toLocaleString()} atlandı (${percent}%)`
             });
 
-            // Her 10 batch'te bir garbage collection'a izin ver
-            if ((batchStart / BATCH_SIZE) % 10 === 0) {
-              await new Promise(resolve => setTimeout(resolve, 10));
+            // Her 5 batch'te kısa bekleme
+            if ((batchStart / BATCH_SIZE) % 5 === 0) {
+              await new Promise(resolve => setTimeout(resolve, 5));
             }
           }
         }
