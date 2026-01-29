@@ -1,9 +1,10 @@
+export type ImageStyle = 'professional' | 'lifestyle' | 'minimal' | 'luxury';
+
 export interface AISettings {
   openaiApiKey: string;
   enableSeoOptimization: boolean;
   enableImageEnhancement: boolean;
-  imageStyle: 'professional' | 'lifestyle' | 'minimal' | 'luxury';
-  // Cloudinary ayarları
+  imageStyle: ImageStyle;
   cloudinaryCloudName: string;
   cloudinaryApiKey: string;
   cloudinaryApiSecret: string;
