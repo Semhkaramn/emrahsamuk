@@ -4,6 +4,57 @@ import crypto from "crypto";
 import { getCloudinarySettings, getOpenAIApiKey, getImageStyle, isImageEnhancementEnabled, type CloudinarySettings } from "@/lib/settings-cache";
 import { processImageWithAI } from "@/lib/openai-image";
 
+// URL'den format belirleme
+function getFormatFromUrl(url: string): string {
+  const urlLower = url.toLowerCase();
+  if (urlLower.includes('.webp') || urlLower.includes('format=webp')) return 'webp';
+  if (urlLower.includes('.png')) return 'png';
+  if (urlLower.includes('.jpg') || urlLower.includes('.jpeg')) return 'jpg';
+  if (urlLower.includes('.gif')) return 'gif';
+  return 'webp'; // varsayılan webp
+}
+
+// Fetch with timeout and retry
+async function fetchWithRetry(
+  url: string,
+  options: RequestInit = {},
+  retries = 3,
+  timeout = 30000
+): Promise<Response> {
+  for (let i = 0; i < retries; i++) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+      const response = await fetch(url, {
+        ...options,
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+
+      if (response.ok) {
+        return response;
+      }
+
+      // 502, 503, 504 gibi geçici hatalar için retry
+      if ([502, 503, 504].includes(response.status) && i < retries - 1) {
+        console.log(`[Retry ${i + 1}/${retries}] Status ${response.status}, retrying...`);
+        await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
+        continue;
+      }
+
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    } catch (error) {
+      if (i === retries - 1) throw error;
+
+      console.log(`[Retry ${i + 1}/${retries}] Error: ${error instanceof Error ? error.message : 'Unknown'}, retrying...`);
+      await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
+    }
+  }
+  throw new Error('Max retries exceeded');
+}
+
 // Upload single image to Cloudinary (direct - without AI)
 async function uploadToCloudinary(
   imageUrl: string,
@@ -11,34 +62,65 @@ async function uploadToCloudinary(
   settings: CloudinarySettings
 ): Promise<{ url: string; publicId: string } | null> {
   try {
+    // Format belirleme - URL'den
+    const format = getFormatFromUrl(imageUrl);
+
+    console.log(`[Cloudinary Direct] Downloading image: ${imageUrl.substring(0, 100)}...`);
+    console.log(`[Cloudinary Direct] Detected format: ${format}`);
+
+    // Önce resmi indir - retry ve timeout ile
+    const imageResponse = await fetchWithRetry(imageUrl, {}, 3, 30000);
+
+    const imageBuffer = await imageResponse.arrayBuffer();
+    const base64Image = Buffer.from(imageBuffer).toString("base64");
+
+    // MIME type belirleme
+    const mimeTypeMap: Record<string, string> = {
+      'webp': 'image/webp',
+      'png': 'image/png',
+      'jpg': 'image/jpeg',
+      'jpeg': 'image/jpeg',
+      'gif': 'image/gif',
+    };
+    const mimeType = mimeTypeMap[format] || 'image/webp';
+    const dataUri = `data:${mimeType};base64,${base64Image}`;
+
     const timestamp = Math.floor(Date.now() / 1000);
     const fullPublicId = `${settings.folder}/${publicId}`;
 
-    const signatureString = `public_id=${fullPublicId}&timestamp=${timestamp}${settings.apiSecret}`;
+    // Format parametresi ile signature oluştur
+    const signatureString = `format=${format}&public_id=${fullPublicId}&timestamp=${timestamp}${settings.apiSecret}`;
     const signature = crypto.createHash("sha1").update(signatureString).digest("hex");
 
     const formData = new FormData();
-    formData.append("file", imageUrl);
+    formData.append("file", dataUri);
     formData.append("public_id", fullPublicId);
     formData.append("timestamp", timestamp.toString());
     formData.append("api_key", settings.apiKey);
     formData.append("signature", signature);
+    formData.append("format", format); // WebP formatını zorla
 
-    const response = await fetch(
+    console.log(`[Cloudinary Direct] Uploading as ${format} to ${settings.cloudName}/${fullPublicId}.${format}`);
+
+    const response = await fetchWithRetry(
       `https://api.cloudinary.com/v1_1/${settings.cloudName}/image/upload`,
       {
         method: "POST",
         body: formData,
-      }
+      },
+      3,
+      60000 // Upload için daha uzun timeout
     );
 
-    if (!response.ok) {
-      const error = await response.text();
-      console.error("Cloudinary upload error:", error);
+    const result = await response.json();
+
+    if (result.error) {
+      console.error("Cloudinary upload error:", result.error);
       return null;
     }
 
-    const result = await response.json();
+    console.log(`[Cloudinary Direct] Upload successful: ${result.secure_url}`);
+
     return {
       url: result.secure_url,
       publicId: result.public_id,
