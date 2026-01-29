@@ -57,6 +57,68 @@ interface SelectedImage {
   eskiUrl: string;
 }
 
+// Büyük resim önizleme componenti
+function ImagePreview({
+  imageUrl,
+  thumbRect,
+}: {
+  imageUrl: string | null;
+  thumbRect: DOMRect | null;
+}) {
+  const [imageLoaded, setImageLoaded] = useState(false);
+
+  if (!imageUrl || !thumbRect) return null;
+
+  // Önizlemeyi thumbnail'in sağında göster
+  const previewWidth = 350;
+  const previewHeight = 350;
+
+  // Ekran sınırlarını kontrol et
+  let left = thumbRect.right + 16;
+  let top = thumbRect.top - 100;
+
+  // Sağda yer yoksa solda göster
+  if (left + previewWidth > window.innerWidth - 20) {
+    left = thumbRect.left - previewWidth - 16;
+  }
+
+  // Üstte veya altta taşma kontrolü
+  if (top < 20) top = 20;
+  if (top + previewHeight > window.innerHeight - 20) {
+    top = window.innerHeight - previewHeight - 20;
+  }
+
+  return (
+    <div
+      className="fixed z-[100] pointer-events-none animate-in fade-in zoom-in-95 duration-150"
+      style={{ left, top }}
+    >
+      <div className="bg-zinc-900 border-2 border-emerald-500/30 rounded-xl shadow-2xl shadow-black/50 p-3">
+        <div className="relative">
+          {!imageLoaded && (
+            <div className="w-[350px] h-[350px] flex items-center justify-center bg-zinc-800 rounded-lg">
+              <div className="animate-spin w-8 h-8 border-2 border-emerald-500 border-t-transparent rounded-full" />
+            </div>
+          )}
+          <img
+            src={imageUrl}
+            alt="Önizleme"
+            className={`max-w-[350px] max-h-[350px] object-contain rounded-lg ${imageLoaded ? 'block' : 'hidden'}`}
+            onLoad={() => setImageLoaded(true)}
+            onError={(e) => {
+              (e.target as HTMLImageElement).src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100'%3E%3Crect fill='%23333' width='100' height='100'/%3E%3Ctext fill='%23666' x='50' y='50' text-anchor='middle' dy='.3em'%3EHata%3C/text%3E%3C/svg%3E";
+              setImageLoaded(true);
+            }}
+          />
+        </div>
+        <div className="mt-2 text-center">
+          <span className="text-xs text-zinc-500">Tıklayarak tam boyutta aç</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function ImageProcessingPanel() {
   const [products, setProducts] = useState<Product[]>([]);
   const [selectedImages, setSelectedImages] = useState<SelectedImage[]>([]);
@@ -69,8 +131,23 @@ export function ImageProcessingPanel() {
   const [processedCount, setProcessedCount] = useState(0);
   const [useAI, setUseAI] = useState(true); // AI ile resim düzenleme
 
+  // Image preview state
+  const [previewImage, setPreviewImage] = useState<string | null>(null);
+  const [previewRect, setPreviewRect] = useState<DOMRect | null>(null);
+
   const processingRef = useRef<boolean>(false);
   const currentIndexRef = useRef<number>(0);
+
+  // Image hover handlers
+  const handleLogImageHover = useCallback((url: string, rect: DOMRect) => {
+    setPreviewImage(url);
+    setPreviewRect(rect);
+  }, []);
+
+  const handleLogImageLeave = useCallback(() => {
+    setPreviewImage(null);
+    setPreviewRect(null);
+  }, []);
 
   // Fetch products with images
   const fetchProducts = useCallback(async () => {
@@ -399,7 +476,7 @@ export function ImageProcessingPanel() {
                         <div>
                           <span className="font-mono text-sm text-emerald-400">{product.urunKodu}</span>
                           {product.eskiAdi && (
-                            <p className="text-xs text-zinc-500 truncate max-w-[300px]">{product.eskiAdi}</p>
+                            <p className="text-xs text-zinc-500 break-words">{product.eskiAdi}</p>
                           )}
                         </div>
                       </div>
@@ -431,6 +508,8 @@ export function ImageProcessingPanel() {
                           <div
                             key={image.id}
                             onClick={() => isPending && !isProcessing && toggleImageSelection(product, image)}
+                            onMouseEnter={(e) => handleLogImageHover(displayUrl, e.currentTarget.getBoundingClientRect())}
+                            onMouseLeave={handleLogImageLeave}
                             className={`relative group cursor-pointer ${
                               !isPending ? "opacity-60 cursor-not-allowed" : ""
                             }`}
@@ -438,7 +517,7 @@ export function ImageProcessingPanel() {
                             <img
                               src={displayUrl}
                               alt={`Resim ${image.sira}`}
-                              className={`w-16 h-16 object-cover rounded-lg border-2 transition-all ${
+                              className={`w-16 h-16 object-cover rounded-lg border-2 transition-all hover:scale-110 ${
                                 isSelected
                                   ? "border-blue-500 ring-2 ring-blue-500/30"
                                   : isDone
@@ -551,22 +630,36 @@ export function ImageProcessingPanel() {
                     </div>
                     <div className="grid grid-cols-[1fr,auto,1fr] gap-3 items-center">
                       <div className="bg-zinc-800/50 p-2 rounded flex items-center gap-2">
-                        <img src={log.eskiUrl} alt="Eski" className="w-10 h-10 object-cover rounded" />
-                        <div>
+                        <div
+                          className="relative group cursor-pointer"
+                          onMouseEnter={(e) => handleLogImageHover(log.eskiUrl, e.currentTarget.getBoundingClientRect())}
+                          onMouseLeave={handleLogImageLeave}
+                          onClick={() => window.open(log.eskiUrl, "_blank")}
+                        >
+                          <img src={log.eskiUrl} alt="Eski" className="w-10 h-10 object-cover rounded transition-all hover:ring-2 hover:ring-zinc-400 hover:scale-110" />
+                        </div>
+                        <div className="min-w-0 flex-1">
                           <p className="text-xs text-zinc-500">Eski Resim</p>
-                          <p className="text-xs text-zinc-400 truncate max-w-[150px]">{log.eskiUrl}</p>
+                          <p className="text-xs text-zinc-400 break-all">{log.eskiUrl}</p>
                         </div>
                       </div>
                       <ArrowRight className="w-4 h-4 text-zinc-600" />
                       <div className={`${log.aiProcessed ? 'bg-purple-500/10' : 'bg-blue-500/10'} p-2 rounded flex items-center gap-2`}>
                         {log.success && log.yeniUrl !== "-" ? (
                           <>
-                            <img src={log.yeniUrl} alt="Yeni" className="w-10 h-10 object-cover rounded" />
-                            <div>
+                            <div
+                              className="relative group cursor-pointer"
+                              onMouseEnter={(e) => handleLogImageHover(log.yeniUrl, e.currentTarget.getBoundingClientRect())}
+                              onMouseLeave={handleLogImageLeave}
+                              onClick={() => window.open(log.yeniUrl, "_blank")}
+                            >
+                              <img src={log.yeniUrl} alt="Yeni" className="w-10 h-10 object-cover rounded transition-all hover:ring-2 hover:ring-emerald-400 hover:scale-110" />
+                            </div>
+                            <div className="min-w-0 flex-1">
                               <p className={`text-xs ${log.aiProcessed ? 'text-purple-400' : 'text-blue-400'}`}>
                                 {log.aiProcessed ? 'AI Düzenlenmiş' : 'Yeni Resim'}
                               </p>
-                              <p className="text-xs text-zinc-300 truncate max-w-[150px]">{log.yeniUrl}</p>
+                              <p className="text-xs text-zinc-300 break-all">{log.yeniUrl}</p>
                             </div>
                           </>
                         ) : (
@@ -577,7 +670,7 @@ export function ImageProcessingPanel() {
                     {log.aiProcessed && log.prompt && (
                       <div className="mt-2 p-2 bg-zinc-800/30 rounded">
                         <p className="text-xs text-zinc-500">AI Prompt:</p>
-                        <p className="text-xs text-zinc-400 truncate">{log.prompt}</p>
+                        <p className="text-xs text-zinc-400 break-words">{log.prompt}</p>
                       </div>
                     )}
                   </div>
@@ -587,6 +680,12 @@ export function ImageProcessingPanel() {
           </ScrollArea>
         </CardContent>
       </Card>
+
+      {/* Global Image Preview */}
+      <ImagePreview
+        imageUrl={previewImage}
+        thumbRect={previewRect}
+      />
     </div>
   );
 }
