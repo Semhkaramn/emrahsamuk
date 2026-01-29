@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { PrismaClient } from "@prisma/client";
+import prisma from "@/lib/db";
 import crypto from "crypto";
-
-const prisma = new PrismaClient();
+import {
+  getOpenAIApiKey,
+  getCloudinarySettings,
+  type CloudinarySettings,
+} from "@/lib/settings-cache";
 
 interface ProcessingOptions {
   processSeo: boolean;
@@ -14,17 +17,14 @@ interface ProcessingOptions {
 async function uploadToCloudinary(
   imageUrl: string,
   publicId: string,
-  cloudName: string,
-  apiKey: string,
-  apiSecret: string,
-  folder: string
+  settings: CloudinarySettings
 ): Promise<{ url: string; publicId: string } | null> {
   try {
     const timestamp = Math.floor(Date.now() / 1000);
-    const fullPublicId = `${folder}/${publicId}`;
+    const fullPublicId = `${settings.folder}/${publicId}`;
 
     // Create signature
-    const signatureString = `public_id=${fullPublicId}&timestamp=${timestamp}${apiSecret}`;
+    const signatureString = `public_id=${fullPublicId}&timestamp=${timestamp}${settings.apiSecret}`;
     const signature = crypto.createHash("sha1").update(signatureString).digest("hex");
 
     // Upload via URL
@@ -32,11 +32,11 @@ async function uploadToCloudinary(
     formData.append("file", imageUrl);
     formData.append("public_id", fullPublicId);
     formData.append("timestamp", timestamp.toString());
-    formData.append("api_key", apiKey);
+    formData.append("api_key", settings.apiKey);
     formData.append("signature", signature);
 
     const response = await fetch(
-      `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`,
+      `https://api.cloudinary.com/v1_1/${settings.cloudName}/image/upload`,
       {
         method: "POST",
         body: formData,
@@ -108,16 +108,6 @@ async function optimizeSeoWithAI(
   }
 }
 
-// Get settings from database
-async function getSettings() {
-  const settings = await prisma.settings.findMany();
-  const settingsMap: Record<string, string> = {};
-  for (const s of settings) {
-    if (s.value) settingsMap[s.key] = s.value;
-  }
-  return settingsMap;
-}
-
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -127,13 +117,9 @@ export async function POST(request: NextRequest) {
       batchSize: body.batchSize ?? 1,
     };
 
-    // Get settings
-    const settings = await getSettings();
-    const openaiApiKey = settings.openaiApiKey || "";
-    const cloudinaryCloudName = settings.cloudinaryCloudName || "";
-    const cloudinaryApiKey = settings.cloudinaryApiKey || "";
-    const cloudinaryApiSecret = settings.cloudinaryApiSecret || "";
-    const cloudinaryFolder = settings.cloudinaryFolder || "urunler";
+    // Get settings from cache
+    const openaiApiKey = await getOpenAIApiKey();
+    const cloudinarySettings = await getCloudinarySettings();
 
     // Validate required settings
     if (options.processSeo && !openaiApiKey) {
@@ -143,7 +129,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (options.processImages && (!cloudinaryCloudName || !cloudinaryApiKey || !cloudinaryApiSecret)) {
+    if (options.processImages && !cloudinarySettings) {
       return NextResponse.json(
         { success: false, error: "Cloudinary ayarları eksik" },
         { status: 400 }
@@ -235,7 +221,7 @@ export async function POST(request: NextRequest) {
       }
 
       // Process Images
-      if (options.processImages && product.images.length > 0) {
+      if (options.processImages && product.images.length > 0 && cloudinarySettings) {
         for (const image of product.images) {
           if (!image.eskiUrl) continue;
 
@@ -251,10 +237,7 @@ export async function POST(request: NextRequest) {
           const uploadResult = await uploadToCloudinary(
             image.eskiUrl,
             publicId,
-            cloudinaryCloudName,
-            cloudinaryApiKey,
-            cloudinaryApiSecret,
-            cloudinaryFolder
+            cloudinarySettings
           );
 
           if (uploadResult) {
