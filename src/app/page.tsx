@@ -168,9 +168,9 @@ export default function Home() {
               <Package className="w-6 h-6 text-white" />
             </div>
             {sidebarOpen && (
-              <div className="overflow-hidden">
-                <h1 className="text-lg font-bold truncate">Ürün Yönetim</h1>
-                <p className="text-xs text-zinc-500 truncate">AI SEO + Resim</p>
+              <div>
+                <h1 className="text-lg font-bold">Ürün Yönetim</h1>
+                <p className="text-xs text-zinc-500">AI SEO + Resim</p>
               </div>
             )}
           </div>
@@ -219,9 +219,9 @@ export default function Home() {
                       <Icon className={`w-5 h-5 shrink-0 ${isActive && colors ? colors.text : isActive ? "text-emerald-400" : ""}`} />
                       {sidebarOpen && (
                         <>
-                          <div className="flex-1 text-left overflow-hidden">
-                            <div className="font-medium truncate">{item.label}</div>
-                            <div className="text-xs text-zinc-500 truncate">{item.description}</div>
+                          <div className="flex-1 text-left">
+                            <div className="font-medium">{item.label}</div>
+                            <div className="text-xs text-zinc-500">{item.description}</div>
                           </div>
                           {isActive && (
                             <ChevronRight className={`w-4 h-4 shrink-0 ${colors ? colors.text : "text-emerald-400"}`} />
