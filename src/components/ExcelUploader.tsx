@@ -15,7 +15,11 @@ import {
   Image as ImageIcon,
   Database,
   FileUp,
+  Settings,
+  X,
 } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 
 interface UploadStats {
   total: number;
@@ -61,6 +65,39 @@ interface UploadState {
   };
 }
 
+// Güncelleme modu
+type UpdateMode = 'new_only' | 'update_existing' | 'update_all';
+
+// Güncellenebilir sütunlar
+interface UpdateableColumns {
+  temelBilgiler: boolean; // eskiAdi, faturaAdi, url, marka, aciklama, durum
+  fiyatlar: boolean; // tüm fiyat alanları
+  stokBilgileri: boolean; // stok, desi, kdv
+  seoBilgileri: boolean; // seo başlık, keywords, açıklama
+  kategoriBilgileri: boolean; // kategoriId
+  kodBilgileri: boolean; // ozelKod1, ozelKod2, ozelKod3
+}
+
+// Yükleme ayarları
+interface UploadSettings {
+  updateMode: UpdateMode;
+  matchBy: 'urunId' | 'urunKodu' | 'barkodNo';
+  columns: UpdateableColumns;
+}
+
+const defaultSettings: UploadSettings = {
+  updateMode: 'new_only',
+  matchBy: 'urunId',
+  columns: {
+    temelBilgiler: true,
+    fiyatlar: true,
+    stokBilgileri: true,
+    seoBilgileri: true,
+    kategoriBilgileri: true,
+    kodBilgileri: true,
+  },
+};
+
 interface FileTypeConfig {
   id: string;
   title: string;
@@ -69,6 +106,7 @@ interface FileTypeConfig {
   icon: React.ElementType;
   color: string;
   bgColor: string;
+  hasSettings?: boolean;
 }
 
 const fileTypes: FileTypeConfig[] = [
@@ -80,6 +118,7 @@ const fileTypes: FileTypeConfig[] = [
     icon: Package,
     color: "text-emerald-400",
     bgColor: "bg-emerald-500/10",
+    hasSettings: true,
   },
   {
     id: "urunkategori",
@@ -118,12 +157,248 @@ const initialState: UploadState = {
   },
 };
 
+// Ayarlar Modal Komponenti
+function SettingsModal({
+  isOpen,
+  onClose,
+  settings,
+  onSettingsChange,
+  onConfirm,
+  fileName,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  settings: UploadSettings;
+  onSettingsChange: (settings: UploadSettings) => void;
+  onConfirm: () => void;
+  fileName: string;
+}) {
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
+      <div className="bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between p-4 border-b border-zinc-700">
+          <div>
+            <h3 className="text-lg font-semibold text-zinc-100">Excel Yukleme Ayarlari</h3>
+            <p className="text-xs text-zinc-500 mt-1">{fileName}</p>
+          </div>
+          <Button variant="ghost" size="sm" onClick={onClose}>
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
+
+        <div className="p-4 space-y-6">
+          {/* Güncelleme Modu */}
+          <div className="space-y-3">
+            <Label className="text-sm font-medium text-zinc-300">Guncelleme Modu</Label>
+            <div className="space-y-2">
+              <label className="flex items-center gap-3 p-3 bg-zinc-800/50 rounded-lg cursor-pointer hover:bg-zinc-800 transition-colors">
+                <input
+                  type="radio"
+                  name="updateMode"
+                  checked={settings.updateMode === 'new_only'}
+                  onChange={() => onSettingsChange({ ...settings, updateMode: 'new_only' })}
+                  className="w-4 h-4 text-emerald-500"
+                />
+                <div>
+                  <p className="text-sm text-zinc-200">Sadece Yeni Ekle</p>
+                  <p className="text-xs text-zinc-500">Mevcut urunleri atla, sadece yeni urunleri ekle</p>
+                </div>
+              </label>
+              <label className="flex items-center gap-3 p-3 bg-zinc-800/50 rounded-lg cursor-pointer hover:bg-zinc-800 transition-colors">
+                <input
+                  type="radio"
+                  name="updateMode"
+                  checked={settings.updateMode === 'update_existing'}
+                  onChange={() => onSettingsChange({ ...settings, updateMode: 'update_existing' })}
+                  className="w-4 h-4 text-blue-500"
+                />
+                <div>
+                  <p className="text-sm text-zinc-200">Mevcut Olanlari Guncelle</p>
+                  <p className="text-xs text-zinc-500">Sadece veritabaninda olan urunleri guncelle</p>
+                </div>
+              </label>
+              <label className="flex items-center gap-3 p-3 bg-zinc-800/50 rounded-lg cursor-pointer hover:bg-zinc-800 transition-colors">
+                <input
+                  type="radio"
+                  name="updateMode"
+                  checked={settings.updateMode === 'update_all'}
+                  onChange={() => onSettingsChange({ ...settings, updateMode: 'update_all' })}
+                  className="w-4 h-4 text-amber-500"
+                />
+                <div>
+                  <p className="text-sm text-zinc-200">Hepsini Guncelle (Upsert)</p>
+                  <p className="text-xs text-zinc-500">Yeni urunleri ekle, mevcut olanlari guncelle</p>
+                </div>
+              </label>
+            </div>
+          </div>
+
+          {/* Eşleştirme Alanı */}
+          <div className="space-y-3">
+            <Label className="text-sm font-medium text-zinc-300">Eslestirme Alani</Label>
+            <p className="text-xs text-zinc-500">Urunleri hangi alana gore eslestirelim?</p>
+            <div className="grid grid-cols-3 gap-2">
+              <label className={`flex items-center justify-center gap-2 p-2 rounded-lg cursor-pointer border transition-colors ${settings.matchBy === 'urunId' ? 'border-emerald-500 bg-emerald-500/10' : 'border-zinc-700 bg-zinc-800/50 hover:bg-zinc-800'}`}>
+                <input
+                  type="radio"
+                  name="matchBy"
+                  checked={settings.matchBy === 'urunId'}
+                  onChange={() => onSettingsChange({ ...settings, matchBy: 'urunId' })}
+                  className="sr-only"
+                />
+                <span className="text-sm text-zinc-200">Urun ID</span>
+              </label>
+              <label className={`flex items-center justify-center gap-2 p-2 rounded-lg cursor-pointer border transition-colors ${settings.matchBy === 'urunKodu' ? 'border-emerald-500 bg-emerald-500/10' : 'border-zinc-700 bg-zinc-800/50 hover:bg-zinc-800'}`}>
+                <input
+                  type="radio"
+                  name="matchBy"
+                  checked={settings.matchBy === 'urunKodu'}
+                  onChange={() => onSettingsChange({ ...settings, matchBy: 'urunKodu' })}
+                  className="sr-only"
+                />
+                <span className="text-sm text-zinc-200">Urun Kodu</span>
+              </label>
+              <label className={`flex items-center justify-center gap-2 p-2 rounded-lg cursor-pointer border transition-colors ${settings.matchBy === 'barkodNo' ? 'border-emerald-500 bg-emerald-500/10' : 'border-zinc-700 bg-zinc-800/50 hover:bg-zinc-800'}`}>
+                <input
+                  type="radio"
+                  name="matchBy"
+                  checked={settings.matchBy === 'barkodNo'}
+                  onChange={() => onSettingsChange({ ...settings, matchBy: 'barkodNo' })}
+                  className="sr-only"
+                />
+                <span className="text-sm text-zinc-200">Barkod No</span>
+              </label>
+            </div>
+          </div>
+
+          {/* Güncellenecek Sütunlar */}
+          {settings.updateMode !== 'new_only' && (
+            <div className="space-y-3">
+              <Label className="text-sm font-medium text-zinc-300">Guncellenecek Alanlar</Label>
+              <p className="text-xs text-zinc-500">Hangi veri gruplarini guncelleyelim?</p>
+              <div className="space-y-2">
+                <label className="flex items-center gap-3 p-2 bg-zinc-800/50 rounded-lg cursor-pointer hover:bg-zinc-800 transition-colors">
+                  <Checkbox
+                    checked={settings.columns.temelBilgiler}
+                    onCheckedChange={(checked) =>
+                      onSettingsChange({
+                        ...settings,
+                        columns: { ...settings.columns, temelBilgiler: !!checked },
+                      })
+                    }
+                  />
+                  <div>
+                    <p className="text-sm text-zinc-200">Temel Bilgiler</p>
+                    <p className="text-xs text-zinc-500">Adi, Fatura Adi, URL, Marka, Aciklama, Durum</p>
+                  </div>
+                </label>
+                <label className="flex items-center gap-3 p-2 bg-zinc-800/50 rounded-lg cursor-pointer hover:bg-zinc-800 transition-colors">
+                  <Checkbox
+                    checked={settings.columns.fiyatlar}
+                    onCheckedChange={(checked) =>
+                      onSettingsChange({
+                        ...settings,
+                        columns: { ...settings.columns, fiyatlar: !!checked },
+                      })
+                    }
+                  />
+                  <div>
+                    <p className="text-sm text-zinc-200">Fiyatlar</p>
+                    <p className="text-xs text-zinc-500">Tum pazaryeri fiyatlari ve doviz bilgileri</p>
+                  </div>
+                </label>
+                <label className="flex items-center gap-3 p-2 bg-zinc-800/50 rounded-lg cursor-pointer hover:bg-zinc-800 transition-colors">
+                  <Checkbox
+                    checked={settings.columns.stokBilgileri}
+                    onCheckedChange={(checked) =>
+                      onSettingsChange({
+                        ...settings,
+                        columns: { ...settings.columns, stokBilgileri: !!checked },
+                      })
+                    }
+                  />
+                  <div>
+                    <p className="text-sm text-zinc-200">Stok Bilgileri</p>
+                    <p className="text-xs text-zinc-500">Stok, Desi, KDV</p>
+                  </div>
+                </label>
+                <label className="flex items-center gap-3 p-2 bg-zinc-800/50 rounded-lg cursor-pointer hover:bg-zinc-800 transition-colors">
+                  <Checkbox
+                    checked={settings.columns.seoBilgileri}
+                    onCheckedChange={(checked) =>
+                      onSettingsChange({
+                        ...settings,
+                        columns: { ...settings.columns, seoBilgileri: !!checked },
+                      })
+                    }
+                  />
+                  <div>
+                    <p className="text-sm text-zinc-200">SEO Bilgileri</p>
+                    <p className="text-xs text-zinc-500">SEO Baslik, Keywords, Aciklama</p>
+                  </div>
+                </label>
+                <label className="flex items-center gap-3 p-2 bg-zinc-800/50 rounded-lg cursor-pointer hover:bg-zinc-800 transition-colors">
+                  <Checkbox
+                    checked={settings.columns.kategoriBilgileri}
+                    onCheckedChange={(checked) =>
+                      onSettingsChange({
+                        ...settings,
+                        columns: { ...settings.columns, kategoriBilgileri: !!checked },
+                      })
+                    }
+                  />
+                  <div>
+                    <p className="text-sm text-zinc-200">Kategori Bilgileri</p>
+                    <p className="text-xs text-zinc-500">Kategori ID</p>
+                  </div>
+                </label>
+                <label className="flex items-center gap-3 p-2 bg-zinc-800/50 rounded-lg cursor-pointer hover:bg-zinc-800 transition-colors">
+                  <Checkbox
+                    checked={settings.columns.kodBilgileri}
+                    onCheckedChange={(checked) =>
+                      onSettingsChange({
+                        ...settings,
+                        columns: { ...settings.columns, kodBilgileri: !!checked },
+                      })
+                    }
+                  />
+                  <div>
+                    <p className="text-sm text-zinc-200">Ozel Kodlar</p>
+                    <p className="text-xs text-zinc-500">Ozel Kod 1, 2, 3</p>
+                  </div>
+                </label>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="flex gap-3 p-4 border-t border-zinc-700">
+          <Button variant="outline" onClick={onClose} className="flex-1">
+            Iptal
+          </Button>
+          <Button onClick={onConfirm} className="flex-1 bg-emerald-600 hover:bg-emerald-700">
+            Yuklemeyi Baslat
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function ExcelUploader() {
   const [uploadStates, setUploadStates] = useState<Record<string, UploadState>>({});
+  const [uploadSettings, setUploadSettings] = useState<Record<string, UploadSettings>>({});
+  const [settingsModal, setSettingsModal] = useState<{ isOpen: boolean; fileTypeId: string; file: File | null }>({
+    isOpen: false,
+    fileTypeId: '',
+    file: null,
+  });
   const abortControllerRefs = useRef<Record<string, AbortController>>({});
 
   const handleFileUpload = useCallback(
-    async (fileType: FileTypeConfig, file: File) => {
+    async (fileType: FileTypeConfig, file: File, settings?: UploadSettings) => {
       // Abort controller for cancellation
       const abortController = new AbortController();
       abortControllerRefs.current[fileType.id] = abortController;
@@ -141,6 +416,11 @@ export function ExcelUploader() {
       try {
         const formData = new FormData();
         formData.append("file", file);
+
+        // Ayarları ekle
+        if (settings) {
+          formData.append("settings", JSON.stringify(settings));
+        }
 
         // Dosya yükleme simülasyonu (gerçek progress için XMLHttpRequest kullanılabilir)
         setUploadStates((prev) => ({
@@ -311,21 +591,49 @@ export function ExcelUploader() {
       e.preventDefault();
       const file = e.dataTransfer.files[0];
       if (file && (file.name.endsWith(".xlsx") || file.name.endsWith(".xls"))) {
-        handleFileUpload(fileType, file);
+        if (fileType.hasSettings) {
+          // Ayarlar modalını aç
+          setSettingsModal({ isOpen: true, fileTypeId: fileType.id, file });
+          if (!uploadSettings[fileType.id]) {
+            setUploadSettings((prev) => ({ ...prev, [fileType.id]: { ...defaultSettings } }));
+          }
+        } else {
+          handleFileUpload(fileType, file);
+        }
       }
     },
-    [handleFileUpload]
+    [handleFileUpload, uploadSettings]
   );
 
   const handleFileSelect = useCallback(
     (fileType: FileTypeConfig) => (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       if (file) {
-        handleFileUpload(fileType, file);
+        if (fileType.hasSettings) {
+          // Ayarlar modalını aç
+          setSettingsModal({ isOpen: true, fileTypeId: fileType.id, file });
+          if (!uploadSettings[fileType.id]) {
+            setUploadSettings((prev) => ({ ...prev, [fileType.id]: { ...defaultSettings } }));
+          }
+        } else {
+          handleFileUpload(fileType, file);
+        }
       }
+      // Input'u resetle
+      e.target.value = '';
     },
-    [handleFileUpload]
+    [handleFileUpload, uploadSettings]
   );
+
+  const handleSettingsConfirm = useCallback(() => {
+    const { fileTypeId, file } = settingsModal;
+    const fileType = fileTypes.find((ft) => ft.id === fileTypeId);
+    if (fileType && file) {
+      const settings = uploadSettings[fileTypeId] || defaultSettings;
+      handleFileUpload(fileType, file, settings);
+    }
+    setSettingsModal({ isOpen: false, fileTypeId: '', file: null });
+  }, [settingsModal, uploadSettings, handleFileUpload]);
 
   const resetState = useCallback((fileTypeId: string) => {
     setUploadStates((prev) => ({
@@ -470,59 +778,85 @@ export function ExcelUploader() {
     );
   };
 
-  return (
-    <div className="grid gap-4 md:grid-cols-3">
-      {fileTypes.map((fileType) => {
-        const state = uploadStates[fileType.id] || initialState;
-        const Icon = fileType.icon;
-        const isActive = state.uploadPhase !== 'idle';
-        const isComplete = state.uploadPhase === 'complete' || state.uploadPhase === 'error';
+  const currentFileType = fileTypes.find((ft) => ft.id === settingsModal.fileTypeId);
 
-        return (
-          <Card key={fileType.id} className="relative overflow-hidden">
-            <CardHeader className="pb-3">
-              <div className="flex items-center gap-3">
-                <div className={`p-2 rounded-lg ${fileType.bgColor}`}>
-                  <Icon className={`h-5 w-5 ${fileType.color}`} />
+  return (
+    <>
+      <div className="grid gap-4 md:grid-cols-3">
+        {fileTypes.map((fileType) => {
+          const state = uploadStates[fileType.id] || initialState;
+          const Icon = fileType.icon;
+          const isActive = state.uploadPhase !== 'idle';
+          const isComplete = state.uploadPhase === 'complete' || state.uploadPhase === 'error';
+
+          return (
+            <Card key={fileType.id} className="relative overflow-hidden">
+              <CardHeader className="pb-3">
+                <div className="flex items-center gap-3">
+                  <div className={`p-2 rounded-lg ${fileType.bgColor}`}>
+                    <Icon className={`h-5 w-5 ${fileType.color}`} />
+                  </div>
+                  <div className="flex-1">
+                    <CardTitle className="text-base flex items-center gap-2">
+                      {fileType.title}
+                      {fileType.hasSettings && (
+                        <Settings className="h-3.5 w-3.5 text-zinc-500" />
+                      )}
+                    </CardTitle>
+                    <CardDescription className="text-xs">
+                      {fileType.description}
+                    </CardDescription>
+                  </div>
                 </div>
-                <div>
-                  <CardTitle className="text-base">{fileType.title}</CardTitle>
-                  <CardDescription className="text-xs">
-                    {fileType.description}
-                  </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div
+                  onDrop={handleDrop(fileType)}
+                  onDragOver={(e) => e.preventDefault()}
+                  className="border-2 border-dashed border-zinc-700 rounded-lg p-6 text-center hover:border-zinc-600 transition-colors cursor-pointer min-h-[200px] flex items-center justify-center"
+                >
+                  {isActive && !isComplete ? (
+                    renderProgressContent(state, fileType.id)
+                  ) : isComplete ? (
+                    renderResultContent(state, fileType.id)
+                  ) : (
+                    <label className="flex flex-col items-center gap-2 cursor-pointer">
+                      <Upload className="h-8 w-8 text-zinc-500" />
+                      <p className="text-sm text-zinc-400">
+                        Dosyayi surukleyin veya tiklayin
+                      </p>
+                      <p className="text-xs text-zinc-600">.xlsx veya .xls</p>
+                      {fileType.hasSettings && (
+                        <p className="text-xs text-emerald-500 mt-1">Yukleme oncesi ayarlar acilacak</p>
+                      )}
+                      <input
+                        type="file"
+                        accept=".xlsx,.xls"
+                        onChange={handleFileSelect(fileType)}
+                        className="hidden"
+                      />
+                    </label>
+                  )}
                 </div>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div
-                onDrop={handleDrop(fileType)}
-                onDragOver={(e) => e.preventDefault()}
-                className="border-2 border-dashed border-zinc-700 rounded-lg p-6 text-center hover:border-zinc-600 transition-colors cursor-pointer min-h-[200px] flex items-center justify-center"
-              >
-                {isActive && !isComplete ? (
-                  renderProgressContent(state, fileType.id)
-                ) : isComplete ? (
-                  renderResultContent(state, fileType.id)
-                ) : (
-                  <label className="flex flex-col items-center gap-2 cursor-pointer">
-                    <Upload className="h-8 w-8 text-zinc-500" />
-                    <p className="text-sm text-zinc-400">
-                      Dosyayi surukleyin veya tiklayin
-                    </p>
-                    <p className="text-xs text-zinc-600">.xlsx veya .xls</p>
-                    <input
-                      type="file"
-                      accept=".xlsx,.xls"
-                      onChange={handleFileSelect(fileType)}
-                      className="hidden"
-                    />
-                  </label>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-        );
-      })}
-    </div>
+              </CardContent>
+            </Card>
+          );
+        })}
+      </div>
+
+      {/* Settings Modal */}
+      {currentFileType && (
+        <SettingsModal
+          isOpen={settingsModal.isOpen}
+          onClose={() => setSettingsModal({ isOpen: false, fileTypeId: '', file: null })}
+          settings={uploadSettings[settingsModal.fileTypeId] || defaultSettings}
+          onSettingsChange={(newSettings) =>
+            setUploadSettings((prev) => ({ ...prev, [settingsModal.fileTypeId]: newSettings }))
+          }
+          onConfirm={handleSettingsConfirm}
+          fileName={settingsModal.file?.name || ''}
+        />
+      )}
+    </>
   );
 }
