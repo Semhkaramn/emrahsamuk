@@ -84,7 +84,7 @@ export function ImageProcessingPanel() {
       const data = await response.json();
 
       if (data.success) {
-        setProducts(data.data.map((p: any) => ({
+        setProducts(data.data.map((p: { urunId: number; urunKodu: string; eskiAdi: string | null; images?: ProductImage[] }) => ({
           urunId: p.urunId,
           urunKodu: p.urunKodu,
           eskiAdi: p.eskiAdi,
