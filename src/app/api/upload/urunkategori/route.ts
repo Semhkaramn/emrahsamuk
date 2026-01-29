@@ -3,8 +3,8 @@ import prisma from "@/lib/db";
 import * as XLSX from "xlsx";
 import type { Prisma } from "@prisma/client";
 
-// Route segment config - timeout ve body size ayarları
-export const maxDuration = 300; // 5 dakika timeout
+// Route segment config
+export const maxDuration = 300;
 export const dynamic = 'force-dynamic';
 
 interface UrunKategoriRow {
@@ -24,8 +24,18 @@ interface UrunKategoriRow {
   ALT_KATEGORI_9?: string;
 }
 
-// Batch işleme boyutu
-const BATCH_SIZE = 500;
+// Optimize edilmiş batch boyutu
+const BATCH_SIZE = 200;
+const PARALLEL_LIMIT = 20;
+
+// Yardımcı: Diziyi chunk'lara böl
+function chunkArray<T>(array: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let i = 0; i < array.length; i += size) {
+    chunks.push(array.slice(i, i + size));
+  }
+  return chunks;
+}
 
 export async function POST(request: NextRequest) {
   const encoder = new TextEncoder();
@@ -68,7 +78,7 @@ export async function POST(request: NextRequest) {
           message: `${total} kategori bulundu, işlem başlıyor...`
         });
 
-        // Önce tüm mevcut ürünlerin ID'lerini al (performans için)
+        // Mevcut verileri al
         const allUrunIds = data.filter(row => row.URUNID).map(row => Number(row.URUNID));
 
         const existingProducts = await prisma.product.findMany({
@@ -111,7 +121,6 @@ export async function POST(request: NextRequest) {
             try {
               const urunId = Number(row.URUNID);
 
-              // Ürün var mı kontrol et
               if (!existingProductIdSet.has(urunId)) {
                 skipped++;
                 continue;
@@ -149,31 +158,33 @@ export async function POST(request: NextRequest) {
             }
           }
 
-          // Transaction ile batch işleme
+          // Veritabanı işlemleri
           try {
-            await prisma.$transaction(async (tx) => {
-              // 1. Yeni kategorileri toplu ekle
-              if (categoriesToCreate.length > 0) {
-                await tx.productCategory.createMany({
-                  data: categoriesToCreate,
-                  skipDuplicates: true,
-                });
-              }
+            // 1. Yeni kategorileri toplu ekle (TEK SORGU)
+            if (categoriesToCreate.length > 0) {
+              await prisma.productCategory.createMany({
+                data: categoriesToCreate,
+                skipDuplicates: true,
+              });
+            }
 
-              // 2. Mevcut kategorileri güncelle (paralel)
-              const updatePromises = categoriesToUpdate.map(({ urunId, data }) =>
-                tx.productCategory.update({
-                  where: { urunId },
-                  data,
-                }).catch(() => null)
-              );
-              await Promise.all(updatePromises);
-            }, {
-              timeout: 60000,
-            });
-          } catch (txError) {
-            console.error("Transaction error:", txError);
-            // Fallback: tek tek işle
+            // 2. Mevcut kategorileri güncelle - sınırlı paralel
+            if (categoriesToUpdate.length > 0) {
+              const updateChunks = chunkArray(categoriesToUpdate, PARALLEL_LIMIT);
+              for (const chunk of updateChunks) {
+                await Promise.all(
+                  chunk.map(({ urunId, data }) =>
+                    prisma.productCategory.update({
+                      where: { urunId },
+                      data,
+                    }).catch(() => null)
+                  )
+                );
+              }
+            }
+
+          } catch (batchError) {
+            console.error("Batch error:", batchError);
             for (const category of categoriesToCreate) {
               try {
                 await prisma.productCategory.create({ data: category });
@@ -200,7 +211,7 @@ export async function POST(request: NextRequest) {
           });
         }
 
-        // Log the upload
+        // Log
         try {
           await prisma.processingLog.create({
             data: {
@@ -210,7 +221,7 @@ export async function POST(request: NextRequest) {
             },
           });
         } catch (logErr) {
-          console.error("Log create error:", logErr);
+          console.error("Log error:", logErr);
         }
 
         sendProgress({
@@ -229,7 +240,7 @@ export async function POST(request: NextRequest) {
 
         controller.close();
       } catch (error) {
-        console.error("Upload urunkategori error:", error);
+        console.error("Upload error:", error);
         sendProgress({
           type: 'error',
           message: error instanceof Error ? error.message : "Dosya işlenirken hata oluştu"
