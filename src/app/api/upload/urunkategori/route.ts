@@ -24,9 +24,9 @@ interface UrunKategoriRow {
   ALT_KATEGORI_9?: string;
 }
 
-// Optimize edilmiş batch boyutu
-const BATCH_SIZE = 200;
-const PARALLEL_LIMIT = 20;
+// 15.000+ ürün için optimize edilmiş değerler
+const BATCH_SIZE = 100;
+const PARALLEL_LIMIT = 10;
 
 // Yardımcı: Diziyi chunk'lara böl
 function chunkArray<T>(array: T[], size: number): T[][] {
