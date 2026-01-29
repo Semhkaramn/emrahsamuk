@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
+import { getOpenAIApiKey } from "@/lib/settings-cache";
 
 // POST - Toplu SEO işleme başlat
 export async function POST(request: NextRequest) {
@@ -7,12 +8,8 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { batchSize = 10, onlyPending = true } = body;
 
-    // Get API key from settings
-    const apiKeySetting = await prisma.settings.findUnique({
-      where: { key: "openai_api_key" },
-    });
-
-    const apiKey = apiKeySetting?.value;
+    // Get API key from cached settings
+    const apiKey = await getOpenAIApiKey();
     if (!apiKey) {
       return NextResponse.json(
         { success: false, error: "OpenAI API anahtarı ayarlanmamış. Ayarlar'dan ekleyin." },
