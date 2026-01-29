@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import { useAuth } from "@/lib/auth-context";
+import { LoginPage } from "@/components/LoginPage";
 import { Dashboard } from "@/components/Dashboard";
 import { ExcelUploader } from "@/components/ExcelUploader";
 import { ProductDataGrid } from "@/components/ProductDataGrid";
@@ -19,11 +21,10 @@ import {
   Image as ImageIcon,
   FolderTree,
   Menu,
-  X,
   ChevronRight,
   ChevronLeft,
-  PanelLeftClose,
-  PanelLeft,
+  LogOut,
+  Loader2,
 } from "lucide-react";
 
 type ActivePage = "dashboard" | "name-process" | "image-process" | "category-process" | "upload" | "products" | "export" | "settings";
@@ -48,9 +49,27 @@ const navItems: NavItem[] = [
 ];
 
 export default function Home() {
+  const { isAuthenticated, isLoading, logout } = useAuth();
   const [activePage, setActivePage] = useState<ActivePage>("dashboard");
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+
+  // Show loading state
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-zinc-950 flex items-center justify-center">
+        <div className="flex flex-col items-center gap-4">
+          <Loader2 className="w-10 h-10 text-emerald-400 animate-spin" />
+          <p className="text-zinc-400">Yükleniyor...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Show login page if not authenticated
+  if (!isAuthenticated) {
+    return <LoginPage />;
+  }
 
   const activeNavItem = navItems.find((item) => item.id === activePage);
 
@@ -271,7 +290,7 @@ export default function Home() {
             </button>
 
             {/* Page Title */}
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 flex-1">
               {activeNavItem && (
                 <>
                   <div className={`p-2 rounded-lg ${
@@ -294,6 +313,15 @@ export default function Home() {
                 </>
               )}
             </div>
+
+            {/* Logout Button */}
+            <button
+              onClick={logout}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-zinc-800 hover:bg-red-500/10 text-zinc-400 hover:text-red-400 border border-zinc-700 hover:border-red-500/30 transition-all duration-200"
+            >
+              <LogOut className="w-4 h-4" />
+              <span className="text-sm font-medium hidden sm:inline">Çıkış Yap</span>
+            </button>
           </div>
         </header>
 
