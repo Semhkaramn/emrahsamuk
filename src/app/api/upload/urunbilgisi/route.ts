@@ -68,18 +68,8 @@ interface UrunBilgisiRow {
   VITRINDURUMU?: string;
 }
 
-// 15.000+ ürün için optimize edilmiş değerler
-const BATCH_SIZE = 100;
-const PARALLEL_LIMIT = 10;
-
-// Yardımcı: Diziyi chunk'lara böl
-function chunkArray<T>(array: T[], size: number): T[][] {
-  const chunks: T[][] = [];
-  for (let i = 0; i < array.length; i += size) {
-    chunks.push(array.slice(i, i + size));
-  }
-  return chunks;
-}
+// 15-20 bin ürün için optimize edilmiş
+const BATCH_SIZE = 500; // createMany çok hızlı, daha büyük batch kullanabiliriz
 
 export async function POST(request: NextRequest) {
   const encoder = new TextEncoder();
@@ -110,7 +100,7 @@ export async function POST(request: NextRequest) {
 
         const total = data.length;
         let created = 0;
-        let updated = 0;
+        let skipped = 0;
         let failed = 0;
         let processed = 0;
         const errors: string[] = [];
@@ -121,63 +111,59 @@ export async function POST(request: NextRequest) {
           message: `${total} ürün bulundu, işlem başlıyor...`
         });
 
-        // Tüm mevcut ürünlerin ID'lerini al
-        const allIds = data.filter(row => row.ID).map(row => Number(row.ID));
+        // Tüm mevcut ürün ID'lerini al (TEK SORGU)
+        sendProgress({ type: 'status', message: 'Mevcut ürünler kontrol ediliyor...' });
+
         const existingProducts = await prisma.product.findMany({
-          where: { urunId: { in: allIds } },
           select: { urunId: true }
         });
         const existingIdSet = new Set(existingProducts.map(p => p.urunId));
 
-        // Mevcut fiyat kayıtlarını al
+        // Mevcut fiyat ve SEO kayıtlarını al
         const existingPrices = await prisma.productPrice.findMany({
-          where: { urunId: { in: allIds } },
           select: { urunId: true }
         });
         const existingPriceIdSet = new Set(existingPrices.map(p => p.urunId));
 
-        // Mevcut SEO kayıtlarını al
         const existingSeo = await prisma.productSeo.findMany({
-          where: { urunId: { in: allIds } },
           select: { urunId: true }
         });
         const existingSeoIdSet = new Set(existingSeo.map(p => p.urunId));
 
         sendProgress({
           type: 'status',
-          message: `${existingIdSet.size} mevcut ürün bulundu, yükleme başlıyor...`
+          message: `${existingIdSet.size} mevcut ürün bulundu. Sadece yeni ürünler eklenecek...`
         });
 
-        // Batch işleme
+        // Batch işleme - SADECE YENİ ÜRÜNLER
         for (let batchStart = 0; batchStart < data.length; batchStart += BATCH_SIZE) {
           const batchEnd = Math.min(batchStart + BATCH_SIZE, data.length);
           const batch = data.slice(batchStart, batchEnd);
 
           const productsToCreate: Prisma.ProductCreateManyInput[] = [];
-          const productsToUpdate: { urunId: number; data: Prisma.ProductUpdateInput }[] = [];
           const pricesToCreate: Prisma.ProductPriceCreateManyInput[] = [];
-          const pricesToUpdate: { urunId: number; data: Prisma.ProductPriceUpdateInput }[] = [];
           const seosToCreate: Prisma.ProductSeoCreateManyInput[] = [];
-          const seosToUpdate: { urunId: number; data: Prisma.ProductSeoUpdateInput }[] = [];
 
-          for (let i = 0; i < batch.length; i++) {
-            const row = batch[i];
-            const rowIndex = batchStart + i;
-
+          for (const row of batch) {
             if (!row.ID) {
               failed++;
-              if (errors.length < 10) {
-                errors.push(`Satır ${rowIndex + 2} atlandı: ID boş`);
-              }
+              continue;
+            }
+
+            const urunId = Number(row.ID);
+
+            // MEVCUT ÜRÜNÜ ATLA
+            if (existingIdSet.has(urunId)) {
+              skipped++;
               continue;
             }
 
             try {
-              const urunId = Number(row.ID);
               const urunKodu = row.URUNKODU ? String(row.URUNKODU) : null;
-              const isExisting = existingIdSet.has(urunId);
 
-              const productData = {
+              // Ürün verisi
+              productsToCreate.push({
+                urunId,
                 urunKodu,
                 barkodNo: row.BARKODNO || null,
                 eskiAdi: row.ADI || null,
@@ -202,89 +188,73 @@ export async function POST(request: NextRequest) {
                 gtip: row.GTIP || null,
                 modelKodu: row.MODELKODU || null,
                 uploadedAt: new Date(),
-              };
+              });
 
-              if (isExisting) {
-                productsToUpdate.push({ urunId, data: productData });
-                updated++;
-              } else {
-                productsToCreate.push({ urunId, ...productData });
-                existingIdSet.add(urunId);
-                created++;
-              }
+              // Set'e ekle (tekrar eklemeyi önle)
+              existingIdSet.add(urunId);
 
-              // Fiyat bilgileri
-              const priceData = {
-                piyasaFiyat: row.PIYASAFIYAT || null,
-                alisFiyat: row.ALISFIYAT || null,
-                hizliFiyat: row.HIZLIFIYAT || null,
-                siteFiyat: row.SITEFIYAT || null,
-                siteDoviz: row.SITEDOVIZ || "TL",
-                n11Fiyat: row.N11FIYAT || null,
-                n11Doviz: row.N11DOVIZ || "TL",
-                hbFiyat: row.HBFIYAT || null,
-                hbDoviz: row.HBDOVIZ || "TL",
-                pttFiyat: row.PTTFIYAT || null,
-                pttDoviz: row.PTTDOVIZ || "TL",
-                amazonTrFiyat: row.AMAZONTRFIYAT || null,
-                amazonTrDoviz: row.AMAZONTRDOVIZ || "TL",
-                trendyolFiyat: row.TRENDYOLFIYAT || null,
-                trendyolDoviz: row.TRENDYOLDOVIZ || "TL",
-                cicekSepetiFiyat: row.CICEKSEPETIFIYAT || null,
-                cicekSepetiDoviz: row.CICEKSEPETIDOVIZ || "TL",
-                modanisaFiyat: row.MODANISAFIYAT || null,
-                modanisaDoviz: row.MODANISADOVIZ || "TL",
-                pazaramaFiyat: row.PAZARAMAFIYAT || null,
-                pazaramaDoviz: row.PAZARAMADOVIZ || "TL",
-                farmazonFiyat: row.FARMAZONFIYAT || null,
-                farmazonDoviz: row.FARMAZONDOVIZ || "TL",
-                idefixFiyat: row.IDEFIXFIYAT || null,
-                idefixDoviz: row.IDEFIXDOVIZ || "TL",
-                lcwFiyat: row.LCWFIYAT || null,
-                lcwDoviz: row.LCWDOVIZ || "TL",
-                bayiFiyati1: row.BAYIFIYATI1 || null,
-                bayiFiyati2: row.BAYIFIYATI2 || null,
-                bayiFiyati3: row.BAYIFIYATI3 || null,
-                bayiFiyati4: row.BAYIFIYATI4 || null,
-              };
-
-              if (existingPriceIdSet.has(urunId)) {
-                pricesToUpdate.push({ urunId, data: priceData });
-              } else {
-                pricesToCreate.push({ urunId, ...priceData });
+              // Fiyat verisi (sadece yeni)
+              if (!existingPriceIdSet.has(urunId)) {
+                pricesToCreate.push({
+                  urunId,
+                  piyasaFiyat: row.PIYASAFIYAT || null,
+                  alisFiyat: row.ALISFIYAT || null,
+                  hizliFiyat: row.HIZLIFIYAT || null,
+                  siteFiyat: row.SITEFIYAT || null,
+                  siteDoviz: row.SITEDOVIZ || "TL",
+                  n11Fiyat: row.N11FIYAT || null,
+                  n11Doviz: row.N11DOVIZ || "TL",
+                  hbFiyat: row.HBFIYAT || null,
+                  hbDoviz: row.HBDOVIZ || "TL",
+                  pttFiyat: row.PTTFIYAT || null,
+                  pttDoviz: row.PTTDOVIZ || "TL",
+                  amazonTrFiyat: row.AMAZONTRFIYAT || null,
+                  amazonTrDoviz: row.AMAZONTRDOVIZ || "TL",
+                  trendyolFiyat: row.TRENDYOLFIYAT || null,
+                  trendyolDoviz: row.TRENDYOLDOVIZ || "TL",
+                  cicekSepetiFiyat: row.CICEKSEPETIFIYAT || null,
+                  cicekSepetiDoviz: row.CICEKSEPETIDOVIZ || "TL",
+                  modanisaFiyat: row.MODANISAFIYAT || null,
+                  modanisaDoviz: row.MODANISADOVIZ || "TL",
+                  pazaramaFiyat: row.PAZARAMAFIYAT || null,
+                  pazaramaDoviz: row.PAZARAMADOVIZ || "TL",
+                  farmazonFiyat: row.FARMAZONFIYAT || null,
+                  farmazonDoviz: row.FARMAZONDOVIZ || "TL",
+                  idefixFiyat: row.IDEFIXFIYAT || null,
+                  idefixDoviz: row.IDEFIXDOVIZ || "TL",
+                  lcwFiyat: row.LCWFIYAT || null,
+                  lcwDoviz: row.LCWDOVIZ || "TL",
+                  bayiFiyati1: row.BAYIFIYATI1 || null,
+                  bayiFiyati2: row.BAYIFIYATI2 || null,
+                  bayiFiyati3: row.BAYIFIYATI3 || null,
+                  bayiFiyati4: row.BAYIFIYATI4 || null,
+                });
                 existingPriceIdSet.add(urunId);
               }
 
-              // SEO bilgileri
-              if (row.SEOBASLIK || row.SEOANAHTARKELIME || row.SEOACIKLAMA) {
-                const seoData = {
+              // SEO verisi (sadece yeni ve varsa)
+              if (!existingSeoIdSet.has(urunId) && (row.SEOBASLIK || row.SEOANAHTARKELIME || row.SEOACIKLAMA)) {
+                seosToCreate.push({
+                  urunId,
                   seoBaslik: row.SEOBASLIK || null,
                   seoKeywords: row.SEOANAHTARKELIME || null,
                   seoAciklama: row.SEOACIKLAMA || null,
                   seoUrl: row.URL || null,
-                };
-
-                if (existingSeoIdSet.has(urunId)) {
-                  seosToUpdate.push({ urunId, data: seoData });
-                } else {
-                  seosToCreate.push({ urunId, ...seoData });
-                  existingSeoIdSet.add(urunId);
-                }
+                });
+                existingSeoIdSet.add(urunId);
               }
 
+              created++;
             } catch (err) {
               failed++;
               if (errors.length < 10) {
-                errors.push(
-                  `Hata (ID: ${row.ID}): ${err instanceof Error ? err.message : "Unknown error"}`
-                );
+                errors.push(`Hata (ID: ${row.ID}): ${err instanceof Error ? err.message : "Bilinmeyen hata"}`);
               }
             }
           }
 
-          // Veritabanı işlemleri - createMany ile toplu ekleme (çok hızlı!)
+          // Toplu ekleme (TEK SORGU - ÇOK HIZLI!)
           try {
-            // 1. Yeni ürünleri toplu ekle (TEK SORGU)
             if (productsToCreate.length > 0) {
               await prisma.product.createMany({
                 data: productsToCreate,
@@ -292,22 +262,6 @@ export async function POST(request: NextRequest) {
               });
             }
 
-            // 2. Mevcut ürünleri güncelle - sınırlı paralel
-            if (productsToUpdate.length > 0) {
-              const updateChunks = chunkArray(productsToUpdate, PARALLEL_LIMIT);
-              for (const chunk of updateChunks) {
-                await Promise.all(
-                  chunk.map(({ urunId, data }) =>
-                    prisma.product.update({
-                      where: { urunId },
-                      data,
-                    }).catch(() => null)
-                  )
-                );
-              }
-            }
-
-            // 3. Yeni fiyatları toplu ekle (TEK SORGU)
             if (pricesToCreate.length > 0) {
               await prisma.productPrice.createMany({
                 data: pricesToCreate,
@@ -315,55 +269,16 @@ export async function POST(request: NextRequest) {
               });
             }
 
-            // 4. Mevcut fiyatları güncelle - sınırlı paralel
-            if (pricesToUpdate.length > 0) {
-              const priceChunks = chunkArray(pricesToUpdate, PARALLEL_LIMIT);
-              for (const chunk of priceChunks) {
-                await Promise.all(
-                  chunk.map(({ urunId, data }) =>
-                    prisma.productPrice.update({
-                      where: { urunId },
-                      data,
-                    }).catch(() => null)
-                  )
-                );
-              }
-            }
-
-            // 5. Yeni SEO'ları toplu ekle (TEK SORGU)
             if (seosToCreate.length > 0) {
               await prisma.productSeo.createMany({
                 data: seosToCreate,
                 skipDuplicates: true,
               });
             }
-
-            // 6. Mevcut SEO'ları güncelle - sınırlı paralel
-            if (seosToUpdate.length > 0) {
-              const seoChunks = chunkArray(seosToUpdate, PARALLEL_LIMIT);
-              for (const chunk of seoChunks) {
-                await Promise.all(
-                  chunk.map(({ urunId, data }) =>
-                    prisma.productSeo.update({
-                      where: { urunId },
-                      data,
-                    }).catch(() => null)
-                  )
-                );
-              }
-            }
-
           } catch (batchError) {
             console.error("Batch error:", batchError);
-            // Hata durumunda tek tek dene
-            for (const product of productsToCreate) {
-              try {
-                await prisma.product.create({ data: product });
-              } catch {
-                failed++;
-                created--;
-              }
-            }
+            failed += productsToCreate.length;
+            created -= productsToCreate.length;
           }
 
           processed = batchEnd;
@@ -375,9 +290,9 @@ export async function POST(request: NextRequest) {
             total,
             percent,
             created,
-            updated,
+            skipped,
             failed,
-            message: `${processed} / ${total} ürün işlendi (${percent}%)`
+            message: `${processed} / ${total} işlendi - ${created} yeni, ${skipped} atlandı (${percent}%)`
           });
         }
 
@@ -387,7 +302,7 @@ export async function POST(request: NextRequest) {
             data: {
               islemTipi: "upload",
               durum: failed > 0 ? "partial" : "success",
-              mesaj: `ürünbilgisi.xlsx yüklendi. Yeni: ${created}, Güncellenen: ${updated}, Hata: ${failed}`,
+              mesaj: `ürünbilgisi.xlsx: ${created} yeni eklendi, ${skipped} atlandı (mevcut), ${failed} hata`,
             },
           });
         } catch (logErr) {
@@ -397,11 +312,11 @@ export async function POST(request: NextRequest) {
         sendProgress({
           type: 'complete',
           success: true,
-          message: "Ürün bilgileri başarıyla yüklendi",
+          message: `Tamamlandı! ${created} yeni ürün eklendi, ${skipped} mevcut ürün atlandı.`,
           stats: {
             total,
             created,
-            updated,
+            skipped,
             failed,
           },
           errors: errors.slice(0, 10),
