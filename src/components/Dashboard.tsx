@@ -228,7 +228,7 @@ export function Dashboard() {
                       <AlertCircle className="h-4 w-4 text-red-400 mt-0.5 shrink-0" />
                     )}
                     <div className="flex-1 min-w-0">
-                      <p className="text-xs text-zinc-300 truncate">{log.mesaj}</p>
+                      <p className="text-xs text-zinc-300 break-words">{log.mesaj}</p>
                       <p className="text-xs text-zinc-500">
                         {new Date(log.createdAt).toLocaleString("tr-TR")}
                       </p>
@@ -257,7 +257,7 @@ export function Dashboard() {
                   key={cat.name}
                   className="flex items-center justify-between p-3 rounded-lg bg-zinc-800/50"
                 >
-                  <span className="text-sm text-zinc-300 truncate">{cat.name}</span>
+                  <span className="text-sm text-zinc-300 break-words">{cat.name}</span>
                   <span className="text-sm font-medium text-zinc-100 ml-2">{cat.count}</span>
                 </div>
               ))}
