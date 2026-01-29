@@ -12,6 +12,8 @@ function getSettingDescription(key: string): string {
     enable_seo_optimization: "SEO optimizasyonu aktif/pasif",
     enable_image_enhancement: "Resim iyileştirme aktif/pasif",
     image_style: "Resim işleme stili",
+    use_image_for_naming: "İsim değiştirmede resim analizi kullan",
+    use_image_for_category: "Kategori belirlemede resim analizi kullan",
   };
   return descriptions[key] || "";
 }
@@ -47,6 +49,8 @@ export async function PUT(request: NextRequest) {
       cloudinaryApiKey,
       cloudinaryApiSecret,
       cloudinaryFolder,
+      useImageForNaming,
+      useImageForCategory,
     } = body;
 
     // Transform from frontend format to DB format
@@ -59,6 +63,8 @@ export async function PUT(request: NextRequest) {
       { key: "cloudinary_api_key", value: cloudinaryApiKey || "" },
       { key: "cloudinary_api_secret", value: cloudinaryApiSecret || "" },
       { key: "cloudinary_folder", value: cloudinaryFolder || "urunler" },
+      { key: "use_image_for_naming", value: String(useImageForNaming ?? true) },
+      { key: "use_image_for_category", value: String(useImageForCategory ?? true) },
     ];
 
     // Upsert each setting in DB
