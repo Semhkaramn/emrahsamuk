@@ -45,6 +45,8 @@ interface ImageLog {
   yeniUrl: string;
   success: boolean;
   timestamp: Date;
+  aiProcessed?: boolean;
+  prompt?: string;
 }
 
 interface SelectedImage {
@@ -65,6 +67,7 @@ export function ImageProcessingPanel() {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [processedCount, setProcessedCount] = useState(0);
+  const [useAI, setUseAI] = useState(true); // AI ile resim düzenleme
 
   const processingRef = useRef<boolean>(false);
   const currentIndexRef = useRef<number>(0);
@@ -184,6 +187,7 @@ export function ImageProcessingPanel() {
           body: JSON.stringify({
             imageId: image.imageId,
             urunKodu: image.urunKodu,
+            useAI: useAI, // AI kullanım durumu
           }),
         });
 
@@ -197,6 +201,8 @@ export function ImageProcessingPanel() {
           yeniUrl: result.success ? result.yeniUrl : "-",
           success: result.success,
           timestamp: new Date(),
+          aiProcessed: result.aiProcessed,
+          prompt: result.prompt,
         };
 
         setLogs((prev) => [newLog, ...prev].slice(0, 50));
@@ -210,7 +216,7 @@ export function ImageProcessingPanel() {
     };
 
     processNext();
-  }, [selectedImages, fetchProducts]);
+  }, [selectedImages, fetchProducts, useAI]);
 
   const stopProcessing = useCallback(() => {
     setIsProcessing(false);
@@ -239,8 +245,12 @@ export function ImageProcessingPanel() {
             <ImageIcon className="w-6 h-6 text-white" />
           </div>
           <div>
-            <h2 className="text-xl font-bold">Resim Değiştirme</h2>
-            <p className="text-xs text-zinc-500">Seçtiğiniz resimleri Cloudinary&apos;ye yükleyin</p>
+            <h2 className="text-xl font-bold">AI Resim Düzenleme</h2>
+            <p className="text-xs text-zinc-500">
+              {useAI
+                ? "Resimleri AI ile düzenleyip Cloudinary'ye yükleyin"
+                : "Resimleri direkt Cloudinary'ye yükleyin"}
+            </p>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -259,10 +269,49 @@ export function ImageProcessingPanel() {
       {/* Selection Info & Actions */}
       <Card className="border-zinc-800 bg-zinc-900/50">
         <CardContent className="pt-6">
+          {/* AI Toggle */}
+          <div className="flex items-center justify-between mb-4 p-3 bg-gradient-to-r from-purple-500/10 to-blue-500/10 rounded-xl border border-purple-500/20">
+            <div className="flex items-center gap-3">
+              <div className={`p-2 rounded-lg ${useAI ? 'bg-purple-500/20' : 'bg-zinc-700'}`}>
+                <svg className={`w-5 h-5 ${useAI ? 'text-purple-400' : 'text-zinc-400'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                </svg>
+              </div>
+              <div>
+                <p className="font-medium text-sm text-zinc-200">AI ile Resim Düzenleme</p>
+                <p className="text-xs text-zinc-500">
+                  {useAI
+                    ? "DALL-E ile arka plan ve ışık iyileştirmesi yapılacak"
+                    : "Resimler olduğu gibi yüklenecek"}
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => setUseAI(!useAI)}
+              disabled={isProcessing}
+              className={`relative w-12 h-6 rounded-full transition-colors ${
+                useAI ? 'bg-purple-500' : 'bg-zinc-600'
+              } ${isProcessing ? 'opacity-50 cursor-not-allowed' : ''}`}
+            >
+              <span className={`absolute top-1 w-4 h-4 rounded-full bg-white shadow transition-transform ${
+                useAI ? 'translate-x-7' : 'translate-x-1'
+              }`} />
+            </button>
+          </div>
+
+          {useAI && (
+            <div className="mb-4 p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg">
+              <p className="text-xs text-amber-400">
+                <strong>Maliyet Uyarısı:</strong> DALL-E 3 her resim için ~$0.04 ücret alır.
+                {selectedImages.length > 0 && ` Tahmini maliyet: ~${(selectedImages.length * 0.04).toFixed(2)}`}
+              </p>
+            </div>
+          )}
+
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
-              <div className="p-3 bg-blue-500/10 rounded-lg">
-                <ImageIcon className="w-5 h-5 text-blue-400" />
+              <div className={`p-3 rounded-lg ${useAI ? 'bg-purple-500/10' : 'bg-blue-500/10'}`}>
+                <ImageIcon className={`w-5 h-5 ${useAI ? 'text-purple-400' : 'text-blue-400'}`} />
               </div>
               <div>
                 <p className="text-lg font-bold text-zinc-100">{selectedImages.length}</p>
@@ -287,11 +336,11 @@ export function ImageProcessingPanel() {
               ) : (
                 <Button
                   onClick={processSelectedImages}
-                  className="bg-blue-600 hover:bg-blue-700"
+                  className={useAI ? "bg-purple-600 hover:bg-purple-700" : "bg-blue-600 hover:bg-blue-700"}
                   disabled={selectedImages.length === 0}
                 >
                   <Play className="w-4 h-4 mr-2" />
-                  Seçilenleri İşle
+                  {useAI ? "AI ile İşle" : "Direkt Yükle"}
                 </Button>
               )}
             </div>
@@ -473,14 +522,16 @@ export function ImageProcessingPanel() {
                     key={log.id}
                     className={`p-4 rounded-lg border ${
                       log.success
-                        ? "bg-emerald-500/5 border-emerald-500/20"
+                        ? log.aiProcessed
+                          ? "bg-purple-500/5 border-purple-500/20"
+                          : "bg-emerald-500/5 border-emerald-500/20"
                         : "bg-red-500/5 border-red-500/20"
                     }`}
                   >
                     <div className="flex items-center justify-between mb-2">
                       <div className="flex items-center gap-2">
                         {log.success ? (
-                          <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                          <CheckCircle2 className={`w-4 h-4 ${log.aiProcessed ? 'text-purple-400' : 'text-emerald-400'}`} />
                         ) : (
                           <AlertCircle className="w-4 h-4 text-red-400" />
                         )}
@@ -488,6 +539,11 @@ export function ImageProcessingPanel() {
                         <Badge variant="outline" className="text-blue-400 border-blue-500/30">
                           Resim {log.sira}
                         </Badge>
+                        {log.aiProcessed && (
+                          <Badge variant="outline" className="text-purple-400 border-purple-500/30">
+                            AI
+                          </Badge>
+                        )}
                       </div>
                       <span className="text-xs text-zinc-500">
                         {log.timestamp.toLocaleTimeString("tr-TR")}
@@ -502,20 +558,28 @@ export function ImageProcessingPanel() {
                         </div>
                       </div>
                       <ArrowRight className="w-4 h-4 text-zinc-600" />
-                      <div className="bg-blue-500/10 p-2 rounded flex items-center gap-2">
+                      <div className={`${log.aiProcessed ? 'bg-purple-500/10' : 'bg-blue-500/10'} p-2 rounded flex items-center gap-2`}>
                         {log.success && log.yeniUrl !== "-" ? (
                           <>
                             <img src={log.yeniUrl} alt="Yeni" className="w-10 h-10 object-cover rounded" />
                             <div>
-                              <p className="text-xs text-blue-400">Yeni Resim</p>
+                              <p className={`text-xs ${log.aiProcessed ? 'text-purple-400' : 'text-blue-400'}`}>
+                                {log.aiProcessed ? 'AI Düzenlenmiş' : 'Yeni Resim'}
+                              </p>
                               <p className="text-xs text-zinc-300 truncate max-w-[150px]">{log.yeniUrl}</p>
                             </div>
                           </>
                         ) : (
-                          <p className="text-xs text-red-400">Yükleme başarısız</p>
+                          <p className="text-xs text-red-400">İşlem başarısız</p>
                         )}
                       </div>
                     </div>
+                    {log.aiProcessed && log.prompt && (
+                      <div className="mt-2 p-2 bg-zinc-800/30 rounded">
+                        <p className="text-xs text-zinc-500">AI Prompt:</p>
+                        <p className="text-xs text-zinc-400 truncate">{log.prompt}</p>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
