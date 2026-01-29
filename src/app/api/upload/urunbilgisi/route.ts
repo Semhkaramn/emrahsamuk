@@ -129,10 +129,10 @@ export async function POST(request: NextRequest) {
           const batch = data.slice(batchStart, batchEnd);
 
           // Her batch için ürünleri hazırla
-          const productsToCreate: any[] = [];
-          const productsToUpdate: { urunId: number; data: any }[] = [];
-          const priceOperations: { urunId: number; data: any }[] = [];
-          const seoOperations: { urunId: number; data: any }[] = [];
+          const productsToCreate: Record<string, unknown>[] = [];
+          const productsToUpdate: { urunId: number; data: Record<string, unknown> }[] = [];
+          const priceOperations: { urunId: number; data: Record<string, unknown> }[] = [];
+          const seoOperations: { urunId: number; data: Record<string, unknown> }[] = [];
 
           for (let i = 0; i < batch.length; i++) {
             const row = batch[i];
