@@ -1,8 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import { useState } from "react";
 import { Dashboard } from "@/components/Dashboard";
 import { ExcelUploader } from "@/components/ExcelUploader";
 import { ProductDataGrid } from "@/components/ProductDataGrid";
@@ -20,21 +18,12 @@ import {
   Sparkles,
   Image as ImageIcon,
   FolderTree,
-  Loader2,
-  CheckCircle2,
   Menu,
   X,
   ChevronRight,
 } from "lucide-react";
 
-type ExportType = "pcden" | "full" | "urunbilgisi" | "urunkategori";
 type ActivePage = "dashboard" | "name-process" | "image-process" | "category-process" | "upload" | "products" | "export" | "settings";
-
-interface ExportState {
-  loading: boolean;
-  success: boolean;
-  error: string | null;
-}
 
 interface NavItem {
   id: ActivePage;
@@ -59,98 +48,6 @@ export default function Home() {
   const [activePage, setActivePage] = useState<ActivePage>("dashboard");
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
-  const [exportStates, setExportStates] = useState<Record<ExportType, ExportState>>({
-    pcden: { loading: false, success: false, error: null },
-    full: { loading: false, success: false, error: null },
-    urunbilgisi: { loading: false, success: false, error: null },
-    urunkategori: { loading: false, success: false, error: null },
-  });
-
-  const handleExport = useCallback(async (type: ExportType) => {
-    setExportStates((prev) => ({
-      ...prev,
-      [type]: { loading: true, success: false, error: null },
-    }));
-
-    try {
-      const endpoints: Record<ExportType, string> = {
-        pcden: "/api/export/urunresimleripcden",
-        full: "/api/export/full",
-        urunbilgisi: "/api/export/urunbilgisi",
-        urunkategori: "/api/export/urunkategori",
-      };
-
-      const filenames: Record<ExportType, string> = {
-        pcden: "urunresimleripcden.xlsx",
-        full: "urun-export-full.xlsx",
-        urunbilgisi: "urunbilgisi.xlsx",
-        urunkategori: "urunkategori.xlsx",
-      };
-
-      const response = await fetch(endpoints[type]);
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: "İndirme hatası" }));
-        throw new Error(errorData.error || "İndirme hatası");
-      }
-
-      const blob = await response.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = filenames[type];
-      a.click();
-      URL.revokeObjectURL(url);
-
-      setExportStates((prev) => ({
-        ...prev,
-        [type]: { loading: false, success: true, error: null },
-      }));
-
-      setTimeout(() => {
-        setExportStates((prev) => ({
-          ...prev,
-          [type]: { ...prev[type], success: false },
-        }));
-      }, 3000);
-    } catch (error) {
-      console.error("Export error:", error);
-      setExportStates((prev) => ({
-        ...prev,
-        [type]: {
-          loading: false,
-          success: false,
-          error: error instanceof Error ? error.message : "İndirme hatası",
-        },
-      }));
-    }
-  }, []);
-
-  const ExportButton = ({ type, children }: { type: ExportType; children: React.ReactNode }) => {
-    const state = exportStates[type];
-    return (
-      <Button
-        onClick={() => handleExport(type)}
-        disabled={state.loading}
-        className="w-full"
-        variant={state.success ? "outline" : "default"}
-      >
-        {state.loading ? (
-          <>
-            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-            İndiriliyor...
-          </>
-        ) : state.success ? (
-          <>
-            <CheckCircle2 className="w-4 h-4 mr-2 text-emerald-400" />
-            İndirildi!
-          </>
-        ) : (
-          children
-        )}
-      </Button>
-    );
-  };
 
   const activeNavItem = navItems.find((item) => item.id === activePage);
 
