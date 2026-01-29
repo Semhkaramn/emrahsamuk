@@ -31,10 +31,12 @@ export async function POST(request: NextRequest) {
       select: {
         urunId: true,
         urunKodu: true,
+        barkodNo: true,
         eskiAdi: true,
         images: {
-          take: 1,
-          select: { eskiUrl: true },
+          orderBy: { sira: "asc" },
+          take: 4,
+          select: { eskiUrl: true, yeniUrl: true, sira: true },
         },
       },
     });
@@ -54,8 +56,12 @@ export async function POST(request: NextRequest) {
     const errors: string[] = [];
     const details: Array<{
       urunKodu: string | null;
+      urunId: number;
+      barkodNo: string | null;
       eskiAdi: string | null;
       yeniAdi: string;
+      eskiResimler: string[];
+      yeniResimler: string[];
       success: boolean;
       error?: string;
     }> = [];
@@ -63,17 +69,37 @@ export async function POST(request: NextRequest) {
     for (const product of products) {
       try {
         const productName = product.eskiAdi || product.urunKodu || "";
-        const imageUrl = product.images[0]?.eskiUrl || undefined;
+        const imageUrl = product.images[0]?.yeniUrl || product.images[0]?.eskiUrl || undefined;
 
-        if (!productName) {
+        // Eski ve yeni resim URL'lerini al
+        const eskiResimler = product.images
+          .filter(img => img.eskiUrl)
+          .map(img => img.eskiUrl as string);
+        const yeniResimler = product.images
+          .filter(img => img.yeniUrl)
+          .map(img => img.yeniUrl as string);
+
+        if (!productName && !imageUrl) {
           failed++;
-          const errorMsg = "Ürün adı bulunamadı";
+          const errorMsg = "Ürün adı ve resim bulunamadı";
           errors.push(`${product.urunKodu}: ${errorMsg}`);
+
+          details.push({
+            urunKodu: product.urunKodu,
+            urunId: product.urunId,
+            barkodNo: product.barkodNo,
+            eskiAdi: productName,
+            yeniAdi: "",
+            eskiResimler,
+            yeniResimler,
+            success: false,
+            error: errorMsg,
+          });
           continue;
         }
 
-        // Call OpenAI for SEO optimization
-        const seoResult = await optimizeSEO(productName, imageUrl, apiKey);
+        // Call OpenAI for SEO optimization with image analysis
+        const seoResult = await optimizeSEOWithVision(productName, imageUrl, apiKey);
 
         if (seoResult) {
           // Save to database using urunId
@@ -123,16 +149,22 @@ export async function POST(request: NextRequest) {
               urunKodu: product.urunKodu,
               islemTipi: "seo",
               durum: "success",
-              mesaj: `SEO optimizasyonu tamamlandı`,
+              mesaj: `SEO optimizasyonu tamamlandı (resim analizi ${imageUrl ? "yapıldı" : "atlandı"})`,
               eskiDeger: productName,
               yeniDeger: seoResult.seoTitle,
+              eskiResimler: JSON.stringify(eskiResimler),
+              yeniResimler: JSON.stringify(yeniResimler),
             },
           });
 
           details.push({
             urunKodu: product.urunKodu,
+            urunId: product.urunId,
+            barkodNo: product.barkodNo,
             eskiAdi: productName,
             yeniAdi: seoResult.seoTitle,
+            eskiResimler,
+            yeniResimler,
             success: true,
           });
 
@@ -151,18 +183,31 @@ export async function POST(request: NextRequest) {
               durum: "error",
               mesaj: errorMsg,
               eskiDeger: productName,
+              eskiResimler: JSON.stringify(eskiResimler),
+              yeniResimler: JSON.stringify(yeniResimler),
             },
           });
 
           details.push({
             urunKodu: product.urunKodu,
+            urunId: product.urunId,
+            barkodNo: product.barkodNo,
             eskiAdi: productName,
             yeniAdi: "",
+            eskiResimler,
+            yeniResimler,
             success: false,
             error: errorMsg,
           });
         }
       } catch (err) {
+        const eskiResimler = product.images
+          .filter(img => img.eskiUrl)
+          .map(img => img.eskiUrl as string);
+        const yeniResimler = product.images
+          .filter(img => img.yeniUrl)
+          .map(img => img.yeniUrl as string);
+
         failed++;
         const errorMsg = err instanceof Error ? err.message : "Bilinmeyen hata";
         errors.push(`${product.urunKodu}: ${errorMsg}`);
@@ -175,6 +220,8 @@ export async function POST(request: NextRequest) {
             islemTipi: "seo",
             durum: "error",
             mesaj: errorMsg,
+            eskiResimler: JSON.stringify(eskiResimler),
+            yeniResimler: JSON.stringify(yeniResimler),
           },
         });
 
@@ -186,8 +233,12 @@ export async function POST(request: NextRequest) {
 
         details.push({
           urunKodu: product.urunKodu,
+          urunId: product.urunId,
+          barkodNo: product.barkodNo,
           eskiAdi: product.eskiAdi || product.urunKodu,
           yeniAdi: "",
+          eskiResimler,
+          yeniResimler,
           success: false,
           error: errorMsg,
         });
@@ -247,8 +298,8 @@ export async function GET() {
   }
 }
 
-// Helper function for SEO optimization
-async function optimizeSEO(
+// Helper function for SEO optimization with image analysis using GPT-4 Vision
+async function optimizeSEOWithVision(
   productName: string,
   imageUrl: string | undefined,
   apiKey: string
@@ -259,28 +310,75 @@ async function optimizeSEO(
   seoUrl: string;
   category: string;
 } | null> {
-  const prompt = `Sen bir e-ticaret SEO uzmanısın. Aşağıdaki ürün bilgilerine bakarak SEO optimizasyonu yap.
+  const systemPrompt = `Sen Türkiye'deki e-ticaret siteleri için SEO optimizasyonu yapan bir uzmansın.
+Trendyol, Hepsiburada, N11 gibi pazaryerlerinde üst sıralarda çıkacak ürün başlıkları ve açıklamaları oluşturuyorsun.
 
-Mevcut Ürün Adı: "${productName}"
-${imageUrl ? `Ürün Resmi URL: ${imageUrl}` : ""}
-
-Görevin:
-1. Ürün adını SEO'ya uygun, arama motorlarında üst sıralara çıkacak şekilde yeniden yaz
-2. Anahtar kelimeler belirle (virgülle ayrılmış)
-3. SEO açıklaması yaz (max 160 karakter)
-4. URL-friendly slug oluştur (türkçe karakterler olmadan, tire ile ayrılmış)
-5. Muhtemel kategoriyi belirle
+ÖNEMLİ: Ürün resmini dikkatlice analiz et. Renk, malzeme, desen, marka logosu, ürün tipi gibi tüm görsel detayları kullan.
+Ürün adı ile resim uyuşmuyorsa, RESİMDEKİ ürüne göre isim oluştur.
 
 Yanıtını tam olarak bu JSON formatında ver (başka hiçbir şey ekleme):
 {
-  "seoTitle": "SEO uyumlu başlık",
+  "seoTitle": "SEO uyumlu başlık (resim analizine dayanarak)",
   "seoKeywords": "anahtar, kelime, listesi",
-  "seoDescription": "SEO meta açıklaması",
+  "seoDescription": "SEO meta açıklaması (max 160 karakter)",
   "seoUrl": "seo-uyumlu-url-slug",
   "category": "Ana Kategori > Alt Kategori"
 }`;
 
+  const userPrompt = `Ürün adı: "${productName || "Belirtilmemiş"}"
+
+Görevin:
+1. ${imageUrl ? "Önce ürün resmini dikkatlice analiz et - renk, desen, malzeme, marka, ürün tipi" : "Ürün adına göre analiz yap"}
+2. Ürün adını SEO'ya uygun, arama motorlarında üst sıralara çıkacak şekilde yeniden yaz
+3. Anahtar kelimeler belirle (virgülle ayrılmış)
+4. SEO açıklaması yaz (max 160 karakter)
+5. URL-friendly slug oluştur (türkçe karakterler olmadan, tire ile ayrılmış)
+6. Muhtemel kategoriyi belirle`;
+
   try {
+    // Görsel varsa GPT-4 Vision kullan
+    if (imageUrl) {
+      const response = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model: "gpt-4o",
+          messages: [
+            { role: "system", content: systemPrompt },
+            {
+              role: "user",
+              content: [
+                { type: "text", text: userPrompt },
+                {
+                  type: "image_url",
+                  image_url: {
+                    url: imageUrl,
+                    detail: "low",
+                  },
+                },
+              ],
+            },
+          ],
+          temperature: 0.5,
+          max_tokens: 600,
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        const content = data.choices[0]?.message?.content;
+
+        if (content) {
+          const parsed = parseJSONResponse(content, productName);
+          if (parsed) return parsed;
+        }
+      }
+    }
+
+    // Görsel yoksa veya hata olduysa, sadece isimle dene
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -290,15 +388,8 @@ Yanıtını tam olarak bu JSON formatında ver (başka hiçbir şey ekleme):
       body: JSON.stringify({
         model: "gpt-4o-mini",
         messages: [
-          {
-            role: "system",
-            content:
-              "Sen Türkiye'deki e-ticaret siteleri için SEO optimizasyonu yapan bir uzmansın. Trendyol, Hepsiburada, N11 gibi pazaryerlerinde üst sıralarda çıkacak ürün başlıkları ve açıklamaları oluşturuyorsun.",
-          },
-          {
-            role: "user",
-            content: prompt,
-          },
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt },
         ],
         temperature: 0.7,
         max_tokens: 500,
@@ -315,7 +406,25 @@ Yanıtını tam olarak bu JSON formatında ver (başka hiçbir şey ekleme):
 
     if (!content) return null;
 
-    // Parse JSON from response
+    return parseJSONResponse(content, productName);
+  } catch (error) {
+    console.error("SEO optimization error:", error);
+    return null;
+  }
+}
+
+// Parse JSON response helper
+function parseJSONResponse(
+  content: string,
+  fallbackName: string
+): {
+  seoTitle: string;
+  seoKeywords: string;
+  seoDescription: string;
+  seoUrl: string;
+  category: string;
+} | null {
+  try {
     let cleanContent = content.trim();
     if (cleanContent.startsWith("```json")) cleanContent = cleanContent.slice(7);
     if (cleanContent.startsWith("```")) cleanContent = cleanContent.slice(3);
@@ -324,14 +433,14 @@ Yanıtını tam olarak bu JSON formatında ver (başka hiçbir şey ekleme):
     const seoData = JSON.parse(cleanContent.trim());
 
     return {
-      seoTitle: seoData.seoTitle || productName,
+      seoTitle: seoData.seoTitle || fallbackName,
       seoKeywords: seoData.seoKeywords || "",
       seoDescription: seoData.seoDescription || "",
       seoUrl: seoData.seoUrl || "",
       category: seoData.category || "",
     };
   } catch (error) {
-    console.error("SEO optimization error:", error);
+    console.error("JSON parse error:", error);
     return null;
   }
 }
