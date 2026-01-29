@@ -234,12 +234,21 @@ function ProductRow({
                   <span className="font-mono text-base font-semibold text-emerald-400">
                     {product.urunKodu}
                   </span>
+                  {product.barkodNo && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-500/10 border border-blue-500/30 text-xs font-mono font-semibold text-blue-300 ml-1">
+                      <span className="text-blue-400">Barkod:</span>
+                      <span>{product.barkodNo}</span>
+                    </span>
+                  )}
                   {getStatusIcon(product.processingStatus)}
                   {getStatusBadge(product.processingStatus)}
                 </div>
-                <div className="text-xs text-zinc-500 mt-0.5">
-                  ID: {product.urunId || product.id}
-                  {product.barkodNo && <span className="ml-2">Barkod: {product.barkodNo}</span>}
+                {/* ID ve Barkod satırı - daha belirgin */}
+                <div className="flex items-center gap-3 mt-1.5 flex-wrap">
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-zinc-800 border border-zinc-700 text-xs">
+                    <span className="text-zinc-500">ID:</span>
+                    <span className="font-mono font-semibold text-zinc-200">{product.urunId || product.id}</span>
+                  </span>
                 </div>
               </div>
             </div>
