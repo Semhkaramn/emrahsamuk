@@ -262,7 +262,7 @@ function ProductRow({
                 <Tag className="h-3.5 w-3.5 text-amber-400" />
                 <span className="text-[10px] text-zinc-500 uppercase tracking-wide">Eski Adı</span>
               </div>
-              <p className="text-sm text-zinc-300 line-clamp-2">
+              <p className="text-sm text-zinc-300 break-words">
                 {product.eskiAdi || <span className="text-zinc-600 italic">Belirtilmemiş</span>}
               </p>
             </div>
@@ -273,7 +273,7 @@ function ProductRow({
                 <FileText className="h-3.5 w-3.5 text-emerald-400" />
                 <span className="text-[10px] text-zinc-500 uppercase tracking-wide">Yeni Adı (SEO)</span>
               </div>
-              <p className="text-sm text-zinc-100 font-medium line-clamp-2">
+              <p className="text-sm text-zinc-100 font-medium break-words">
                 {product.yeniAdi || product.seo?.seoBaslik || <span className="text-zinc-600 italic">Henüz işlenmedi</span>}
               </p>
             </div>
