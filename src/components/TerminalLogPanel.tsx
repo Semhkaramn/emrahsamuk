@@ -88,7 +88,7 @@ export function TerminalLogPanel({ isProcessing = false, onClearLogs }: Terminal
   // Initial load
   useEffect(() => {
     fetchLogs();
-  }, []);
+  }, [fetchLogs]);
 
   // Polling for new logs when processing
   useEffect(() => {
