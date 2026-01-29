@@ -35,7 +35,7 @@ export async function POST(request: NextRequest) {
         eskiAdi: true,
         images: {
           orderBy: { sira: "asc" },
-          take: 4,
+          take: 1,
           select: { eskiUrl: true, yeniUrl: true, sira: true },
         },
       },
