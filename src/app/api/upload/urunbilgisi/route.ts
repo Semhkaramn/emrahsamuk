@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import prisma from "@/lib/db";
 import * as XLSX from "xlsx";
+import { Prisma } from "@prisma/client";
 
 // Route segment config - timeout ve body size ayarları
 export const maxDuration = 300; // 5 dakika timeout
@@ -129,10 +130,10 @@ export async function POST(request: NextRequest) {
           const batch = data.slice(batchStart, batchEnd);
 
           // Her batch için ürünleri hazırla
-          const productsToCreate: Record<string, unknown>[] = [];
-          const productsToUpdate: { urunId: number; data: Record<string, unknown> }[] = [];
-          const priceOperations: { urunId: number; data: Record<string, unknown> }[] = [];
-          const seoOperations: { urunId: number; data: Record<string, unknown> }[] = [];
+          const productsToCreate: Prisma.ProductCreateManyInput[] = [];
+          const productsToUpdate: { urunId: number; data: Omit<Prisma.ProductCreateManyInput, 'urunId'> }[] = [];
+          const priceOperations: { urunId: number; data: Omit<Prisma.ProductPriceCreateInput, 'product'> }[] = [];
+          const seoOperations: { urunId: number; data: Omit<Prisma.ProductSeoCreateInput, 'product'> }[] = [];
 
           for (let i = 0; i < batch.length; i++) {
             const row = batch[i];
@@ -180,7 +181,9 @@ export async function POST(request: NextRequest) {
               };
 
               if (isExisting) {
-                productsToUpdate.push({ urunId, data: productData });
+                // eslint-disable-next-line @typescript-eslint/no-unused-vars
+                const { urunId: _, ...updateData } = productData;
+                productsToUpdate.push({ urunId, data: updateData });
                 updated++;
               } else {
                 productsToCreate.push(productData);
