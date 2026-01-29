@@ -21,6 +21,9 @@ import {
   Menu,
   X,
   ChevronRight,
+  ChevronLeft,
+  PanelLeftClose,
+  PanelLeft,
 } from "lucide-react";
 
 type ActivePage = "dashboard" | "name-process" | "image-process" | "category-process" | "upload" | "products" | "export" | "settings";
@@ -214,25 +217,45 @@ export default function Home() {
           ))}
         </nav>
 
-        {/* Sidebar Footer */}
+        {/* Sidebar Toggle Button - Always Visible */}
         <div className="p-3 border-t border-zinc-800">
           <button
             onClick={() => setSidebarOpen(!sidebarOpen)}
-            className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg
-                       bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-zinc-100
-                       transition-colors duration-200"
+            className={`
+              w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg
+              transition-all duration-200 group
+              ${sidebarOpen
+                ? "bg-zinc-800 hover:bg-red-500/10 text-zinc-400 hover:text-red-400 border border-transparent hover:border-red-500/20"
+                : "bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/20"
+              }
+            `}
+            title={sidebarOpen ? "Menüyü Daralt" : "Menüyü Genişlet"}
           >
             {sidebarOpen ? (
               <>
-                <X className="w-4 h-4" />
-                <span className="text-sm">Daralt</span>
+                <ChevronLeft className="w-4 h-4 transition-transform group-hover:-translate-x-0.5" />
+                <span className="text-sm font-medium">Menüyü Daralt</span>
               </>
             ) : (
-              <Menu className="w-4 h-4" />
+              <ChevronRight className="w-5 h-5 transition-transform group-hover:translate-x-0.5" />
             )}
           </button>
         </div>
       </aside>
+
+      {/* Floating Toggle Button for Collapsed State */}
+      {!sidebarOpen && (
+        <button
+          onClick={() => setSidebarOpen(true)}
+          className="fixed left-16 top-1/2 -translate-y-1/2 z-40 hidden md:flex
+                     w-6 h-12 items-center justify-center
+                     bg-zinc-800 hover:bg-emerald-500/20 border border-zinc-700 hover:border-emerald-500/30
+                     rounded-r-lg transition-all duration-200 group"
+          title="Menüyü Genişlet"
+        >
+          <ChevronRight className="w-4 h-4 text-zinc-400 group-hover:text-emerald-400 transition-transform group-hover:translate-x-0.5" />
+        </button>
+      )}
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col min-w-0">
