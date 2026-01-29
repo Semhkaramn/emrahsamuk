@@ -86,6 +86,20 @@ export function updateSettingsCache(newSettings: Record<string, string | null>):
 }
 
 /**
+ * Full settings interface for frontend
+ */
+export interface FullAppSettings {
+  openaiApiKey: string;
+  enableSeoOptimization: boolean;
+  enableImageEnhancement: boolean;
+  imageStyle: string;
+  cloudinaryCloudName: string;
+  cloudinaryApiKey: string;
+  cloudinaryApiSecret: string;
+  cloudinaryFolder: string;
+}
+
+/**
  * Get settings in frontend format - uses cache
  */
 export async function getAppSettings(): Promise<AppSettings> {
@@ -96,6 +110,24 @@ export async function getAppSettings(): Promise<AppSettings> {
     enableSeoOptimization: settings.enable_seo_optimization === "true",
     enableImageEnhancement: settings.enable_image_enhancement === "true",
     imageStyle: settings.image_style || "professional",
+  };
+}
+
+/**
+ * Get full settings including Cloudinary - uses cache
+ */
+export async function getFullAppSettings(): Promise<FullAppSettings> {
+  const settings = await getCachedSettings();
+
+  return {
+    openaiApiKey: settings.openai_api_key || "",
+    enableSeoOptimization: settings.enable_seo_optimization === "true",
+    enableImageEnhancement: settings.enable_image_enhancement === "true",
+    imageStyle: settings.image_style || "professional",
+    cloudinaryCloudName: settings.cloudinary_cloud_name || "",
+    cloudinaryApiKey: settings.cloudinary_api_key || "",
+    cloudinaryApiSecret: settings.cloudinary_api_secret || "",
+    cloudinaryFolder: settings.cloudinary_folder || "urunler",
   };
 }
 
