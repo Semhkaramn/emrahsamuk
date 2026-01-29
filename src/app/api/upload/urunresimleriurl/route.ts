@@ -30,11 +30,17 @@ interface UrunResimRow {
   RESIM16?: string;
 }
 
-// 50 bin ürün için optimize edilmiş değerler
-const BATCH_SIZE = 100; // Resimler yoğun, daha küçük batch
-const MAX_RETRIES = 3;
-const EXISTING_CHECK_BATCH = 5000;
-const PARALLEL_UPDATE_LIMIT = 5; // Güncelleme paralel limiti
+// PERFORMANS: Daha büyük batch boyutları
+const BATCH_SIZE = 300; // 100'den 300'e çıkarıldı
+const EXISTING_CHECK_BATCH = 10000;
+const PARALLEL_UPDATE_LIMIT = 20; // 5'ten 20'ye çıkarıldı - daha fazla paralel
+
+// SQL escape fonksiyonları
+function escapeSql(value: string | null | undefined): string {
+  if (value === null || value === undefined) return 'NULL';
+  const escaped = String(value).replace(/'/g, "''").replace(/\\/g, '\\\\');
+  return `'${escaped}'`;
+}
 
 // Cursor-based pagination ile ürün ID'lerini al
 async function getExistingProductIds(): Promise<Set<number>> {
@@ -73,8 +79,8 @@ async function getExistingProductIds(): Promise<Set<number>> {
 async function getExistingImageKeys(urunIds: number[]): Promise<Set<string>> {
   const keySet = new Set<string>();
 
-  // Chunk'lar halinde sorgula (bellek dostu)
-  const chunkSize = 1000;
+  // Chunk'lar halinde sorgula (bellek dostu) - daha büyük chunk
+  const chunkSize = 2000;
   for (let i = 0; i < urunIds.length; i += chunkSize) {
     const chunk = urunIds.slice(i, i + chunkSize);
 
@@ -91,45 +97,75 @@ async function getExistingImageKeys(urunIds: number[]): Promise<Set<string>> {
   return keySet;
 }
 
-// Retry mekanizmalı batch ekleme
-async function createBatchWithRetry<T>(
-  createFn: () => Promise<T>,
-  retries: number = MAX_RETRIES
-): Promise<{ success: boolean; error?: string }> {
-  for (let attempt = 1; attempt <= retries; attempt++) {
+// PERFORMANS: Raw SQL ile toplu resim ekleme
+async function bulkCreateImages(
+  images: Array<{ urunId: number; sira: number; url: string }>
+): Promise<{ created: number; failed: number }> {
+  if (images.length === 0) return { created: 0, failed: 0 };
+
+  try {
+    const values = images.map(img => `(
+      ${img.urunId},
+      ${img.sira},
+      ${escapeSql(img.url)},
+      'pending'
+    )`).join(',');
+
+    const sql = `INSERT INTO product_images (
+      urun_id, sira, eski_url, status
+    ) VALUES ${values} ON CONFLICT (urun_id, sira) DO NOTHING`;
+
+    await prisma.$executeRawUnsafe(sql);
+    return { created: images.length, failed: 0 };
+  } catch (error) {
+    console.error('Bulk create images error:', error);
+    // Fallback: Prisma createMany
     try {
-      await createFn();
-      return { success: true };
-    } catch (error) {
-      if (attempt === retries) {
-        return {
-          success: false,
-          error: error instanceof Error ? error.message : 'Bilinmeyen hata'
-        };
-      }
-      await new Promise(resolve => setTimeout(resolve, 100 * attempt));
+      const data = images.map(img => ({
+        urunId: img.urunId,
+        sira: img.sira,
+        eskiUrl: img.url,
+        status: 'pending',
+      }));
+
+      await prisma.productImage.createMany({
+        data,
+        skipDuplicates: true,
+      });
+      return { created: images.length, failed: 0 };
+    } catch {
+      return { created: 0, failed: images.length };
     }
   }
-  return { success: false, error: 'Max retry aşıldı' };
 }
 
-// Tek tek resim ekleme (fallback)
-async function createImagesOneByOne(
-  images: Prisma.ProductImageCreateManyInput[]
-): Promise<{ created: number; failed: number }> {
-  let created = 0;
-  let failed = 0;
+// PERFORMANS: Raw SQL ile toplu resim güncelleme
+async function bulkUpdateImages(
+  updates: Array<{ urunId: number; sira: number; url: string }>
+): Promise<{ updated: number; failed: number }> {
+  if (updates.length === 0) return { updated: 0, failed: 0 };
 
-  for (const image of images) {
-    try {
-      await prisma.productImage.create({ data: image });
-      created++;
-    } catch {
-      failed++;
-    }
+  try {
+    // CASE WHEN ile tek SQL sorgusu
+    const conditions = updates.map(u =>
+      `WHEN urun_id = ${u.urunId} AND sira = ${u.sira} THEN ${escapeSql(u.url)}`
+    ).join(' ');
+
+    const whereClause = updates.map(u =>
+      `(urun_id = ${u.urunId} AND sira = ${u.sira})`
+    ).join(' OR ');
+
+    const sql = `UPDATE product_images
+      SET eski_url = CASE ${conditions} ELSE eski_url END,
+          status = 'pending'
+      WHERE ${whereClause}`;
+
+    await prisma.$executeRawUnsafe(sql);
+    return { updated: updates.length, failed: 0 };
+  } catch (error) {
+    console.error('Bulk update images error:', error);
+    return { updated: 0, failed: updates.length };
   }
-
-  return { created, failed };
 }
 
 // Diziyi chunk'lara böl
@@ -224,8 +260,8 @@ export async function POST(request: NextRequest) {
           const batchEnd = Math.min(batchStart + BATCH_SIZE, data.length);
           const batch = data.slice(batchStart, batchEnd);
 
-          const imagesToCreate: Prisma.ProductImageCreateManyInput[] = [];
-          const imagesToUpdate: { urunId: number; sira: number; url: string }[] = [];
+          const imagesToCreate: Array<{ urunId: number; sira: number; url: string }> = [];
+          const imagesToUpdate: Array<{ urunId: number; sira: number; url: string }> = [];
           let batchProductsProcessed = 0;
           let batchSkipped = 0;
           let batchFailed = 0;
@@ -259,12 +295,7 @@ export async function POST(request: NextRequest) {
                   if (existingImageSet.has(imageKey)) {
                     imagesToUpdate.push({ urunId, sira: j, url: url.trim() });
                   } else {
-                    imagesToCreate.push({
-                      urunId,
-                      sira: j,
-                      eskiUrl: url.trim(),
-                      status: "pending",
-                    });
+                    imagesToCreate.push({ urunId, sira: j, url: url.trim() });
                     existingImageSet.add(imageKey); // Tekrarı önle
                   }
                   hasImages = true;
@@ -291,46 +322,27 @@ export async function POST(request: NextRequest) {
           skipped += batchSkipped;
           failed += batchFailed;
 
-          // Veritabanı işlemleri - Transaction ile
+          // PERFORMANS: Raw SQL ile toplu işlemler
           try {
             // 1. Yeni resimleri toplu ekle
             if (imagesToCreate.length > 0) {
-              const createResult = await createBatchWithRetry(async () => {
-                await prisma.productImage.createMany({
-                  data: imagesToCreate,
-                  skipDuplicates: true,
-                });
-              });
-
-              if (createResult.success) {
-                imagesCreated += imagesToCreate.length;
-              } else {
-                // Fallback: tek tek ekle
-                const fallbackResult = await createImagesOneByOne(imagesToCreate);
-                imagesCreated += fallbackResult.created;
-                failed += fallbackResult.failed;
-              }
+              const createResult = await bulkCreateImages(imagesToCreate);
+              imagesCreated += createResult.created;
+              failed += createResult.failed;
             }
 
-            // 2. Mevcut resimleri güncelle - sınırlı paralel (hızlı ama güvenli)
+            // 2. Mevcut resimleri toplu güncelle
             if (imagesToUpdate.length > 0) {
-              const updateChunks = chunkArray(imagesToUpdate, PARALLEL_UPDATE_LIMIT);
+              // Büyük güncelleme gruplarını parçala
+              const updateChunks = chunkArray(imagesToUpdate, 100);
               for (const chunk of updateChunks) {
-                await Promise.all(
-                  chunk.map(({ urunId, sira, url }) =>
-                    prisma.productImage.update({
-                      where: { urunId_sira: { urunId, sira } },
-                      data: { eskiUrl: url, status: "pending" },
-                    }).catch(() => null) // Hata olursa atla
-                  )
-                );
+                const updateResult = await bulkUpdateImages(chunk);
+                imagesUpdated += updateResult.updated;
               }
-              imagesUpdated += imagesToUpdate.length;
             }
 
           } catch (batchError) {
             console.error("Batch error:", batchError);
-            // Kritik hata - loglama yap ama devam et
             if (errors.length < 20) {
               errors.push(`Batch ${batchStart}-${batchEnd} hatası: ${batchError instanceof Error ? batchError.message : 'Bilinmeyen'}`);
             }
@@ -352,9 +364,9 @@ export async function POST(request: NextRequest) {
             message: `${processed.toLocaleString()} / ${total.toLocaleString()} satır işlendi (${percent}%)`
           });
 
-          // Her 10 batch'te garbage collection'a izin ver
-          if ((batchStart / BATCH_SIZE) % 10 === 0) {
-            await new Promise(resolve => setTimeout(resolve, 10));
+          // Her 3 batch'te kısa bekleme
+          if ((batchStart / BATCH_SIZE) % 3 === 0) {
+            await new Promise(resolve => setTimeout(resolve, 5));
           }
         }
 
