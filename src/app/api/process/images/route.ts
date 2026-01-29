@@ -275,18 +275,65 @@ export async function GET() {
   }
 }
 
-// Helper: Download and verify image
+// URL'den format belirleme
+function getFormatFromUrl(url: string): string {
+  const urlLower = url.toLowerCase();
+  if (urlLower.includes('.webp') || urlLower.includes('format=webp')) return 'webp';
+  if (urlLower.includes('.png')) return 'png';
+  if (urlLower.includes('.jpg') || urlLower.includes('.jpeg')) return 'jpg';
+  if (urlLower.includes('.gif')) return 'gif';
+  return 'webp'; // varsayılan webp
+}
+
+// Fetch with timeout and retry
+async function fetchWithRetry(
+  url: string,
+  options: RequestInit = {},
+  retries = 3,
+  timeout = 30000
+): Promise<Response> {
+  for (let i = 0; i < retries; i++) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+      const response = await fetch(url, {
+        ...options,
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+
+      if (response.ok) {
+        return response;
+      }
+
+      // 502, 503, 504 gibi geçici hatalar için retry
+      if ([502, 503, 504].includes(response.status) && i < retries - 1) {
+        console.log(`[Retry ${i + 1}/${retries}] Status ${response.status}, retrying...`);
+        await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
+        continue;
+      }
+
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    } catch (error) {
+      if (i === retries - 1) throw error;
+
+      console.log(`[Retry ${i + 1}/${retries}] Error: ${error instanceof Error ? error.message : 'Unknown'}, retrying...`);
+      await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
+    }
+  }
+  throw new Error('Max retries exceeded');
+}
+
+// Helper: Download and verify image with retry
 async function downloadImage(url: string): Promise<{ success: boolean; error?: string }> {
   try {
-    const response = await fetch(url, {
+    const response = await fetchWithRetry(url, {
       headers: {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
       },
-    });
-
-    if (!response.ok) {
-      return { success: false, error: `HTTP ${response.status}` };
-    }
+    }, 3, 30000);
 
     const contentType = response.headers.get("content-type") || "";
     if (!contentType.startsWith("image/")) {
@@ -307,7 +354,7 @@ async function downloadImage(url: string): Promise<{ success: boolean; error?: s
   }
 }
 
-// Helper: Upload to Cloudinary
+// Helper: Upload to Cloudinary with format preservation
 async function uploadToCloudinaryService(
   imageUrl: string,
   settings: { cloudName: string; apiKey: string; apiSecret: string; folder: string },
@@ -315,51 +362,85 @@ async function uploadToCloudinaryService(
   sira: number
 ): Promise<{ success: boolean; url?: string; publicId?: string; error?: string }> {
   try {
-    const publicId = `${settings.folder}/${urunId}_${sira}`;
+    // Format belirleme - URL'den
+    const format = getFormatFromUrl(imageUrl);
+    const publicId = `${urunId}_${sira}`;
 
-    // Use Cloudinary upload API with URL
-    const formData = new FormData();
-    formData.append("file", imageUrl);
-    formData.append("upload_preset", "ml_default"); // You may need to configure this
-    formData.append("public_id", publicId);
-    formData.append("folder", settings.folder);
+    console.log(`[Cloudinary Batch] Downloading: ${imageUrl.substring(0, 100)}...`);
+    console.log(`[Cloudinary Batch] Format: ${format}`);
+
+    // Önce resmi indir - retry ile
+    const imageResponse = await fetchWithRetry(imageUrl, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+      },
+    }, 3, 30000);
+
+    const imageBuffer = await imageResponse.arrayBuffer();
+    const base64Image = Buffer.from(imageBuffer).toString("base64");
+
+    // MIME type belirleme
+    const mimeTypeMap: Record<string, string> = {
+      'webp': 'image/webp',
+      'png': 'image/png',
+      'jpg': 'image/jpeg',
+      'jpeg': 'image/jpeg',
+      'gif': 'image/gif',
+    };
+    const mimeType = mimeTypeMap[format] || 'image/webp';
+    const dataUri = `data:${mimeType};base64,${base64Image}`;
 
     const timestamp = Math.floor(Date.now() / 1000);
+
+    // Format parametresi ile signature oluştur
     const signature = await generateCloudinarySignature(
-      { public_id: publicId, timestamp },
+      {
+        folder: settings.folder,
+        format: format, // WebP formatını koru
+        public_id: publicId,
+        timestamp
+      },
       settings.apiSecret
     );
 
-    const response = await fetch(
+    // FormData ile yükle
+    const formData = new FormData();
+    formData.append("file", dataUri);
+    formData.append("api_key", settings.apiKey);
+    formData.append("timestamp", String(timestamp));
+    formData.append("signature", signature);
+    formData.append("folder", settings.folder);
+    formData.append("public_id", publicId);
+    formData.append("format", format); // Format belirt
+
+    console.log(`[Cloudinary Batch] Uploading as ${format} to ${settings.cloudName}/${settings.folder}/${publicId}.${format}`);
+
+    const response = await fetchWithRetry(
       `https://api.cloudinary.com/v1_1/${settings.cloudName}/image/upload`,
       {
         method: "POST",
-        body: JSON.stringify({
-          file: imageUrl,
-          api_key: settings.apiKey,
-          timestamp,
-          signature,
-          public_id: publicId,
-          folder: settings.folder,
-        }),
-        headers: {
-          "Content-Type": "application/json",
-        },
-      }
+        body: formData,
+      },
+      3,
+      60000 // Upload için daha uzun timeout
     );
 
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      return { success: false, error: errorData.error?.message || `HTTP ${response.status}` };
+    const data = await response.json();
+
+    if (data.error) {
+      console.error("Cloudinary batch upload error:", data.error);
+      return { success: false, error: data.error.message };
     }
 
-    const data = await response.json();
+    console.log(`[Cloudinary Batch] Upload successful: ${data.secure_url}`);
+
     return {
       success: true,
       url: data.secure_url,
       publicId: data.public_id,
     };
   } catch (error) {
+    console.error("Cloudinary batch upload exception:", error);
     return {
       success: false,
       error: error instanceof Error ? error.message : "Cloudinary yükleme hatası",
