@@ -118,7 +118,7 @@ async function getExistingProductsMap(
       take: number;
       skip?: number;
       cursor?: { id: number };
-      select: { urunId: true; id: number; urunKodu: true; barkodNo: true };
+      select: { urunId: true; id: true; urunKodu: true; barkodNo: true };
       orderBy: { id: 'asc' }
     } = {
       take: EXISTING_CHECK_BATCH,
