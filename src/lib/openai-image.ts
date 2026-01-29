@@ -188,6 +188,67 @@ export async function generateEditedImage(
   }
 }
 
+// URL'den format belirleme
+function getFormatFromUrl(url: string): string {
+  const urlLower = url.toLowerCase();
+  if (urlLower.includes('.webp') || urlLower.includes('format=webp')) return 'webp';
+  if (urlLower.includes('.png')) return 'png';
+  if (urlLower.includes('.jpg') || urlLower.includes('.jpeg')) return 'jpg';
+  if (urlLower.includes('.gif')) return 'gif';
+  return 'webp'; // varsayılan webp
+}
+
+// Content-type'dan format belirleme
+function getFormatFromContentType(contentType: string | null): string {
+  if (!contentType) return 'webp';
+  if (contentType.includes('webp')) return 'webp';
+  if (contentType.includes('png')) return 'png';
+  if (contentType.includes('jpeg') || contentType.includes('jpg')) return 'jpg';
+  if (contentType.includes('gif')) return 'gif';
+  return 'webp';
+}
+
+// Fetch with timeout and retry
+async function fetchWithRetry(
+  url: string,
+  options: RequestInit = {},
+  retries = 3,
+  timeout = 30000
+): Promise<Response> {
+  for (let i = 0; i < retries; i++) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+      const response = await fetch(url, {
+        ...options,
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+
+      if (response.ok) {
+        return response;
+      }
+
+      // 502, 503, 504 gibi geçici hatalar için retry
+      if ([502, 503, 504].includes(response.status) && i < retries - 1) {
+        console.log(`[Retry ${i + 1}/${retries}] Status ${response.status}, retrying...`);
+        await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
+        continue;
+      }
+
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    } catch (error) {
+      if (i === retries - 1) throw error;
+
+      console.log(`[Retry ${i + 1}/${retries}] Error: ${error instanceof Error ? error.message : 'Unknown'}, retrying...`);
+      await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
+    }
+  }
+  throw new Error('Max retries exceeded');
+}
+
 // Cloudinary'ye yükle
 export async function uploadToCloudinary(
   imageUrl: string,
@@ -197,24 +258,40 @@ export async function uploadToCloudinary(
     apiSecret: string;
     folder: string;
   },
-  publicId: string
+  publicId: string,
+  forceFormat?: string // 'webp', 'png', 'jpg' gibi
 ): Promise<{ success: boolean; url?: string; publicId?: string; error?: string }> {
   try {
-    // Önce resmi indir
-    const imageResponse = await fetch(imageUrl);
-    if (!imageResponse.ok) {
-      return { success: false, error: "Resim indirilemedi" };
-    }
+    // Önce resmi indir - retry ve timeout ile
+    console.log(`[Cloudinary] Downloading image: ${imageUrl.substring(0, 100)}...`);
+
+    const imageResponse = await fetchWithRetry(imageUrl, {}, 3, 30000);
 
     const imageBuffer = await imageResponse.arrayBuffer();
     const base64Image = Buffer.from(imageBuffer).toString("base64");
-    const mimeType = imageResponse.headers.get("content-type") || "image/png";
+
+    // Format belirleme - öncelik sırası: forceFormat > URL > content-type > webp
+    const contentType = imageResponse.headers.get("content-type");
+    let format = forceFormat || getFormatFromUrl(imageUrl) || getFormatFromContentType(contentType);
+
+    // MIME type belirleme
+    const mimeTypeMap: Record<string, string> = {
+      'webp': 'image/webp',
+      'png': 'image/png',
+      'jpg': 'image/jpeg',
+      'jpeg': 'image/jpeg',
+      'gif': 'image/gif',
+    };
+    const mimeType = mimeTypeMap[format] || 'image/webp';
     const dataUri = `data:${mimeType};base64,${base64Image}`;
 
-    // Cloudinary imza oluştur
+    console.log(`[Cloudinary] Format: ${format}, MIME: ${mimeType}`);
+
+    // Cloudinary imza oluştur - format parametresi ile
     const timestamp = Math.floor(Date.now() / 1000);
-    const paramsToSign = {
+    const paramsToSign: Record<string, string | number> = {
       folder: cloudinarySettings.folder,
+      format: format, // WebP formatını zorla
       public_id: publicId,
       timestamp: timestamp,
     };
@@ -229,24 +306,30 @@ export async function uploadToCloudinary(
     formData.append("signature", signature);
     formData.append("folder", cloudinarySettings.folder);
     formData.append("public_id", publicId);
+    formData.append("format", format); // Format parametresi eklendi
 
-    const uploadResponse = await fetch(
+    console.log(`[Cloudinary] Uploading to ${cloudinarySettings.cloudName}/${cloudinarySettings.folder}/${publicId}.${format}`);
+
+    const uploadResponse = await fetchWithRetry(
       `https://api.cloudinary.com/v1_1/${cloudinarySettings.cloudName}/image/upload`,
       {
         method: "POST",
         body: formData,
-      }
+      },
+      3,
+      60000 // Upload için daha uzun timeout
     );
 
-    if (!uploadResponse.ok) {
-      const errorData = await uploadResponse.json().catch(() => ({}));
+    const uploadData = await uploadResponse.json();
+
+    if (uploadData.error) {
       return {
         success: false,
-        error: `Cloudinary hatası: ${errorData.error?.message || uploadResponse.status}`,
+        error: `Cloudinary hatası: ${uploadData.error.message}`,
       };
     }
 
-    const uploadData = await uploadResponse.json();
+    console.log(`[Cloudinary] Upload successful: ${uploadData.secure_url}`);
 
     return {
       success: true,
@@ -254,6 +337,7 @@ export async function uploadToCloudinary(
       publicId: uploadData.public_id,
     };
   } catch (error) {
+    console.error('[Cloudinary] Upload error:', error);
     return {
       success: false,
       error: error instanceof Error ? error.message : "Cloudinary yükleme hatası",
@@ -344,13 +428,14 @@ export async function processImageWithAI(
 
     console.log(`[AI] DALL-E image generated successfully`);
 
-    // 3. Cloudinary'ye yükle
+    // 3. Cloudinary'ye yükle (DALL-E genellikle PNG döner, ama biz webp olarak kaydet)
     console.log(`[AI] Uploading to Cloudinary...`);
     const publicId = `${urunKodu}_${imageSira}_ai`;
     const uploadResult = await uploadToCloudinary(
       generateResult.imageUrl,
       cloudinarySettings,
-      publicId
+      publicId,
+      'webp' // WebP formatında kaydet
     );
 
     if (!uploadResult.success || !uploadResult.url) {
