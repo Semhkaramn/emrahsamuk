@@ -313,12 +313,22 @@ async function optimizeSEOWithVision(
   const systemPrompt = `Sen Türkiye'deki e-ticaret siteleri için SEO optimizasyonu yapan bir uzmansın.
 Trendyol, Hepsiburada, N11 gibi pazaryerlerinde üst sıralarda çıkacak ürün başlıkları ve açıklamaları oluşturuyorsun.
 
-ÖNEMLİ: Ürün resmini dikkatlice analiz et. Renk, malzeme, desen, marka logosu, ürün tipi gibi tüm görsel detayları kullan.
-Ürün adı ile resim uyuşmuyorsa, RESİMDEKİ ürüne göre isim oluştur.
+ÖNEMLİ KURALLAR:
+1. Ürün resmini dikkatlice analiz et. Renk, malzeme, desen, ürün tipi gibi tüm görsel detayları kullan.
+2. Ürün adı ile resim uyuşmuyorsa, RESİMDEKİ ürüne göre isim oluştur.
+3. **MARKA ADLARINI KALDIRMA**: Eski isimde geçen marka adlarını (örn: Nike, Adidas, Zara, LC Waikiki, Koton, DeFacto, vs.) YENİ İSİMDEN ÇIKAR.
+4. **ÜRÜN KODLARINI KALDIRMA**: Eski isimde geçen ürün kodlarını, stok kodlarını, SKU numaralarını (örn: ABC123, BRN-001, 12345678, vs.) YENİ İSİMDEN ÇIKAR.
+5. **BARKOD NUMARALARINI KALDIRMA**: Barkod numaralarını da çıkar.
+6. **SADECE ÜRÜN ÖZELLİKLERİ**: Yeni isimde sadece ürünün gerçek özellikleri olmalı: renk, malzeme, tip, tarz, beden türü, vs.
+
+ÖRNEK DÖNÜŞÜMLER:
+- "Nike Air Max 90 Siyah Spor Ayakkabı ABC123" → "Siyah Spor Ayakkabı Air Max Tarzı Sneaker"
+- "KOTON 2024 Yaz Koleksiyonu Mavi Çizgili Gömlek 456789" → "Mavi Çizgili Pamuklu Yazlık Gömlek"
+- "BRN-KV2025010044 Siyah Deri Pantolon" → "Siyah Deri Pantolon Slim Fit"
 
 Yanıtını tam olarak bu JSON formatında ver (başka hiçbir şey ekleme):
 {
-  "seoTitle": "SEO uyumlu başlık (resim analizine dayanarak)",
+  "seoTitle": "SEO uyumlu başlık (marka ve kod içermeyen, ürün özelliklerine dayalı)",
   "seoKeywords": "anahtar, kelime, listesi",
   "seoDescription": "SEO meta açıklaması (max 160 karakter)",
   "seoUrl": "seo-uyumlu-url-slug",
@@ -328,12 +338,17 @@ Yanıtını tam olarak bu JSON formatında ver (başka hiçbir şey ekleme):
   const userPrompt = `Ürün adı: "${productName || "Belirtilmemiş"}"
 
 Görevin:
-1. ${imageUrl ? "Önce ürün resmini dikkatlice analiz et - renk, desen, malzeme, marka, ürün tipi" : "Ürün adına göre analiz yap"}
-2. Ürün adını SEO'ya uygun, arama motorlarında üst sıralara çıkacak şekilde yeniden yaz
-3. Anahtar kelimeler belirle (virgülle ayrılmış)
-4. SEO açıklaması yaz (max 160 karakter)
-5. URL-friendly slug oluştur (türkçe karakterler olmadan, tire ile ayrılmış)
-6. Muhtemel kategoriyi belirle`;
+1. ${imageUrl ? "Önce ürün resmini dikkatlice analiz et - renk, desen, malzeme, ürün tipi" : "Ürün adına göre analiz yap"}
+2. **MARKA ADINI ÇIKAR**: Eski isimde marka adı varsa yeni isimde OLMAMALI
+3. **ÜRÜN KODUNU ÇIKAR**: Eski isimde ürün kodu, stok kodu, SKU varsa yeni isimde OLMAMALI
+4. **BARKOD ÇIKAR**: Sayısal kodları, barkodları çıkar
+5. Ürün adını SEO'ya uygun, arama motorlarında üst sıralara çıkacak şekilde yeniden yaz
+6. Anahtar kelimeler belirle (virgülle ayrılmış)
+7. SEO açıklaması yaz (max 160 karakter)
+8. URL-friendly slug oluştur (türkçe karakterler olmadan, tire ile ayrılmış)
+9. Muhtemel kategoriyi belirle
+
+DİKKAT: Yeni başlıkta marka adı, ürün kodu, barkod veya stok kodu OLMAMALI!`;
 
   try {
     // Görsel varsa GPT-4 Vision kullan
