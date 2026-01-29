@@ -15,13 +15,23 @@ import {
   AlertCircle,
   Loader2,
   ArrowRight,
+  Package,
+  Image as ImageIcon,
+  Hash,
+  Tag,
 } from "lucide-react";
 
 interface CategoryLog {
   id: string;
   urunKodu: string;
+  urunId: number;
+  barkodNo: string | null;
+  eskiAdi: string | null;
+  yeniAdi: string | null;
   eskiKategori: string;
   yeniKategori: string;
+  eskiResimler: string[];
+  yeniResimler: string[];
   success: boolean;
   timestamp: Date;
 }
@@ -31,6 +41,28 @@ interface ProcessingStatus {
   processed: number;
   remaining: number;
   percentComplete: number;
+}
+
+// Küçük resim önizleme bileşeni
+function MiniImageThumbnail({ url, index }: { url: string; index: number }) {
+  const [error, setError] = useState(false);
+
+  if (error) return null;
+
+  return (
+    <div className="relative group">
+      <img
+        src={url}
+        alt={`Resim ${index + 1}`}
+        className="w-8 h-8 object-cover rounded border border-zinc-700 hover:border-zinc-500 cursor-pointer transition-all hover:scale-110"
+        onClick={() => window.open(url, "_blank")}
+        onError={() => setError(true)}
+      />
+      <span className="absolute -bottom-0.5 -right-0.5 text-[8px] bg-black/80 text-white px-0.5 rounded">
+        {index + 1}
+      </span>
+    </div>
+  );
 }
 
 export function CategoryProcessingPanel() {
@@ -94,8 +126,14 @@ export function CategoryProcessingPanel() {
         const newLog: CategoryLog = {
           id: `${Date.now()}-${item.urunKodu}`,
           urunKodu: item.urunKodu,
+          urunId: item.urunId,
+          barkodNo: item.barkodNo || null,
+          eskiAdi: item.eskiAdi || null,
+          yeniAdi: item.yeniAdi || null,
           eskiKategori: item.eskiKategori || "-",
           yeniKategori: item.yeniKategori || "-",
+          eskiResimler: item.eskiResimler || [],
+          yeniResimler: item.yeniResimler || [],
           success: item.success,
           timestamp: new Date(),
         };
@@ -160,7 +198,7 @@ export function CategoryProcessingPanel() {
           </div>
           <div>
             <h2 className="text-xl font-bold">Kategori Yapma</h2>
-            <p className="text-xs text-zinc-500">AI ile ürün kategorilerini optimize et</p>
+            <p className="text-xs text-zinc-500">AI ile ürün kategorilerini optimize et (resim analizi dahil)</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -240,16 +278,18 @@ export function CategoryProcessingPanel() {
             <FolderTree className="w-4 h-4 text-orange-400" />
             Kategori Değişiklik Logları
           </CardTitle>
-          <CardDescription className="text-xs">Son yapılan kategori değişiklikleri</CardDescription>
+          <CardDescription className="text-xs">
+            Ürün ID, barkod, isimler, resimler ve kategori değişiklikleri
+          </CardDescription>
         </CardHeader>
         <CardContent>
-          <ScrollArea className="h-[400px] pr-4">
+          <ScrollArea className="h-[500px] pr-4">
             {logs.length === 0 ? (
               <div className="text-center py-8 text-zinc-500 text-sm">
                 Henüz işlem yapılmadı
               </div>
             ) : (
-              <div className="space-y-3">
+              <div className="space-y-4">
                 {logs.map((log) => (
                   <div
                     key={log.id}
@@ -259,28 +299,119 @@ export function CategoryProcessingPanel() {
                         : "bg-red-500/5 border-red-500/20"
                     }`}
                   >
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center gap-2">
+                    {/* Başlık: Ürün Kodu, ID, Barkod, Durum */}
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-3 flex-wrap">
                         {log.success ? (
-                          <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                          <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
                         ) : (
-                          <AlertCircle className="w-4 h-4 text-red-400" />
+                          <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
                         )}
-                        <span className="font-mono text-sm text-emerald-400">{log.urunKodu}</span>
+                        <div className="flex items-center gap-2">
+                          <Package className="w-3 h-3 text-zinc-500" />
+                          <span className="font-mono text-sm font-semibold text-emerald-400">
+                            {log.urunKodu}
+                          </span>
+                        </div>
+                        <Badge variant="outline" className="text-[10px] bg-zinc-800/50 border-zinc-700">
+                          <Hash className="w-2.5 h-2.5 mr-1" />
+                          ID: {log.urunId}
+                        </Badge>
+                        {log.barkodNo && (
+                          <Badge variant="outline" className="text-[10px] bg-blue-500/10 border-blue-500/30 text-blue-400">
+                            Barkod: {log.barkodNo}
+                          </Badge>
+                        )}
                       </div>
                       <span className="text-xs text-zinc-500">
                         {log.timestamp.toLocaleTimeString("tr-TR")}
                       </span>
                     </div>
+
+                    {/* Ürün İsimleri */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mb-3">
+                      <div className="bg-zinc-800/50 p-2 rounded">
+                        <div className="flex items-center gap-1 mb-1">
+                          <Tag className="w-3 h-3 text-amber-400" />
+                          <span className="text-[10px] text-zinc-500 uppercase">Eski Adı</span>
+                        </div>
+                        <p className="text-xs text-zinc-300 break-words">
+                          {log.eskiAdi || <span className="text-zinc-600 italic">Belirtilmemiş</span>}
+                        </p>
+                      </div>
+                      <div className="bg-zinc-800/50 p-2 rounded">
+                        <div className="flex items-center gap-1 mb-1">
+                          <Tag className="w-3 h-3 text-emerald-400" />
+                          <span className="text-[10px] text-zinc-500 uppercase">Yeni Adı (SEO)</span>
+                        </div>
+                        <p className="text-xs text-zinc-100 break-words">
+                          {log.yeniAdi || <span className="text-zinc-600 italic">Henüz işlenmedi</span>}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Resimler */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mb-3">
+                      <div className="bg-zinc-800/30 p-2 rounded">
+                        <div className="flex items-center gap-1.5 mb-2">
+                          <ImageIcon className="w-3 h-3 text-amber-400" />
+                          <span className="text-[10px] text-zinc-500 uppercase">Eski Resimler</span>
+                          <span className="text-[10px] text-zinc-600">({log.eskiResimler.length})</span>
+                        </div>
+                        {log.eskiResimler.length > 0 ? (
+                          <div className="flex flex-wrap gap-1">
+                            {log.eskiResimler.slice(0, 4).map((url, idx) => (
+                              <MiniImageThumbnail key={idx} url={url} index={idx} />
+                            ))}
+                            {log.eskiResimler.length > 4 && (
+                              <div className="w-8 h-8 rounded border border-zinc-700 bg-zinc-800 flex items-center justify-center text-[10px] text-zinc-500">
+                                +{log.eskiResimler.length - 4}
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-[10px] text-zinc-600 italic">Resim yok</span>
+                        )}
+                      </div>
+                      <div className="bg-zinc-800/30 p-2 rounded">
+                        <div className="flex items-center gap-1.5 mb-2">
+                          <ImageIcon className="w-3 h-3 text-emerald-400" />
+                          <span className="text-[10px] text-zinc-500 uppercase">Yeni Resimler</span>
+                          <span className="text-[10px] text-zinc-600">({log.yeniResimler.length})</span>
+                        </div>
+                        {log.yeniResimler.length > 0 ? (
+                          <div className="flex flex-wrap gap-1">
+                            {log.yeniResimler.slice(0, 4).map((url, idx) => (
+                              <MiniImageThumbnail key={idx} url={url} index={idx} />
+                            ))}
+                            {log.yeniResimler.length > 4 && (
+                              <div className="w-8 h-8 rounded border border-emerald-700 bg-emerald-900/20 flex items-center justify-center text-[10px] text-emerald-500">
+                                +{log.yeniResimler.length - 4}
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-[10px] text-zinc-600 italic">Henüz işlenmedi</span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Kategori Değişikliği */}
                     <div className="grid grid-cols-[1fr,auto,1fr] gap-3 items-center">
                       <div className="bg-zinc-800/50 p-2 rounded">
-                        <p className="text-xs text-zinc-500 mb-1">Eski Kategori</p>
-                        <p className="text-sm text-zinc-300">{log.eskiKategori}</p>
+                        <div className="flex items-center gap-1 mb-1">
+                          <FolderTree className="w-3 h-3 text-amber-400" />
+                          <span className="text-[10px] text-zinc-500 uppercase">Eski Kategori</span>
+                        </div>
+                        <p className="text-xs text-zinc-300">{log.eskiKategori}</p>
                       </div>
                       <ArrowRight className="w-4 h-4 text-zinc-600" />
                       <div className="bg-orange-500/10 p-2 rounded">
-                        <p className="text-xs text-orange-400 mb-1">Yeni Kategori</p>
-                        <p className="text-sm text-zinc-100">{log.yeniKategori}</p>
+                        <div className="flex items-center gap-1 mb-1">
+                          <FolderTree className="w-3 h-3 text-orange-400" />
+                          <span className="text-[10px] text-orange-400 uppercase">Yeni Kategori</span>
+                        </div>
+                        <p className="text-xs text-zinc-100">{log.yeniKategori}</p>
                       </div>
                     </div>
                   </div>
