@@ -14,12 +14,14 @@ export async function GET(request: NextRequest) {
     const whereClause: Prisma.ProductWhereInput = {};
 
     if (filterType === "processed") {
-      whereClause.processingStatus = "done";
+      whereClause.categories = {
+        processingStatus: "done",
+      };
     } else if (filterType === "unprocessed") {
       whereClause.OR = [
-        { processingStatus: "pending" },
-        { processingStatus: null },
-        { processedAt: null }
+        { categories: null },
+        { categories: { processingStatus: "pending" } },
+        { categories: { processingStatus: null } },
       ];
     } else if (filterType === "recentUpload") {
       const oneDayAgo = new Date();
@@ -28,9 +30,11 @@ export async function GET(request: NextRequest) {
         gte: oneDayAgo
       };
     } else if (filterType === "dateRange" && sinceDate) {
-      whereClause.processedAt = {
-        gte: new Date(sinceDate),
-        ...(untilDate ? { lte: new Date(untilDate) } : {})
+      whereClause.categories = {
+        processedAt: {
+          gte: new Date(sinceDate),
+          ...(untilDate ? { lte: new Date(untilDate) } : {})
+        }
       };
     }
 
@@ -44,22 +48,28 @@ export async function GET(request: NextRequest) {
     });
 
     // Create Excel data matching original ürünkategori.xlsx format EXACTLY
-    const excelData = products.map((product) => ({
-      URUNID: product.urunId,
-      URUNKODU: product.urunKodu || "",
-      BARKODNO: product.barkodNo || "",
-      URUNADI: product.yeniAdi || product.eskiAdi || "",
-      ANA_KATEGORI: product.categories?.anaKategori || "",
-      ALT_KATEGORI_1: product.categories?.altKategori1 || "",
-      ALT_KATEGORI_2: product.categories?.altKategori2 || "",
-      ALT_KATEGORI_3: product.categories?.altKategori3 || "",
-      ALT_KATEGORI_4: product.categories?.altKategori4 || "",
-      ALT_KATEGORI_5: product.categories?.altKategori5 || "",
-      ALT_KATEGORI_6: product.categories?.altKategori6 || "",
-      ALT_KATEGORI_7: product.categories?.altKategori7 || "",
-      ALT_KATEGORI_8: product.categories?.altKategori8 || "",
-      ALT_KATEGORI_9: product.categories?.altKategori9 || "",
-    }));
+    // YENİ KATEGORİ VARSA ONU KULLAN, YOKSA ESKİYİ KULLAN
+    const excelData = products.map((product) => {
+      const cat = product.categories;
+
+      return {
+        URUNID: product.urunId,
+        URUNKODU: product.urunKodu || "",
+        BARKODNO: product.barkodNo || "",
+        URUNADI: product.yeniAdi || product.eskiAdi || "",
+        // Yeni kategori varsa onu kullan, yoksa eskiyi kullan
+        ANA_KATEGORI: cat?.yeniAnaKategori || cat?.anaKategori || "",
+        ALT_KATEGORI_1: cat?.yeniAltKategori1 || cat?.altKategori1 || "",
+        ALT_KATEGORI_2: cat?.yeniAltKategori2 || cat?.altKategori2 || "",
+        ALT_KATEGORI_3: cat?.yeniAltKategori3 || cat?.altKategori3 || "",
+        ALT_KATEGORI_4: cat?.yeniAltKategori4 || cat?.altKategori4 || "",
+        ALT_KATEGORI_5: cat?.yeniAltKategori5 || cat?.altKategori5 || "",
+        ALT_KATEGORI_6: cat?.yeniAltKategori6 || cat?.altKategori6 || "",
+        ALT_KATEGORI_7: cat?.yeniAltKategori7 || cat?.altKategori7 || "",
+        ALT_KATEGORI_8: cat?.yeniAltKategori8 || cat?.altKategori8 || "",
+        ALT_KATEGORI_9: cat?.yeniAltKategori9 || cat?.altKategori9 || "",
+      };
+    });
 
     // Create workbook with original sheet name
     const worksheet = XLSX.utils.json_to_sheet(excelData);
