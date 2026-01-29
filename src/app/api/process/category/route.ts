@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
-import { getOpenAIApiKey } from "@/lib/settings-cache";
+import { getOpenAIApiKey, isImageUsedForCategory } from "@/lib/settings-cache";
 
 interface ParsedCategory {
   anaKategori: string | null;
@@ -86,6 +86,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Check if image should be used from settings
+    const useImageFromSettings = await isImageUsedForCategory();
+
     // Mevcut kategorileri al (tutarlılık için)
     const existingCategories = await getExistingCategories();
 
@@ -138,8 +141,10 @@ export async function POST(request: NextRequest) {
         const productName = product.yeniAdi || product.eskiAdi || product.urunKodu || "";
         const currentCategory = product.categories?.anaKategori || null;
 
-        // İlk resim URL'sini al (önce yeniUrl, yoksa eskiUrl)
-        const imageUrl = product.images[0]?.yeniUrl || product.images[0]?.eskiUrl || null;
+        // Only use image if setting is enabled
+        const imageUrl = useImageFromSettings
+          ? (product.images[0]?.yeniUrl || product.images[0]?.eskiUrl || null)
+          : null;
 
         // Eski ve yeni resim URL'lerini al
         const eskiResimler = product.images
@@ -366,7 +371,7 @@ async function optimizeCategoryWithVision(
 3. Mevcut kategorilerde uygun bir kategori varsa, ONU KULLAN - yeni kategori yapısı oluşturma
 4. Kategori isimleri TÜRKÇE ve BÜYÜK HARFLE başlamalı (örn: KADIN, ERKEK, ÇOCUK)
 5. Maksimum 5-6 seviye derinlik kullan
-6. ürün isminde ne yazıyorsa öncelik onu kullan kategori atarken 
+6. ürün isminde ne yazıyorsa öncelik onu kullan kategori atarken
 
 Kategori formatı: Ana Kategori > Alt Kategori 1 > Alt Kategori 2 > ... (en fazla 10 seviye)
 
