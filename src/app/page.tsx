@@ -79,11 +79,11 @@ export default function Home() {
       case "products":
         return (
           <ProductDataGrid
-            onProductSelect={(product) => {
-              console.log("Selected:", product);
+            onProductSelect={() => {
+              // Product selection handler - can be expanded for modal/detail view
             }}
-            onProductEdit={(product) => {
-              console.log("Edit:", product);
+            onProductEdit={() => {
+              // Product edit handler - can be expanded for edit modal
             }}
           />
         );
