@@ -103,8 +103,8 @@ export async function POST(request: NextRequest) {
       include: {
         categories: true,
         images: {
-          where: { sira: 1 },
-          take: 1,
+          orderBy: { sira: "asc" },
+          take: 4,
         },
       },
     });
@@ -121,8 +121,14 @@ export async function POST(request: NextRequest) {
 
     const results: Array<{
       urunKodu: string | null;
+      urunId: number;
+      barkodNo: string | null;
+      eskiAdi: string | null;
+      yeniAdi: string | null;
       eskiKategori: string | null;
       yeniKategori: string | null;
+      eskiResimler: string[];
+      yeniResimler: string[];
       success: boolean;
       error?: string;
     }> = [];
@@ -134,6 +140,14 @@ export async function POST(request: NextRequest) {
 
         // İlk resim URL'sini al (önce yeniUrl, yoksa eskiUrl)
         const imageUrl = product.images[0]?.yeniUrl || product.images[0]?.eskiUrl || null;
+
+        // Eski ve yeni resim URL'lerini al
+        const eskiResimler = product.images
+          .filter(img => img.eskiUrl)
+          .map(img => img.eskiUrl as string);
+        const yeniResimler = product.images
+          .filter(img => img.yeniUrl)
+          .map(img => img.yeniUrl as string);
 
         // AI ile kategori belirle (isim + görsel analizi + mevcut kategoriler)
         const categoryResult = await optimizeCategoryWithVision(
@@ -192,15 +206,25 @@ export async function POST(request: NextRequest) {
               islemTipi: "category",
               durum: "success",
               mesaj: `Kategori belirlendi: ${categoryResult}`,
+              eskiDeger: product.eskiAdi,
+              yeniDeger: product.yeniAdi,
               eskiKategori: currentCategory,
               yeniKategori: categoryResult,
+              eskiResimler: JSON.stringify(eskiResimler),
+              yeniResimler: JSON.stringify(yeniResimler),
             },
           });
 
           results.push({
             urunKodu: product.urunKodu,
+            urunId: product.urunId,
+            barkodNo: product.barkodNo,
+            eskiAdi: product.eskiAdi,
+            yeniAdi: product.yeniAdi,
             eskiKategori: currentCategory,
             yeniKategori: categoryResult,
+            eskiResimler,
+            yeniResimler,
             success: true,
           });
         } else {
@@ -217,17 +241,36 @@ export async function POST(request: NextRequest) {
 
           results.push({
             urunKodu: product.urunKodu,
+            urunId: product.urunId,
+            barkodNo: product.barkodNo,
+            eskiAdi: product.eskiAdi,
+            yeniAdi: product.yeniAdi,
             eskiKategori: currentCategory,
             yeniKategori: null,
+            eskiResimler,
+            yeniResimler,
             success: false,
             error: "Kategori belirlenemedi",
           });
         }
       } catch (err) {
+        const eskiResimler = product.images
+          .filter(img => img.eskiUrl)
+          .map(img => img.eskiUrl as string);
+        const yeniResimler = product.images
+          .filter(img => img.yeniUrl)
+          .map(img => img.yeniUrl as string);
+
         results.push({
           urunKodu: product.urunKodu,
+          urunId: product.urunId,
+          barkodNo: product.barkodNo,
+          eskiAdi: product.eskiAdi,
+          yeniAdi: product.yeniAdi,
           eskiKategori: product.categories?.anaKategori || null,
           yeniKategori: null,
+          eskiResimler,
+          yeniResimler,
           success: false,
           error: err instanceof Error ? err.message : "Bilinmeyen hata",
         });
