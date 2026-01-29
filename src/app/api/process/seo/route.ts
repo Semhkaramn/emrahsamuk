@@ -209,7 +209,7 @@ export async function POST(request: NextRequest) {
       failed,
       remaining: remainingCount,
       errors: errors.slice(0, 5),
-      details,
+      results: details,
     });
   } catch (error) {
     console.error("SEO batch processing error:", error);
