@@ -147,14 +147,16 @@ model ProductCategory {
 
 // Resimler Tablosu
 model ProductImage {
-  id            Int     @id @default(autoincrement())
-  urunId        Int     @map("urun_id")
-  sira          Int     // 1-16
-  eskiUrl       String? @map("eski_url") @db.Text
-  yeniUrl       String? @map("yeni_url") @db.Text // İşlenmiş resim URL'si (Cloudinary)
-  cloudinaryId  String? @map("cloudinary_id") @db.VarChar(255)
-  status        String? @default("pending") @db.VarChar(20) // pending, processing, done, error
-  errorMessage  String? @map("error_message") @db.Text
+  id            Int       @id @default(autoincrement())
+  urunId        Int       @map("urun_id")
+  sira          Int       // 1-16
+  eskiUrl       String?   @map("eski_url") @db.Text
+  yeniUrl       String?   @map("yeni_url") @db.Text // İşlenmiş resim URL'si (Cloudinary)
+  cloudinaryId  String?   @map("cloudinary_id") @db.VarChar(255)
+  status        String?   @default("pending") @db.VarChar(20) // pending, processing, done, error
+  errorMessage  String?   @map("error_message") @db.Text
+  processedAt   DateTime? @map("processed_at") // AI ile işlenme zamanı
+  aiPrompt      String?   @map("ai_prompt") @db.Text // AI için kullanılan prompt
 
   // İlişki
   product Product @relation(fields: [urunId], references: [urunId], onDelete: Cascade)
@@ -162,6 +164,7 @@ model ProductImage {
   @@unique([urunId, sira])
   @@index([urunId])
   @@index([status])
+  @@index([processedAt])
   @@map("product_images")
 }
 
