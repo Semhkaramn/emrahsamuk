@@ -40,18 +40,99 @@ interface ProcessingStatus {
   percentComplete: number;
 }
 
+// Büyük resim önizleme componenti
+function ImagePreview({
+  imageUrl,
+  thumbRect,
+}: {
+  imageUrl: string | null;
+  thumbRect: DOMRect | null;
+}) {
+  const [imageLoaded, setImageLoaded] = useState(false);
+
+  if (!imageUrl || !thumbRect) return null;
+
+  const previewWidth = 350;
+  const previewHeight = 350;
+
+  let left = thumbRect.right + 16;
+  let top = thumbRect.top - 100;
+
+  if (left + previewWidth > window.innerWidth - 20) {
+    left = thumbRect.left - previewWidth - 16;
+  }
+
+  if (top < 20) top = 20;
+  if (top + previewHeight > window.innerHeight - 20) {
+    top = window.innerHeight - previewHeight - 20;
+  }
+
+  return (
+    <div
+      className="fixed z-[100] pointer-events-none animate-in fade-in zoom-in-95 duration-150"
+      style={{ left, top }}
+    >
+      <div className="bg-zinc-900 border-2 border-emerald-500/30 rounded-xl shadow-2xl shadow-black/50 p-3">
+        <div className="relative">
+          {!imageLoaded && (
+            <div className="w-[350px] h-[350px] flex items-center justify-center bg-zinc-800 rounded-lg">
+              <div className="animate-spin w-8 h-8 border-2 border-emerald-500 border-t-transparent rounded-full" />
+            </div>
+          )}
+          <img
+            src={imageUrl}
+            alt="Önizleme"
+            className={`max-w-[350px] max-h-[350px] object-contain rounded-lg ${imageLoaded ? 'block' : 'hidden'}`}
+            onLoad={() => setImageLoaded(true)}
+            onError={(e) => {
+              (e.target as HTMLImageElement).src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100'%3E%3Crect fill='%23333' width='100' height='100'/%3E%3Ctext fill='%23666' x='50' y='50' text-anchor='middle' dy='.3em'%3EHata%3C/text%3E%3C/svg%3E";
+              setImageLoaded(true);
+            }}
+          />
+        </div>
+        <div className="mt-2 text-center">
+          <span className="text-xs text-zinc-500">Tıklayarak tam boyutta aç</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Küçük resim önizleme bileşeni
-function MiniImageThumbnail({ url, index }: { url: string; index: number }) {
+function MiniImageThumbnail({
+  url,
+  index,
+  onHover,
+  onLeave,
+}: {
+  url: string;
+  index: number;
+  onHover: (url: string, rect: DOMRect) => void;
+  onLeave: () => void;
+}) {
   const [error, setError] = useState(false);
+  const thumbRef = useRef<HTMLDivElement>(null);
 
   if (error) return null;
 
+  const handleMouseEnter = () => {
+    if (thumbRef.current) {
+      const rect = thumbRef.current.getBoundingClientRect();
+      onHover(url, rect);
+    }
+  };
+
   return (
-    <div className="relative group">
+    <div
+      ref={thumbRef}
+      className="relative group cursor-pointer"
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={onLeave}
+    >
       <img
         src={url}
         alt={`Resim ${index + 1}`}
-        className="w-8 h-8 object-cover rounded border border-zinc-700 hover:border-zinc-500 cursor-pointer transition-all hover:scale-110"
+        className="w-8 h-8 object-cover rounded border border-zinc-700 hover:border-zinc-500 cursor-pointer transition-all hover:scale-110 hover:ring-2 hover:ring-emerald-500/50"
         onClick={() => window.open(url, "_blank")}
         onError={() => setError(true)}
       />
@@ -68,8 +149,23 @@ export function NameProcessingPanel() {
   const [loading, setLoading] = useState(true);
   const [logs, setLogs] = useState<NameLog[]>([]);
 
+  // Image preview state
+  const [previewImage, setPreviewImage] = useState<string | null>(null);
+  const [previewRect, setPreviewRect] = useState<DOMRect | null>(null);
+
   const processingRef = useRef<boolean>(false);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Image hover handlers
+  const handleImageHover = useCallback((url: string, rect: DOMRect) => {
+    setPreviewImage(url);
+    setPreviewRect(rect);
+  }, []);
+
+  const handleImageLeave = useCallback(() => {
+    setPreviewImage(null);
+    setPreviewRect(null);
+  }, []);
 
   // Fetch status
   const fetchStatus = useCallback(async () => {
@@ -333,7 +429,7 @@ export function NameProcessingPanel() {
                         </div>
                         {log.eskiResimler.length > 0 ? (
                           <div className="flex flex-wrap gap-1">
-                            <MiniImageThumbnail url={log.eskiResimler[0]} index={0} />
+                            <MiniImageThumbnail url={log.eskiResimler[0]} index={0} onHover={handleImageHover} onLeave={handleImageLeave} />
                           </div>
                         ) : (
                           <span className="text-[10px] text-zinc-600 italic">Resim yok</span>
@@ -347,7 +443,7 @@ export function NameProcessingPanel() {
                         </div>
                         {log.yeniResimler.length > 0 ? (
                           <div className="flex flex-wrap gap-1">
-                            <MiniImageThumbnail url={log.yeniResimler[0]} index={0} />
+                            <MiniImageThumbnail url={log.yeniResimler[0]} index={0} onHover={handleImageHover} onLeave={handleImageLeave} />
                           </div>
                         ) : (
                           <span className="text-[10px] text-zinc-600 italic">Henüz işlenmedi</span>
@@ -374,6 +470,12 @@ export function NameProcessingPanel() {
           </ScrollArea>
         </CardContent>
       </Card>
+
+      {/* Global Image Preview */}
+      <ImagePreview
+        imageUrl={previewImage}
+        thumbRect={previewRect}
+      />
     </div>
   );
 }
