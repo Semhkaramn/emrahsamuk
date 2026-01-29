@@ -333,14 +333,7 @@ export function NameProcessingPanel() {
                         </div>
                         {log.eskiResimler.length > 0 ? (
                           <div className="flex flex-wrap gap-1">
-                            {log.eskiResimler.slice(0, 4).map((url, idx) => (
-                              <MiniImageThumbnail key={idx} url={url} index={idx} />
-                            ))}
-                            {log.eskiResimler.length > 4 && (
-                              <div className="w-8 h-8 rounded border border-zinc-700 bg-zinc-800 flex items-center justify-center text-[10px] text-zinc-500">
-                                +{log.eskiResimler.length - 4}
-                              </div>
-                            )}
+                            <MiniImageThumbnail url={log.eskiResimler[0]} index={0} />
                           </div>
                         ) : (
                           <span className="text-[10px] text-zinc-600 italic">Resim yok</span>
@@ -354,14 +347,7 @@ export function NameProcessingPanel() {
                         </div>
                         {log.yeniResimler.length > 0 ? (
                           <div className="flex flex-wrap gap-1">
-                            {log.yeniResimler.slice(0, 4).map((url, idx) => (
-                              <MiniImageThumbnail key={idx} url={url} index={idx} />
-                            ))}
-                            {log.yeniResimler.length > 4 && (
-                              <div className="w-8 h-8 rounded border border-emerald-700 bg-emerald-900/20 flex items-center justify-center text-[10px] text-emerald-500">
-                                +{log.yeniResimler.length - 4}
-                              </div>
-                            )}
+                            <MiniImageThumbnail url={log.yeniResimler[0]} index={0} />
                           </div>
                         ) : (
                           <span className="text-[10px] text-zinc-600 italic">Henüz işlenmedi</span>
