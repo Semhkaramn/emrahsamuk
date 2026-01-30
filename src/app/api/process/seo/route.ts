@@ -243,52 +243,73 @@ async function optimizeSEO(
   category: string;
 } | null> {
 
-  const systemPrompt = `Sen Türkiye'nin EN İYİ e-ticaret SEO uzmanısın. Ürün isimlerini Trendyol için SEO uyumlu hale getiriyorsun.
+  const systemPrompt = `Sen Türkiye'nin EN İYİ e-ticaret SEO uzmanısın. Ürün isimlerini Trendyol için SEO uyumlu ve AÇIKLAYICI hale getiriyorsun.
 
-⚠️ ÖNEMLİ KURAL - SADECE İSİMDEKİ BİLGİLERİ KULLAN:
-- SADECE ürün adında AÇIKÇA YAZILAN bilgileri kullan
-- Ürün adında YAZMAYAN hiçbir özellik EKLEME
-- Tahmin yapma, varsayım yapma, yorum yapma
-- Örnek: "Siyah Pantolon" yazıyorsa, pamuklu, yüksek bel, slim fit gibi şeyler EKLEME
+⚠️ ÖNEMLİ KURAL - İSMİ ZENGİNLEŞTİR AMA UYDURMA:
+- Ürün adındaki mevcut bilgileri kullan ve ANLAMLI bir şekilde genişlet
+- Ürün tipini belirle ve uygun sıfatlar ekle
+- ASLA olmayan özellikler ekleme (kumaş, beden, stil gibi - bunlar isimde yoksa ekleme)
+- Rakamları, kodları ve marka isimlerini TEMİZLE
 
-🚫 ÇIKARILACAKLAR (Yeni isimde ASLA olmamalı):
+🎯 İSİM OLUŞTURMA KURALLARI:
+1. Ürün tipini belirle (Tişört, Pantolon, Elbise, Kazak, Gömlek vs.)
+2. Renk varsa kullan
+3. "Şık", "Günlük", "Rahat", "Zarif" gibi genel sıfatlar ekleyebilirsin
+4. Ürün tipine uygun standart açıklamalar ekle (ama kumaş, beden gibi spesifik özellikler EKLEME)
+
+🚫 ÇIKARILACAKLAR:
 - Marka adları (Nike, Adidas, Zara, LC Waikiki, Koton, DeFacto, Mavi, vs.)
-- Ürün kodları, stok kodları, SKU (ABC123, BRN-001, KV2025, vs.)
+- Ürün kodları, stok kodları, SKU (ABC123, BRN-001, KV2025, 5467 vs.)
 - Barkod numaraları
 - Anlamsız kısaltmalar
-- KATEGORİ KELİMELERİ (Kadın Giyim, Erkek Giyim, Çocuk Giyim - BUNLARI EKLEME!)
+- Sadece rakamlardan oluşan kodlar
 
-⛔ KATEGORİ KELİMESİ ASLA EKLEME!
-- "Kadın Giyim" EKLEME
-- "Erkek Giyim" EKLEME
-- "Çocuk Giyim" EKLEME
-- "Ayakkabı" kategorisi olarak EKLEME (ürün tipi olarak yazılabilir)
+⛔ KATEGORİ KELİMESİ ASLA EKLEME:
+- "Kadın Giyim", "Erkek Giyim", "Çocuk Giyim" gibi kategori kelimeleri EKLEME
 
-✅ YAPILACAKLAR:
-1. Marka ve kodları temizle
-2. İsimdeki bilgileri düzgün sırala
-3. SEO uyumlu format yap
+✅ ÖRNEK DÖNÜŞÜMLER:
 
-🎯 ÖRNEKLER:
-❌ "Nike Air Max 90 Siyah ABC123"
-✅ "Siyah Spor Sneaker Ayakkabı" (Air Max'ın özelliklerini bilmiyoruz, ekleme)
+❌ "mavi crop 5467" veya "BRN-MAVI CROP 123"
+✅ "Şık Mavi Crop Tişört" veya "Günlük Mavi Renkli Crop Top"
 
-❌ "KOTON Mavi Gömlek 456789"
-✅ "Mavi Gömlek" (Pamuklu, slim fit vs. yazmıyorsa EKLEME)
+❌ "KOTON Siyah Pantolon 456789"
+✅ "Şık Siyah Kumaş Pantolon"
 
-❌ "BRN-KV2025010044 Siyah Deri Pantolon"
-✅ "Siyah Deri Pantolon" (Deri isimde yazıyor, onu kullan)
+❌ "Nike Air Max 90 ABC123"
+✅ "Spor Sneaker Ayakkabı"
 
 ❌ "Elbise Kırmızı 12345"
-✅ "Kırmızı Elbise" (Sadece renk ve ürün tipi var)
+✅ "Zarif Kırmızı Günlük Elbise"
 
-❌ "Pamuk Tişört Beyaz"
-✅ "Beyaz Pamuk Tişört" (Pamuk isimde yazıyor, kullanabilirsin)
+❌ "kazak bej örme"
+✅ "Şık Bej Örme Kazak"
+
+❌ "BRN-KV2025010044 Siyah Deri Pantolon"
+✅ "Şık Siyah Deri Pantolon"
+
+❌ "tshirt beyaz basic"
+✅ "Günlük Beyaz Basic Tişört"
+
+❌ "hırka gri uzun"
+✅ "Rahat Gri Uzun Hırka"
+
+❌ "mont kış siyah"
+✅ "Şık Siyah Kışlık Mont"
+
+📝 SEO BAŞLIĞI FORMATI:
+[Sıfat] + [Renk (varsa)] + [Özellik (varsa)] + [Ürün Tipi]
+
+Örnekler:
+- "Şık Mavi Crop Tişört"
+- "Zarif Kırmızı Abiye Elbise"
+- "Rahat Siyah Günlük Pantolon"
+- "Spor Beyaz Sneaker Ayakkabı"
+- "Şık Bej Örme Kazak"
 
 Yanıtını tam olarak bu JSON formatında ver:
 {
-  "seoTitle": "Sadece isimdeki bilgilerle SEO uyumlu başlık - KATEGORİ KELİMESİ YOK (50-80 karakter)",
-  "seoKeywords": "isimdeki kelimelere dayalı anahtar kelimeler, virgülle ayrılmış",
+  "seoTitle": "SEO uyumlu, açıklayıcı başlık (50-80 karakter) - KATEGORİ KELİMESİ YOK",
+  "seoKeywords": "ürüne uygun anahtar kelimeler, virgülle ayrılmış",
   "seoDescription": "SEO meta açıklaması (max 160 karakter)",
   "seoUrl": "seo-uyumlu-url-slug",
   "category": "Ana Kategori > Alt Kategori"
@@ -296,32 +317,17 @@ Yanıtını tam olarak bu JSON formatında ver:
 
   const userPrompt = `Ürün adı: "${productName}"
 
-⚠️ ÇOK ÖNEMLİ - SADECE İSİMDEKİ BİLGİLERİ KULLAN:
+🎯 GÖREV:
+1. Ürün kodlarını, rakamları ve marka isimlerini TEMİZLE
+2. Ürün tipini belirle (Tişört, Pantolon, Elbise, Kazak vs.)
+3. AÇIKLAYICI ve SEO UYUMLU bir isim oluştur
+4. "Şık", "Günlük", "Rahat", "Zarif" gibi uygun sıfatlar ekle
 
-1. 🚫 **TEMİZLE**: Marka adı, ürün kodu, barkod, SKU → HEPSİNİ ÇIKAR
-
-2. ⛔ **KATEGORİ KELİMESİ EKLEME**: "Kadın Giyim", "Erkek Giyim" vs. EKLEME!
-
-3. ✨ **SADECE İSİMDEKİ BİLGİLERLE BAŞLIK OLUŞTUR**:
-   - İsimde ne yazıyorsa onu kullan
-   - Tahmin yapma, yeni özellik ekleme
-   - Örnek: "Siyah Pantolon" → "Siyah Pantolon" (pamuklu, yüksek bel ekleme!)
-   - Örnek: "Mavi Pamuklu Gömlek" → "Mavi Pamuklu Gömlek" (pamuklu isimde var, kullan)
-
-4. 🎯 **ANAHTAR KELİMELER**: Sadece isimdeki kelimelerden türet
-
-5. 📝 **SEO AÇIKLAMASI**: İsimdeki bilgilerle açıklama yaz
-
-6. 🔗 **URL SLUG**: Türkçe karaktersiz, tire ile ayrılmış
-
-7. 📂 **KATEGORİ**: Ürün tipine göre kategori tahmin et
-
-⛔ ASLA YAPMA:
-- İsimde "pamuk" yazmıyorsa "pamuklu" deme
-- İsimde "deri" yazmıyorsa "deri" deme
-- İsimde "slim fit" yazmıyorsa "slim fit" deme
-- "Kadın Giyim", "Erkek Giyim" vs. EKLEME!
-- Hiçbir yeni özellik ekleme!`;
+⚠️ ÖNEMLİ:
+- "mavi crop 5467" → "Şık Mavi Crop Tişört" (Sadece temizleme değil, zenginleştirme!)
+- Ürün tipini açıkça belirt
+- Genel sıfatlar ekle ama spesifik özellikler (pamuklu, yüksek bel vs.) EKLEME
+- "Kadın Giyim", "Erkek Giyim" gibi kategori kelimeleri ASLA ekleme!`;
 
   try {
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
