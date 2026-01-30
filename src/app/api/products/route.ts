@@ -52,7 +52,6 @@ export async function GET(request: NextRequest) {
         include: {
           prices: true,
           categories: true,
-          images: true,
           seo: true,
         },
       }),
@@ -101,7 +100,6 @@ export async function POST(request: NextRequest) {
       kategoriId,
       prices,
       categories,
-      images,
       seo,
     } = body;
 
@@ -147,7 +145,6 @@ export async function POST(request: NextRequest) {
       include: {
         prices: true,
         categories: true,
-        images: true,
         seo: true,
       },
     });
@@ -165,32 +162,14 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    if (images && Array.isArray(images)) {
-      await prisma.productImage.createMany({
-        data: images.map((img: { sira: number; eskiUrl: string }) => ({
-          urunId: product.urunId,
-          sira: img.sira,
-          eskiUrl: img.eskiUrl,
-          status: "pending",
-        })),
-      });
-    }
-
     if (seo) {
       await prisma.productSeo.create({
         data: { urunId: product.urunId, ...seo },
       });
     }
 
-    // Log the action
-    await prisma.processingLog.create({
-      data: {
-        urunId: product.urunId,
-        islemTipi: "create",
-        durum: "success",
-        mesaj: `Ürün oluşturuldu: ${product.urunId}`,
-      },
-    });
+    // Log to console only (momentary)
+    console.log(`[Product Create] Ürün oluşturuldu: ${product.urunId}`);
 
     // Fetch the complete product with relations
     const completeProduct = await prisma.product.findUnique({
@@ -198,7 +177,6 @@ export async function POST(request: NextRequest) {
       include: {
         prices: true,
         categories: true,
-        images: true,
         seo: true,
       },
     });
