@@ -93,7 +93,8 @@ const KEYWORD_CATEGORY_MAP: Record<string, CategoryTuple> = {
   "casual ayakkabı": ["Ayakkabı", "Kadın", "Günlük Ayakkabı", ""],
   "yüksek taban": ["Ayakkabı", "Kadın", "Yüksek Taban Ayakkabı", ""],
   "cırt cırtlı": ["Ayakkabı", "Kadın", "Spor Ayakkabı", ""],
-  "bağcıklı": ["Ayakkabı", "Kadın", "Spor Ayakkabı", ""],
+  "bağcıklı ayakkabı": ["Ayakkabı", "Kadın", "Spor Ayakkabı", ""],
+  // "bağcıklı" tek başına kaldırıldı - "bağcıklı elbise" olabilir
 
   // ==================== ATLET (TEK BAŞINA EKSİKTİ!) ====================
   "atlet": ["Kadın", "İç Giyim", "Çamaşırı Takımları", "Atlet"],
@@ -132,7 +133,10 @@ const KEYWORD_CATEGORY_MAP: Record<string, CategoryTuple> = {
   // ==================== KÜRK (EKSİKTİ!) ====================
   "kürk": ["Kadın", "Günlük Giyim", "Üst Giyim", "Kürk"],
   "kısa kürk": ["Kadın", "Günlük Giyim", "Üst Giyim", "Kürk"],
-  "peluş": ["Kadın", "Günlük Giyim", "Üst Giyim", "Kürk"],
+  "peluş kürk": ["Kadın", "Günlük Giyim", "Üst Giyim", "Kürk"],
+  "peluş mont": ["Kadın", "Günlük Giyim", "Üst Giyim", "Mont"],
+  "peluş ceket": ["Kadın", "Günlük Giyim", "Üst Giyim", "Ceket"],
+  // "peluş" tek başına kaldırıldı - "peluş pijama" olabilir
 
   // ==================== KAPRİ (EKSİKTİ!) ====================
   "kapri": ["Kadın", "Günlük Giyim", "Alt Giyim", "Kapri"],
@@ -145,17 +149,39 @@ const KEYWORD_CATEGORY_MAP: Record<string, CategoryTuple> = {
   "çıtçıtlı badi": ["Kadın", "Günlük Giyim", "Üst Giyim", "Body"],
   "bebe badi": ["Anne & Çocuk", "Giyim", "Bebek", "Bebek Takımı"],
 
-  // ==================== JEAN / KOT (EKSİKTİ!) ====================
+  // ==================== JEAN / KOT (BAĞLAM DUYARLI!) ====================
+  // Önce spesifik kombinasyonlar kontrol edilmeli
+  "jean pantolon": ["Kadın", "Günlük Giyim", "Alt Giyim", "Jean"],
+  "kot pantolon": ["Kadın", "Günlük Giyim", "Alt Giyim", "Jean"],
+  "denim pantolon": ["Kadın", "Günlük Giyim", "Alt Giyim", "Jean"],
+  "jean elbise": ["Kadın", "Günlük Giyim", "Elbise", ""],
+  "kot elbise": ["Kadın", "Günlük Giyim", "Elbise", ""],
+  "denim elbise": ["Kadın", "Günlük Giyim", "Elbise", ""],
+  "jean ceket": ["Kadın", "Günlük Giyim", "Üst Giyim", "Ceket"],
+  "kot ceket": ["Kadın", "Günlük Giyim", "Üst Giyim", "Ceket"],
+  "denim ceket": ["Kadın", "Günlük Giyim", "Üst Giyim", "Ceket"],
+  "jean gömlek": ["Kadın", "Günlük Giyim", "Üst Giyim", "Gömlek"],
+  "kot gömlek": ["Kadın", "Günlük Giyim", "Üst Giyim", "Gömlek"],
+  "denim gömlek": ["Kadın", "Günlük Giyim", "Üst Giyim", "Gömlek"],
+  "jean etek": ["Kadın", "Günlük Giyim", "Alt Giyim", "Etek"],
+  "kot etek": ["Kadın", "Günlük Giyim", "Alt Giyim", "Etek"],
+  "denim etek": ["Kadın", "Günlük Giyim", "Alt Giyim", "Etek"],
+  "jean şort": ["Kadın", "Günlük Giyim", "Alt Giyim", "Şort"],
+  "baggy jean": ["Kadın", "Günlük Giyim", "Alt Giyim", "Jean"],
+  "baggy pantolon": ["Kadın", "Günlük Giyim", "Alt Giyim", "Jean"],
+  // Tek başına "jean", "kot", "denim" - sadece ürün türü belirtilmemişse varsayılan olarak pantolon
   "jean": ["Kadın", "Günlük Giyim", "Alt Giyim", "Jean"],
   "kot": ["Kadın", "Günlük Giyim", "Alt Giyim", "Jean"],
   "denim": ["Kadın", "Günlük Giyim", "Alt Giyim", "Jean"],
   "baggy": ["Kadın", "Günlük Giyim", "Alt Giyim", "Jean"],
-  "kot elbise": ["Kadın", "Günlük Giyim", "Elbise", ""],
 
   // ==================== SWEETSHIRT (YANLIŞ YAZIM!) ====================
   "sweetshirt": ["Kadın", "Günlük Giyim", "Üst Giyim", "Sweatshirt"],
-  "kapşonlu": ["Kadın", "Günlük Giyim", "Üst Giyim", "Sweatshirt"],
+  "kapşonlu sweatshirt": ["Kadın", "Günlük Giyim", "Üst Giyim", "Sweatshirt"],
+  "kapşonlu mont": ["Kadın", "Günlük Giyim", "Üst Giyim", "Mont"],
+  "kapşonlu ceket": ["Kadın", "Günlük Giyim", "Üst Giyim", "Ceket"],
   "unisex kapşonlu": ["Unisex", "Günlük Giyim", "Üst Giyim", "Sweatshirt"],
+  // "kapşonlu" tek başına kaldırıldı - "kapşonlu mont/ceket" olabilir
 
   // ==================== TAKIMLAR (TEK BAŞINA EKSİKTİ!) ====================
   "takım": ["Kadın", "Günlük Giyim", "Alt Üst Takım", ""],
@@ -178,7 +204,9 @@ const KEYWORD_CATEGORY_MAP: Record<string, CategoryTuple> = {
   "3'lü takım": ["Anne & Çocuk", "Giyim", "Bebek", "Bebek Takımı"],
   "4 parça set": ["Anne & Çocuk", "Giyim", "Bebek", "Bebek Takımı"],
   "5'li": ["Anne & Çocuk", "Giyim", "Bebek", "Bebek Takımı"],
-  "organik": ["Anne & Çocuk", "Giyim", "Bebek", "Bebek Takımı"],
+  "organik bebek": ["Anne & Çocuk", "Giyim", "Bebek", "Bebek Takımı"],
+  "organik pamuklu bebek": ["Anne & Çocuk", "Giyim", "Bebek", "Bebek Takımı"],
+  // "organik" tek başına kaldırıldı - "organik pamuklu tişört" olabilir
   "patikli alt": ["Anne & Çocuk", "Giyim", "Bebek", "Bebek Takımı"],
   "patiksiz alt": ["Anne & Çocuk", "Giyim", "Bebek", "Bebek Takımı"],
 
@@ -199,8 +227,9 @@ const KEYWORD_CATEGORY_MAP: Record<string, CategoryTuple> = {
   "emzirme": ["Kadın", "İç Giyim", "Lohusa", ""],
   "emzirme atleti": ["Kadın", "İç Giyim", "Lohusa", ""],
 
-  // ==================== İPEKYOL (MARKA - EKSİKTİ!) ====================
-  "ipekyol": ["Kadın", "Günlük Giyim", "Elbise", ""],
+  // ==================== İPEKYOL (MARKA - KALDIRILDI!) ====================
+  // "ipekyol" kaldırıldı - Marka ismi kategori belirlememeli
+  // Ürün adında "ipekyol elbise" yazıyorsa "elbise" kelimesiyle eşleşecek
 
   // ==================== ŞORT (TEK BAŞINA EKSİKTİ!) ====================
   "şort": ["Kadın", "Günlük Giyim", "Alt Giyim", "Şort"],
@@ -266,15 +295,16 @@ const KEYWORD_CATEGORY_MAP: Record<string, CategoryTuple> = {
   "patikli pantolon": ["Anne & Çocuk", "Giyim", "Alt Giyim", "Pantolon"],
   "bebek tayt": ["Anne & Çocuk", "Giyim", "Alt Giyim", "Pantolon"],
 
-  // Çocuk Mont / Ceket
-  "bebek hırka": ["Anne & Çocuk", "Giyim", "Üst Giyim", "Mont"],
+  // Çocuk Hırka / Mont / Ceket
+  "bebek hırka": ["Anne & Çocuk", "Giyim", "Üst Giyim", "Hırka"],
   "bebek mont": ["Anne & Çocuk", "Giyim", "Üst Giyim", "Mont"],
   "bebe ceket": ["Anne & Çocuk", "Giyim", "Üst Giyim", "Ceket"],
   "bebek ceket": ["Anne & Çocuk", "Giyim", "Üst Giyim", "Ceket"],
 
-  // Çocuk Tişört
-  "bebek tişört": ["Anne & Çocuk", "Giyim", "Üst Giyim", "Sweatshirt"],
-  "casual bebek": ["Anne & Çocuk", "Giyim", "Üst Giyim", "Sweatshirt"],
+  // Çocuk Tişört / Sweatshirt
+  "bebek tişört": ["Anne & Çocuk", "Giyim", "Üst Giyim", "T-Shirt"],
+  "bebek sweatshirt": ["Anne & Çocuk", "Giyim", "Üst Giyim", "Sweatshirt"],
+  "casual bebek": ["Anne & Çocuk", "Giyim", "Üst Giyim", "T-Shirt"],
 
   // Çocuk İç Giyim
   "çocuk çorap": ["Anne & Çocuk", "Giyim", "İç Giyim", "Çorap"],
@@ -424,9 +454,15 @@ const KEYWORD_CATEGORY_MAP: Record<string, CategoryTuple> = {
   "pijama kadın": ["Kadın", "Günlük Giyim", "Alt Üst Takım", "Pijama Takımı"],
   "kadın pijama": ["Kadın", "Günlük Giyim", "Alt Üst Takım", "Pijama Takımı"],
 
-  // Crop
-  "crop": ["Kadın", "Günlük Giyim", "Alt Giyim", "Crop"],
-  "crop kadın": ["Kadın", "Günlük Giyim", "Alt Giyim", "Crop"],
+  // Crop Top (Üst Giyim!)
+  "crop top": ["Kadın", "Günlük Giyim", "Üst Giyim", "Crop Top"],
+  "crop bluz": ["Kadın", "Günlük Giyim", "Üst Giyim", "Crop Top"],
+  "crop tişört": ["Kadın", "Günlük Giyim", "Üst Giyim", "Crop Top"],
+  "crop kazak": ["Kadın", "Günlük Giyim", "Üst Giyim", "Crop Top"],
+  "crop sweatshirt": ["Kadın", "Günlük Giyim", "Üst Giyim", "Crop Top"],
+  "crop hırka": ["Kadın", "Günlük Giyim", "Üst Giyim", "Crop Top"],
+  "crop": ["Kadın", "Günlük Giyim", "Üst Giyim", "Crop Top"],
+  "crop kadın": ["Kadın", "Günlük Giyim", "Üst Giyim", "Crop Top"],
 
   // Pantolon
   "pantolon kadın": ["Kadın", "Günlük Giyim", "Alt Giyim", "Pantolon"],
@@ -646,6 +682,12 @@ const PRIORITY_KEYWORDS: string[] = [
   "body",
   "tayt",
   "salopet",
+  "crop top",
+  "crop bluz",
+  "crop tişört",
+  "crop kazak",
+  "crop sweatshirt",
+  "crop hırka",
   "crop",
 
   // ==================== TRENÇKOT ====================
@@ -671,6 +713,7 @@ const PRIORITY_KEYWORDS: string[] = [
   "rahat tabanlı spor",
   "yüksek taban spor",
   "bağcıklı spor",
+  "bağcıklı ayakkabı",
   "bağcıksız spor",
   "keten spor",
   "triko spor",
@@ -716,7 +759,10 @@ const PRIORITY_KEYWORDS: string[] = [
   "panço",
   "kısa kürk",
   "kürk",
-  "peluş",
+  "peluş kürk",
+  "peluş mont",
+  "peluş ceket",
+  // "peluş" tek başına kaldırıldı - bağlam gerektirir
 
   // ==================== DİĞER ÖNEMLİ ====================
   "kapri",
@@ -724,12 +770,35 @@ const PRIORITY_KEYWORDS: string[] = [
   "çıtçıtlı badi",
   "badi",
   "bady",
+  // Jean/Kot/Denim - önce spesifik kombinasyonlar
+  "jean pantolon",
+  "kot pantolon",
+  "denim pantolon",
+  "jean elbise",
+  "kot elbise",
+  "denim elbise",
+  "jean ceket",
+  "kot ceket",
+  "denim ceket",
+  "jean gömlek",
+  "kot gömlek",
+  "denim gömlek",
+  "jean etek",
+  "kot etek",
+  "denim etek",
+  "jean şort",
+  "baggy jean",
+  "baggy pantolon",
+  // Varsayılan jean/kot/denim (pantolon olarak)
   "jean",
   "kot",
   "denim",
   "baggy",
   "sweetshirt",
-  "kapşonlu",
+  "kapşonlu sweatshirt",
+  "kapşonlu mont",
+  "kapşonlu ceket",
+  // "kapşonlu" tek başına kaldırıldı - bağlam gerektirir
   "eşortman",
 
   // ==================== BEBEK ====================
@@ -742,6 +811,9 @@ const PRIORITY_KEYWORDS: string[] = [
   "3'lü takım",
   "4 parça set",
   "5'li",
+  "organik bebek",
+  "organik pamuklu bebek",
+  // "organik" tek başına kaldırıldı - bağlam gerektirir
   "patikli alt",
   "patiksiz alt",
 
@@ -751,7 +823,7 @@ const PRIORITY_KEYWORDS: string[] = [
   "çocuk bot",
 
   // ==================== MARKA ====================
-  "ipekyol",
+  // "ipekyol" kaldırıldı - Marka ismi kategori belirlememeli
 
   // En spesifik olanlar önce
   "bebek battaniye",
@@ -769,6 +841,7 @@ const PRIORITY_KEYWORDS: string[] = [
   "bebek hırka",
   "bebek mont",
   "bebek tişört",
+  "bebek sweatshirt",
   "bebek ceket",
   "bebe ceket",
   "çocuk çorap",
