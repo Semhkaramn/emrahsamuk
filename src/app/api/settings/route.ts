@@ -10,8 +10,6 @@ function getSettingDescription(key: string): string {
   const descriptions: Record<string, string> = {
     openai_api_key: "OpenAI API anahtarı",
     enable_seo_optimization: "SEO optimizasyonu aktif/pasif",
-    enable_image_enhancement: "Resim iyileştirme aktif/pasif",
-    image_style: "Resim işleme stili",
     use_image_for_naming: "İsim değiştirmede resim analizi kullan",
     use_image_for_category: "Kategori belirlemede resim analizi kullan",
   };
@@ -43,12 +41,6 @@ export async function PUT(request: NextRequest) {
     const {
       openaiApiKey,
       enableSeoOptimization,
-      enableImageEnhancement,
-      imageStyle,
-      cloudinaryCloudName,
-      cloudinaryApiKey,
-      cloudinaryApiSecret,
-      cloudinaryFolder,
       useImageForNaming,
       useImageForCategory,
     } = body;
@@ -57,12 +49,6 @@ export async function PUT(request: NextRequest) {
     const settingsToUpdate = [
       { key: "openai_api_key", value: openaiApiKey || "" },
       { key: "enable_seo_optimization", value: String(enableSeoOptimization ?? true) },
-      { key: "enable_image_enhancement", value: String(enableImageEnhancement ?? true) },
-      { key: "image_style", value: imageStyle || "professional" },
-      { key: "cloudinary_cloud_name", value: cloudinaryCloudName || "" },
-      { key: "cloudinary_api_key", value: cloudinaryApiKey || "" },
-      { key: "cloudinary_api_secret", value: cloudinaryApiSecret || "" },
-      { key: "cloudinary_folder", value: cloudinaryFolder || "urunler" },
       { key: "use_image_for_naming", value: String(useImageForNaming ?? true) },
       { key: "use_image_for_category", value: String(useImageForCategory ?? true) },
     ];
@@ -86,15 +72,6 @@ export async function PUT(request: NextRequest) {
       newCacheValues[setting.key] = setting.value;
     }
     updateSettingsCache(newCacheValues);
-
-    // Log the update
-    await prisma.processingLog.create({
-      data: {
-        islemTipi: "settings",
-        durum: "success",
-        mesaj: "Ayarlar güncellendi ve cache yenilendi",
-      },
-    });
 
     return NextResponse.json({
       success: true,
