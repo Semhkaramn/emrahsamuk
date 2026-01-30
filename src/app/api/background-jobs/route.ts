@@ -1,6 +1,36 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
 
+// Base URL'i al (Netlify veya localhost)
+function getBaseUrl() {
+  if (process.env.URL) return process.env.URL;
+  if (process.env.DEPLOY_PRIME_URL) return process.env.DEPLOY_PRIME_URL;
+  if (process.env.NEXT_PUBLIC_BASE_URL) return process.env.NEXT_PUBLIC_BASE_URL;
+  return "http://localhost:3000";
+}
+
+// Worker'ı tetikle (fire-and-forget)
+async function triggerWorker(jobId: number) {
+  const baseUrl = getBaseUrl();
+
+  // Fire-and-forget - sonucu beklemeden çağır
+  setTimeout(async () => {
+    try {
+      await fetch(`${baseUrl}/api/background-jobs/worker`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          jobId,
+          batchSize: 5,
+          parallelCount: 3,
+        }),
+      });
+    } catch (error) {
+      console.error("Worker trigger error:", error);
+    }
+  }, 100);
+}
+
 // Aktif ve geçmiş işleri getir
 export async function GET(request: NextRequest) {
   try {
@@ -129,6 +159,7 @@ export async function PATCH(request: NextRequest) {
       completedAt?: Date;
       lastActivityAt?: Date;
     } = {};
+    let shouldTriggerWorker = false;
 
     switch (action) {
       case "start":
@@ -144,6 +175,7 @@ export async function PATCH(request: NextRequest) {
           pausedAt: null,
           lastActivityAt: new Date(),
         };
+        shouldTriggerWorker = true;
         break;
 
       case "pause":
@@ -172,6 +204,7 @@ export async function PATCH(request: NextRequest) {
           pausedAt: null,
           lastActivityAt: new Date(),
         };
+        shouldTriggerWorker = true;
         break;
 
       case "cancel":
@@ -199,6 +232,11 @@ export async function PATCH(request: NextRequest) {
       where: { id },
       data: updateData,
     });
+
+    // Worker'ı tetikle (start veya resume durumunda)
+    if (shouldTriggerWorker) {
+      triggerWorker(id);
+    }
 
     return NextResponse.json({
       success: true,
