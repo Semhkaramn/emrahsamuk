@@ -46,11 +46,9 @@ const KEYWORD_CATEGORY_MAP: Record<string, CategoryTuple> = {
   "trençkot": ["Kadın", "Günlük Giyim", "Üst Giyim", "Trençkot"],
   "trenckot": ["Kadın", "Günlük Giyim", "Üst Giyim", "Trençkot"],
   "trenchkot": ["Kadın", "Günlük Giyim", "Üst Giyim", "Trençkot"],
-  "trench": ["Kadın", "Günlük Giyim", "Üst Giyim", "Trençkot"],
-  "kruvaze yaka": ["Kadın", "Günlük Giyim", "Üst Giyim", "Trençkot"],
-  "kemerli kısa": ["Kadın", "Günlük Giyim", "Üst Giyim", "Trençkot"],
+  // "trench" kaldırıldı - "french" içeren ürünleri yanlış eşleyebilir
+  // "kruvaze yaka", "kemerli kısa", "beli büzgülü" kaldırıldı - stil tanımlayıcıları, elbise/bluz olabilir
   "kapüşonlu trençkot": ["Kadın", "Günlük Giyim", "Üst Giyim", "Trençkot"],
-  "beli büzgülü": ["Kadın", "Günlük Giyim", "Üst Giyim", "Trençkot"],
 
   // ==================== TRİKO (EKSİKTİ!) ====================
   "triko": ["Kadın", "Günlük Giyim", "Üst Giyim", "Triko"],
@@ -157,7 +155,7 @@ const KEYWORD_CATEGORY_MAP: Record<string, CategoryTuple> = {
   // ==================== SWEETSHIRT (YANLIŞ YAZIM!) ====================
   "sweetshirt": ["Kadın", "Günlük Giyim", "Üst Giyim", "Sweatshirt"],
   "kapşonlu": ["Kadın", "Günlük Giyim", "Üst Giyim", "Sweatshirt"],
-  "unisex kapşonlu": ["Kadın", "Günlük Giyim", "Üst Giyim", "Sweatshirt"],
+  "unisex kapşonlu": ["Unisex", "Günlük Giyim", "Üst Giyim", "Sweatshirt"],
 
   // ==================== TAKIMLAR (TEK BAŞINA EKSİKTİ!) ====================
   "takım": ["Kadın", "Günlük Giyim", "Alt Üst Takım", ""],
@@ -586,7 +584,7 @@ const KEYWORD_CATEGORY_MAP: Record<string, CategoryTuple> = {
   // Atlet
   "kadın atlet": ["Kadın", "İç Giyim", "Çamaşırı Takımları", "Atlet"],
   "askılı atlet": ["Kadın", "İç Giyim", "Çamaşırı Takımları", "Atlet"],
-  "ip askılı": ["Kadın", "İç Giyim", "Çamaşırı Takımları", "Atlet"],
+  "ip askılı atlet": ["Kadın", "İç Giyim", "Çamaşırı Takımları", "Atlet"],
 
   // Çamaşır Takımı
   "sütyen takım": ["Kadın", "İç Giyim", "Çamaşırı Takımları", ""],
@@ -623,7 +621,34 @@ const KEYWORD_CATEGORY_MAP: Record<string, CategoryTuple> = {
 
 // Öncelik grupları - daha spesifik anahtar kelimeler önce kontrol edilmeli
 const PRIORITY_KEYWORDS: string[] = [
-  // ==================== TRENÇKOT (EN ÖNEMLİ!) ====================
+  // ==================== ÜRÜN TÜRLERİ (EN ÖNCELİKLİ!) ====================
+  // Ürün adında bu kelimeler varsa, diğer stil tanımlayıcılarından bağımsız olarak bu kategoriye atanır
+  "elbise",  // "ip askılı elbise" -> Elbise
+  "bluz",    // "askılı bluz" -> Bluz
+  "gömlek",  // "ip askılı gömlek" -> Gömlek
+  "pantolon",
+  "etek",
+  "şort",
+  "ceket",
+  "mont",
+  "kaban",
+  "hırka",
+  "kazak",
+  "sweatshirt",
+  "tişört",
+  "t-shirt",
+  "tunik",
+  "yelek",
+  "kimono",
+  "tulum",
+  "abiye",
+  "büstiyer",
+  "body",
+  "tayt",
+  "salopet",
+  "crop",
+
+  // ==================== TRENÇKOT ====================
   "kapüşonlu trençkot",
   "kruvaze yaka",
   "kemerli kısa",
@@ -838,7 +863,7 @@ const PRIORITY_KEYWORDS: string[] = [
   "likralı külot",
   "dikişsiz boxer",
   "askılı atlet",
-  "ip askılı",
+  "ip askılı atlet",
   "sütyen askı",
   "denye çorap",
   "saten gecelik",
@@ -885,6 +910,20 @@ function normalizeProductName(productName: string): string {
   normalized = normalized.replace(/\s+/g, " ").trim();
 
   return normalized;
+}
+
+/**
+ * Cinsiyeti belirle (unisex, erkek, kadın, çocuk, bebek)
+ */
+function detectGender(normalizedName: string): string | null {
+  if (normalizedName.includes("unisex")) return "Unisex";
+  if (normalizedName.includes("erkek bebek")) return "Anne & Çocuk";
+  if (normalizedName.includes("kız bebek")) return "Anne & Çocuk";
+  if (normalizedName.includes("bebek")) return "Anne & Çocuk";
+  if (normalizedName.includes("çocuk")) return "Anne & Çocuk";
+  if (normalizedName.includes("erkek")) return "Erkek";
+  if (normalizedName.includes("kadın") || normalizedName.includes("bayan")) return "Kadın";
+  return null; // Belirlenmedi, varsayılan kullanılacak
 }
 
 /**
@@ -938,6 +977,17 @@ export function matchCategory(productName: string): CategoryMatch | null {
 
   // Kategori isimlerini düzgün formata çevir
   const formattedCategories = categories.map(c => c ? toTitleCase(c) : "");
+
+  // CİNSİYET KONTROLÜ: Ürün adında cinsiyet belirteci varsa ana kategoriyi değiştir
+  const detectedGender = detectGender(normalizedName);
+  if (detectedGender) {
+    // Ayakkabı ve Aksesuar kategorileri hariç, ana kategoriyi cinsiyete göre değiştir
+    const currentMainCategory = formattedCategories[0]?.toLowerCase() || "";
+    if (currentMainCategory !== "ayakkabı" && currentMainCategory !== "aksesuar" && currentMainCategory !== "ev & mutfak") {
+      formattedCategories[0] = detectedGender;
+    }
+  }
+
   const parts = formattedCategories.filter(c => c && c.trim() !== "");
   const fullPath = parts.join(" > ");
 
