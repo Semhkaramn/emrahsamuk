@@ -148,8 +148,8 @@ export function NameProcessingPanel() {
 
   // Polling interval - durumu kontrol et
   useEffect(() => {
-    // Aktif iş varsa daha sık polling yap
-    const interval = activeJob?.status === "running" ? 2000 : 5000;
+    // Aktif iş varsa daha sık polling yap (1.5 saniye)
+    const interval = activeJob?.status === "running" ? 1500 : 5000;
 
     pollingIntervalRef.current = setInterval(() => {
       fetchStatus();
@@ -297,7 +297,7 @@ export function NameProcessingPanel() {
           {activeJob?.status === "running" && (
             <Badge variant="outline" className="bg-purple-500/10 text-purple-400 border-purple-500/30 animate-pulse">
               <Activity className="w-3 h-3 mr-1 animate-pulse" />
-              Paralel İşleniyor
+              8x Paralel İşleniyor
             </Badge>
           )}
           <Button variant="ghost" size="sm" onClick={() => { fetchStatus(); fetchActiveJob(); fetchRecentLogs(); }} disabled={actionLoading}>
