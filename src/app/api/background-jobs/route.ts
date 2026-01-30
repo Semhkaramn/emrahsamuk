@@ -16,26 +16,29 @@ const WORKER_CONFIG = {
   TRIGGER_DELAY: 50,   // Worker tetikleme gecikmesi (ms)
 };
 
-// Worker'ı tetikle (fire-and-forget)
-async function triggerWorker(jobId: number) {
+// Worker'ı tetikle - DÜZELTME: setTimeout kaldırıldı
+async function triggerWorker(jobId: number): Promise<void> {
   const baseUrl = getBaseUrl();
 
-  // Hemen tetikle
-  setTimeout(async () => {
-    try {
-      await fetch(`${baseUrl}/api/background-jobs/worker`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          jobId,
-          batchSize: WORKER_CONFIG.BATCH_SIZE,
-          parallelCount: WORKER_CONFIG.PARALLEL_COUNT,
-        }),
-      });
-    } catch (error) {
+  try {
+    // Kısa bekleme sonra tetikle
+    await new Promise(resolve => setTimeout(resolve, WORKER_CONFIG.TRIGGER_DELAY));
+
+    // Fire-and-forget ama hata yakalama ile
+    fetch(`${baseUrl}/api/background-jobs/worker`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        jobId,
+        batchSize: WORKER_CONFIG.BATCH_SIZE,
+        parallelCount: WORKER_CONFIG.PARALLEL_COUNT,
+      }),
+    }).catch(error => {
       console.error("Worker trigger error:", error);
-    }
-  }, WORKER_CONFIG.TRIGGER_DELAY);
+    });
+  } catch (error) {
+    console.error("Trigger worker error:", error);
+  }
 }
 
 // Aktif ve geçmiş işleri getir
