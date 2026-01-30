@@ -3,6 +3,15 @@ import prisma from "@/lib/db";
 import * as XLSX from "xlsx";
 import type { Prisma } from "@prisma/client";
 
+// Excel hücre limiti: 32767 karakter
+const MAX_CELL_LENGTH = 32767;
+
+function truncateText(text: string | null | undefined, maxLength: number = MAX_CELL_LENGTH): string {
+  if (!text) return "";
+  if (text.length <= maxLength) return text;
+  return text.substring(0, maxLength - 3) + "...";
+}
+
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
@@ -50,16 +59,17 @@ export async function GET(request: NextRequest) {
     });
 
     // Create Excel data matching original ürünbilgisi.xlsx format EXACTLY
+    // Truncate ile uzun text'ler Excel limitine (32767) uygun hale getirilir
     const excelData = products.map((product) => ({
       ID: product.urunId,
       URUNKODU: product.urunKodu || "",
       BARKODNO: product.barkodNo || "",
       DURUM: product.durum || "",
-      ADI: product.yeniAdi || product.eskiAdi || "",
-      FATURAADI: product.faturaAdi || "",
-      SEOBASLIK: product.seo?.seoBaslik || "",
-      SEOANAHTARKELIME: product.seo?.seoKeywords || "",
-      SEOACIKLAMA: product.seo?.seoAciklama || "",
+      ADI: truncateText(product.yeniAdi || product.eskiAdi),
+      FATURAADI: truncateText(product.faturaAdi),
+      SEOBASLIK: truncateText(product.seo?.seoBaslik),
+      SEOANAHTARKELIME: truncateText(product.seo?.seoKeywords),
+      SEOACIKLAMA: truncateText(product.seo?.seoAciklama),
       URL: product.url || "",
       KARGOODEME: product.kargoOdeme || "",
       PIYASAFIYAT: product.prices?.piyasaFiyat ? Number(product.prices.piyasaFiyat) : "",
@@ -92,7 +102,7 @@ export async function GET(request: NextRequest) {
       KDV: product.kdv ? Number(product.kdv) : "",
       DESI: product.desi ? Number(product.desi) : "",
       STOK: product.stok || 0,
-      ONDETAY: product.onDetay || "",
+      ONDETAY: truncateText(product.onDetay),
       SIRA: product.sira || 0,
       OZELKOD1: product.ozelKod1 || "",
       OZELKOD2: product.ozelKod2 || "",
@@ -104,7 +114,7 @@ export async function GET(request: NextRequest) {
       BAYIFIYATI2: product.prices?.bayiFiyati2 ? Number(product.prices.bayiFiyati2) : "",
       BAYIFIYATI3: product.prices?.bayiFiyati3 ? Number(product.prices.bayiFiyati3) : "",
       BAYIFIYATI4: product.prices?.bayiFiyati4 ? Number(product.prices.bayiFiyati4) : "",
-      ACIKLAMA: product.aciklama || "",
+      ACIKLAMA: truncateText(product.aciklama),
       URETICIKODU: product.ureticiKodu || "",
       GTIP: product.gtip || "",
       MODELKODU: product.modelKodu || "",
