@@ -149,20 +149,7 @@ export async function POST(request: NextRequest) {
             });
           }
 
-          // Log individual success with details
-          await prisma.processingLog.create({
-            data: {
-              urunId: product.urunId,
-              urunKodu: product.urunKodu,
-              islemTipi: "seo",
-              durum: "success",
-              mesaj: `SEO optimizasyonu tamamlandı (resim analizi ${imageUrl ? "yapıldı" : "atlandı"})`,
-              eskiDeger: productName,
-              yeniDeger: seoResult.seoTitle,
-              eskiResimler: JSON.stringify(eskiResimler),
-              yeniResimler: JSON.stringify(yeniResimler),
-            },
-          });
+          // NOT: Log kaydı yapılmıyor - sadece anlık sonuç döndürülüyor
 
           details.push({
             urunKodu: product.urunKodu,
@@ -181,18 +168,12 @@ export async function POST(request: NextRequest) {
           const errorMsg = `SEO verisi alınamadı`;
           errors.push(`${product.urunKodu}: ${errorMsg}`);
 
-          // Log individual failure
-          await prisma.processingLog.create({
-            data: {
-              urunId: product.urunId,
-              urunKodu: product.urunKodu,
-              islemTipi: "seo",
-              durum: "error",
-              mesaj: errorMsg,
-              eskiDeger: productName,
-              eskiResimler: JSON.stringify(eskiResimler),
-              yeniResimler: JSON.stringify(yeniResimler),
-            },
+          // NOT: Log kaydı yapılmıyor
+
+          // Update status to error
+          await prisma.product.update({
+            where: { urunId: product.urunId },
+            data: { processingStatus: "error" },
           });
 
           details.push({
@@ -219,18 +200,7 @@ export async function POST(request: NextRequest) {
         const errorMsg = err instanceof Error ? err.message : "Bilinmeyen hata";
         errors.push(`${product.urunKodu}: ${errorMsg}`);
 
-        // Log individual failure
-        await prisma.processingLog.create({
-          data: {
-            urunId: product.urunId,
-            urunKodu: product.urunKodu,
-            islemTipi: "seo",
-            durum: "error",
-            mesaj: errorMsg,
-            eskiResimler: JSON.stringify(eskiResimler),
-            yeniResimler: JSON.stringify(yeniResimler),
-          },
-        });
+        // NOT: Log kaydı yapılmıyor
 
         // Update status to error
         await prisma.product.update({
@@ -319,26 +289,32 @@ async function optimizeSEOWithVision(
   category: string;
 } | null> {
 
-  // GÖRSEL AYARI AÇIK - Tam analiz prompt'u
-  const systemPromptWithImage = `Sen Türkiye'nin EN İYİ e-ticaret SEO uzmanısın. Trendyol, Hepsiburada, N11'de 1. sıraya çıkacak profesyonel ürün başlıkları oluşturuyorsun.
+  // GÖRSEL AYARI AÇIK - Tam analiz prompt'u (TRENDYOL SEO UYUMLU - KATEGORİ KELİMESİ YOK)
+  const systemPromptWithImage = `Sen Türkiye'nin EN İYİ e-ticaret SEO uzmanısın. Trendyol'da 1. sıraya çıkacak profesyonel ürün başlıkları oluşturuyorsun.
 
 🚫 ÇIKARILACAKLAR (Yeni isimde ASLA olmamalı):
 - Marka adları (Nike, Adidas, Zara, LC Waikiki, Koton, DeFacto, Mavi, vs.)
 - Ürün kodları, stok kodları, SKU (ABC123, BRN-001, KV2025, vs.)
 - Barkod numaraları
 - Anlamsız kısaltmalar
+- KATEGORİ KELİMELERİ (Kadın Giyim, Erkek Giyim, Çocuk Giyim, Ayakkabı, Çanta - BUNLARI EKLEME!)
 
 ✅ MUTLAKA EKLENMESİ GEREKENLER:
 1. **ÜRÜN TİPİ**: Ne olduğu (Elbise, Pantolon, Gömlek, Ceket, Bluz, Etek, vs.)
-2. **ANA KATEGORİ KELİMESİ**: Kadın Giyim, Erkek Giyim, Çocuk Giyim, Ayakkabı, Çanta, vs.
-3. **RENK**: Siyah, Beyaz, Kırmızı, Lacivert, Bej, vs.
-4. **MALZEME** (resimden analiz et): Deri, Pamuklu, Keten, Kadife, Saten, Şifon, Triko, Denim, vs.
-5. **KULLANIM ALANI**: Günlük, Ofis, Düğün, Davet, Spor, Plaj, Ev, İş, Casual, vs.
-6. **SEZON**: Yazlık, Kışlık, İlkbahar-Yaz, Sonbahar-Kış, Mevsimlik, 4 Mevsim, vs.
-7. **STİL/TARZ**: Şık, Elegans, Sportif, Klasik, Modern, Bohem, Vintage, Minimalist, vs.
-8. **KESİM/MODEL**: Slim Fit, Regular Fit, Oversize, A-Kesim, Kalem, Dökümlü, Bol, Dar, vs.
-9. **DETAYLAR** (resimden): Düğmeli, Fermuarlı, Cepli, Yakasız, V Yaka, Bisiklet Yaka, Kapüşonlu, vs.
-10. **ÖZEL ÖZELLİKLER**: Esnek, Rahat, Nefes Alır, Su Geçirmez, Yüksek Bel, vs.
+2. **RENK**: Siyah, Beyaz, Kırmızı, Lacivert, Bej, vs.
+3. **MALZEME** (resimden analiz et): Deri, Pamuklu, Keten, Kadife, Saten, Şifon, Triko, Denim, vs.
+4. **KULLANIM ALANI**: Günlük, Ofis, Düğün, Davet, Spor, Plaj, Ev, İş, Casual, vs.
+5. **SEZON**: Yazlık, Kışlık, İlkbahar-Yaz, Sonbahar-Kış, Mevsimlik, 4 Mevsim, vs.
+6. **STİL/TARZ**: Şık, Elegans, Sportif, Klasik, Modern, Bohem, Vintage, Minimalist, vs.
+7. **KESİM/MODEL**: Slim Fit, Regular Fit, Oversize, A-Kesim, Kalem, Dökümlü, Bol, Dar, vs.
+8. **DETAYLAR** (resimden): Düğmeli, Fermuarlı, Cepli, Yakasız, V Yaka, Bisiklet Yaka, Kapüşonlu, vs.
+9. **ÖZEL ÖZELLİKLER**: Esnek, Rahat, Nefes Alır, Su Geçirmez, Yüksek Bel, vs.
+
+⛔ KATEGORİ KELİMESİ EKLEME!
+- "Kadın Giyim" EKLEME
+- "Erkek Giyim" EKLEME
+- "Çocuk Giyim" EKLEME
+- Sadece ürünün özelliklerini yaz!
 
 📸 RESİM ANALİZİ ÇOK ÖNEMLİ:
 - Resimde gördüğün AMA eski isimde YAZILMAYAN tüm detayları ekle
@@ -346,33 +322,33 @@ async function optimizeSEOWithVision(
 - Aksesuar detayları: Kemer, Toka, Zincir, Boncuk, Payet, vs.
 - Kumaş dokusu: Parlak, Mat, Pütürlü, İpeksi, vs.
 
-🎯 MÜKEMMEL BAŞLIK FORMÜLÜ:
-[Renk] + [Malzeme] + [Özellik/Detay] + [Ürün Tipi] + [Kesim] + [Kullanım] + [Kategori Kelimesi]
+🎯 MÜKEMMEL TRENDYOL BAŞLIK FORMÜLÜ:
+[Renk] + [Malzeme] + [Özellik/Detay] + [Ürün Tipi] + [Kesim] + [Kullanım]
 
 ÖRNEK DÖNÜŞÜMLER:
 ❌ "Nike Air Max 90 Siyah ABC123"
-✅ "Siyah Spor Ayakkabı Sneaker Günlük Rahat Yürüyüş Erkek Ayakkabı"
+✅ "Siyah Spor Sneaker Ayakkabı Günlük Rahat Yürüyüş"
 
 ❌ "KOTON Mavi Gömlek 456789"
-✅ "Mavi Pamuklu Slim Fit Uzun Kol Klasik Gömlek Ofis Erkek Giyim"
+✅ "Mavi Pamuklu Slim Fit Uzun Kol Klasik Gömlek Ofis"
 
 ❌ "BRN-KV2025010044 Siyah Deri Pantolon"
-✅ "Siyah Suni Deri Yüksek Bel Pantolon Slim Fit Şık Kadın Giyim"
+✅ "Siyah Suni Deri Yüksek Bel Pantolon Slim Fit Şık"
 
 ❌ "Elbise 12345"
-✅ "Kırmızı Saten Uzun Abiye Elbise V Yaka Düğün Davet Kadın Giyim"
+✅ "Kırmızı Saten Uzun Abiye Elbise V Yaka Düğün Davet"
 
 Yanıtını tam olarak bu JSON formatında ver:
 {
-  "seoTitle": "Çok detaylı, anahtar kelime dolu, SEO uyumlu profesyonel başlık (50-80 karakter)",
+  "seoTitle": "Detaylı, anahtar kelime dolu Trendyol uyumlu başlık - KATEGORİ KELİMESİ YOK (50-80 karakter)",
   "seoKeywords": "en az 10 anahtar kelime, virgülle ayrılmış",
   "seoDescription": "SEO meta açıklaması (max 160 karakter, ürünü tanıtan)",
   "seoUrl": "seo-uyumlu-url-slug",
   "category": "Ana Kategori > Alt Kategori > Alt Alt Kategori"
 }`;
 
-  // GÖRSEL AYARI KAPALI - Sadece isimdeki bilgilerden SEO yapan prompt
-  const systemPromptNameOnly = `Sen Türkiye'nin EN İYİ e-ticaret SEO uzmanısın. Ürün isimlerini SEO uyumlu hale getiriyorsun.
+  // GÖRSEL AYARI KAPALI - Sadece isimdeki bilgilerden SEO yapan prompt (KATEGORİ KELİMESİ YOK)
+  const systemPromptNameOnly = `Sen Türkiye'nin EN İYİ e-ticaret SEO uzmanısın. Ürün isimlerini Trendyol için SEO uyumlu hale getiriyorsun.
 
 ⚠️ ÖNEMLİ KURAL - SADECE İSİMDEKİ BİLGİLERİ KULLAN:
 - SADECE ürün adında AÇIKÇA YAZILAN bilgileri kullan
@@ -385,32 +361,38 @@ Yanıtını tam olarak bu JSON formatında ver:
 - Ürün kodları, stok kodları, SKU (ABC123, BRN-001, KV2025, vs.)
 - Barkod numaraları
 - Anlamsız kısaltmalar
+- KATEGORİ KELİMELERİ (Kadın Giyim, Erkek Giyim, Çocuk Giyim - BUNLARI EKLEME!)
+
+⛔ KATEGORİ KELİMESİ ASLA EKLEME!
+- "Kadın Giyim" EKLEME
+- "Erkek Giyim" EKLEME
+- "Çocuk Giyim" EKLEME
+- "Ayakkabı" kategorisi olarak EKLEME (ürün tipi olarak yazılabilir)
 
 ✅ YAPILACAKLAR:
 1. Marka ve kodları temizle
 2. İsimdeki bilgileri düzgün sırala
-3. Kategori kelimesi ekle (Kadın Giyim, Erkek Giyim, vs.)
-4. SEO uyumlu format yap
+3. SEO uyumlu format yap
 
 🎯 ÖRNEKLER:
 ❌ "Nike Air Max 90 Siyah ABC123"
-✅ "Siyah Spor Ayakkabı Erkek Ayakkabı" (Air Max'ın özelliklerini bilmiyoruz, ekleme)
+✅ "Siyah Spor Sneaker Ayakkabı" (Air Max'ın özelliklerini bilmiyoruz, ekleme)
 
 ❌ "KOTON Mavi Gömlek 456789"
-✅ "Mavi Gömlek Erkek Giyim" (Pamuklu, slim fit vs. yazmıyorsa EKLEME)
+✅ "Mavi Gömlek" (Pamuklu, slim fit vs. yazmıyorsa EKLEME)
 
 ❌ "BRN-KV2025010044 Siyah Deri Pantolon"
-✅ "Siyah Deri Pantolon Kadın Giyim" (Deri isimde yazıyor, onu kullan)
+✅ "Siyah Deri Pantolon" (Deri isimde yazıyor, onu kullan)
 
 ❌ "Elbise Kırmızı 12345"
-✅ "Kırmızı Elbise Kadın Giyim" (Sadece renk ve ürün tipi var)
+✅ "Kırmızı Elbise" (Sadece renk ve ürün tipi var)
 
 ❌ "Pamuk Tişört Beyaz"
-✅ "Beyaz Pamuk Tişört Kadın Giyim" (Pamuk isimde yazıyor, kullanabilirsin)
+✅ "Beyaz Pamuk Tişört" (Pamuk isimde yazıyor, kullanabilirsin)
 
 Yanıtını tam olarak bu JSON formatında ver:
 {
-  "seoTitle": "Sadece isimdeki bilgilerle SEO uyumlu başlık (50-80 karakter)",
+  "seoTitle": "Sadece isimdeki bilgilerle SEO uyumlu başlık - KATEGORİ KELİMESİ YOK (50-80 karakter)",
   "seoKeywords": "isimdeki kelimelere dayalı anahtar kelimeler, virgülle ayrılmış",
   "seoDescription": "SEO meta açıklaması (max 160 karakter)",
   "seoUrl": "seo-uyumlu-url-slug",
@@ -424,27 +406,28 @@ Yanıtını tam olarak bu JSON formatında ver:
 
 🔍 ADIM ADIM GÖREV:
 
-1. ${imageUrl ? "📸 **RESMİ DİKKATLİCE ANALİZ ET**:\n   - Ürün tipi nedir?\n   - Rengi ne?\n   - Malzemesi ne gibi görünüyor?\n   - Deseni var mı?\n   - Özel detaylar (düğme, fermuar, cep, yaka tipi)?\n   - Kesimi nasıl (dar, bol, regular)?\n   - Hangi cinsiyet/yaş grubu için?\n   - Hangi ortamda giyilir (ofis, günlük, spor, davet)?" : "Ürün adına göre analiz yap"}
+1. ${imageUrl ? "📸 **RESMİ DİKKATLİCE ANALİZ ET**:\n   - Ürün tipi nedir?\n   - Rengi ne?\n   - Malzemesi ne gibi görünüyor?\n   - Deseni var mı?\n   - Özel detaylar (düğme, fermuar, cep, yaka tipi)?\n   - Kesimi nasıl (dar, bol, regular)?\n   - Hangi ortamda giyilir (ofis, günlük, spor, davet)?" : "Ürün adına göre analiz yap"}
 
 2. 🚫 **TEMİZLE**: Marka adı, ürün kodu, barkod, SKU → HEPSİNİ ÇIKAR
 
-3. ✨ **ZENGİN BAŞLIK OLUŞTUR**:
+3. ⛔ **KATEGORİ KELİMESİ EKLEME**: "Kadın Giyim", "Erkek Giyim" vs. EKLEME!
+
+4. ✨ **ZENGİN BAŞLIK OLUŞTUR**:
    - Resimde gördüğün ama eski isimde OLMAYAN özellikleri EKLE
    - Kullanım alanını belirt (günlük, ofis, düğün, spor, vs.)
    - Sezon belirt (yazlık, kışlık, 4 mevsim)
    - Stil/tarz ekle (şık, sportif, klasik, modern)
-   - Kategori kelimesi ekle (Kadın Giyim, Erkek Giyim, vs.)
+   - KATEGORİ KELİMESİ EKLEME!
 
-4. 🎯 **10+ ANAHTAR KELİME**: Müşterinin arayabileceği tüm kelimeler
+5. 🎯 **10+ ANAHTAR KELİME**: Müşterinin arayabileceği tüm kelimeler
 
-5. 📝 **SEO AÇIKLAMASI**: Ürünü tanıtan, alışverişe teşvik eden 160 karakter
+6. 📝 **SEO AÇIKLAMASI**: Ürünü tanıtan, alışverişe teşvik eden 160 karakter
 
-6. 🔗 **URL SLUG**: Türkçe karaktersiz, tire ile ayrılmış
+7. 🔗 **URL SLUG**: Türkçe karaktersiz, tire ile ayrılmış
 
-7. 📂 **KATEGORİ**: Ana > Alt > Alt Alt şeklinde
+8. 📂 **KATEGORİ**: Ana > Alt > Alt Alt şeklinde (bu sadece category alanı için)
 
-⚠️ UNUTMA: Başlık MUTLAKA şunları içermeli:
-- Renk + Malzeme + Detay + Ürün Tipi + Kesim + Kullanım Alanı + Kategori Kelimesi`;
+⚠️ UNUTMA: Başlıkta KATEGORİ KELİMESİ OLMAMALI!`;
 
   const userPromptNameOnly = `Ürün adı: "${productName || "Belirtilmemiş"}"
 
@@ -452,24 +435,27 @@ Yanıtını tam olarak bu JSON formatında ver:
 
 1. 🚫 **TEMİZLE**: Marka adı, ürün kodu, barkod, SKU → HEPSİNİ ÇIKAR
 
-2. ✨ **SADECE İSİMDEKİ BİLGİLERLE BAŞLIK OLUŞTUR**:
+2. ⛔ **KATEGORİ KELİMESİ EKLEME**: "Kadın Giyim", "Erkek Giyim" vs. EKLEME!
+
+3. ✨ **SADECE İSİMDEKİ BİLGİLERLE BAŞLIK OLUŞTUR**:
    - İsimde ne yazıyorsa onu kullan
    - Tahmin yapma, yeni özellik ekleme
-   - Örnek: "Siyah Pantolon" → "Siyah Pantolon Kadın Giyim" (pamuklu, yüksek bel ekleme!)
-   - Örnek: "Mavi Pamuklu Gömlek" → "Mavi Pamuklu Gömlek Erkek Giyim" (pamuklu isimde var, kullan)
+   - Örnek: "Siyah Pantolon" → "Siyah Pantolon" (pamuklu, yüksek bel ekleme!)
+   - Örnek: "Mavi Pamuklu Gömlek" → "Mavi Pamuklu Gömlek" (pamuklu isimde var, kullan)
 
-3. 🎯 **ANAHTAR KELİMELER**: Sadece isimdeki kelimelerden türet
+4. 🎯 **ANAHTAR KELİMELER**: Sadece isimdeki kelimelerden türet
 
-4. 📝 **SEO AÇIKLAMASI**: İsimdeki bilgilerle açıklama yaz
+5. 📝 **SEO AÇIKLAMASI**: İsimdeki bilgilerle açıklama yaz
 
-5. 🔗 **URL SLUG**: Türkçe karaktersiz, tire ile ayrılmış
+6. 🔗 **URL SLUG**: Türkçe karaktersiz, tire ile ayrılmış
 
-6. 📂 **KATEGORİ**: Ürün tipine göre kategori tahmin et
+7. 📂 **KATEGORİ**: Ürün tipine göre kategori tahmin et
 
 ⛔ ASLA YAPMA:
 - İsimde "pamuk" yazmıyorsa "pamuklu" deme
 - İsimde "deri" yazmıyorsa "deri" deme
 - İsimde "slim fit" yazmıyorsa "slim fit" deme
+- "Kadın Giyim", "Erkek Giyim" vs. EKLEME!
 - Hiçbir yeni özellik ekleme!`;
 
   // Görsel ayarına göre user prompt seç
