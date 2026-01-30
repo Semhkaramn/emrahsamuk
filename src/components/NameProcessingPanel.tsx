@@ -190,8 +190,8 @@ export function NameProcessingPanel() {
   const startBackgroundJob = async () => {
     setActionLoading(true);
     try {
-      // Get pending product IDs
-      const response = await fetch("/api/products?processingStatus=pending&limit=10000");
+      // Get products without SEO (seo: null)
+      const response = await fetch("/api/products?seoStatus=pending&limit=10000");
       const productsData = await response.json();
 
       if (!productsData.success || !productsData.data) {
@@ -202,7 +202,7 @@ export function NameProcessingPanel() {
       const urunIds = productsData.data.map((p: { urunId: number }) => p.urunId);
 
       if (urunIds.length === 0) {
-        alert("İşlenecek ürün bulunamadı!");
+        alert("İşlenecek ürün bulunamadı! (SEO kaydı olmayan ürün yok)");
         return;
       }
 
