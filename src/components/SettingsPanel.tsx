@@ -1,7 +1,7 @@
 "use client";
 
 import { AISettings } from "@/lib/types";
-import { Key, Sparkles, Settings, Eye, EyeOff, Save, Loader2, CheckCircle2, FolderTree, Type, Image } from "lucide-react";
+import { Key, Sparkles, Settings, Eye, EyeOff, Save, Loader2, CheckCircle2 } from "lucide-react";
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Button } from "@/components/ui/button";
 
@@ -13,8 +13,6 @@ export function SettingsPanel({ disabled }: SettingsPanelProps) {
   const [settings, setSettings] = useState<AISettings>({
     openaiApiKey: "",
     enableSeoOptimization: true,
-    useImageForNaming: true,
-    useImageForCategory: true,
   });
   const [showOpenAIKey, setShowOpenAIKey] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -159,39 +157,6 @@ export function SettingsPanel({ disabled }: SettingsPanelProps) {
           onChange={(checked) => handleSettingsChange({ ...settings, enableSeoOptimization: checked })}
           disabled={disabled}
         />
-      </div>
-
-      {/* AI Processing Image Usage */}
-      <div className="mt-6 pt-6 border-t border-zinc-800">
-        <div className="flex items-center gap-2 mb-4">
-          <Image className="w-5 h-5 text-orange-400" />
-          <h3 className="text-sm font-semibold text-zinc-300">AI İşleme Resim Kullanımı</h3>
-        </div>
-        <p className="text-xs text-zinc-500 mb-4">
-          Resim analizi daha iyi sonuçlar verir ancak daha yavaş ve maliyetlidir (GPT-4o vision).
-          Kapalıyken sadece ürün adından yola çıkılarak işlem yapılır (GPT-4o-mini).
-        </p>
-        <div className="space-y-4">
-          <ToggleOption
-            icon={Type}
-            iconColor="text-purple-400"
-            label="İsim Değiştirmede Resim Kullan"
-            description="SEO isim oluştururken ürün resmini analiz et"
-            checked={settings.useImageForNaming}
-            onChange={(checked) => handleSettingsChange({ ...settings, useImageForNaming: checked })}
-            disabled={disabled}
-          />
-
-          <ToggleOption
-            icon={FolderTree}
-            iconColor="text-orange-400"
-            label="Kategori Belirlemede Resim Kullan"
-            description="Kategori atarken ürün resmini analiz et"
-            checked={settings.useImageForCategory}
-            onChange={(checked) => handleSettingsChange({ ...settings, useImageForCategory: checked })}
-            disabled={disabled}
-          />
-        </div>
       </div>
 
       {/* Cost Warning */}
