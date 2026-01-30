@@ -146,19 +146,54 @@ export function NameProcessingPanel() {
     fetchRecentLogs();
   }, [fetchStatus, fetchActiveJob, fetchRecentLogs]);
 
-  // Polling interval - durumu kontrol et
+  // Takılmış işi yeniden tetikleme fonksiyonu
+  const retriggerStuckJob = useCallback(async (jobId: number) => {
+    try {
+      console.log("[NameProcessingPanel] Takılmış iş yeniden tetikleniyor:", jobId);
+      await fetch("/api/background-jobs/worker", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jobId, batchSize: 15, parallelCount: 8 }),
+      });
+    } catch (error) {
+      console.error("Retrigger error:", error);
+    }
+  }, []);
+
+  // Polling interval - durumu kontrol et ve takılmış işleri yeniden tetikle
   useEffect(() => {
     // Aktif iş varsa daha sık polling yap (1.5 saniye)
     const interval = activeJob?.status === "running" ? 1500 : 5000;
+    let lastSeenProcessedItems = activeJob?.processedItems || 0;
+    let stuckCheckCount = 0;
 
-    pollingIntervalRef.current = setInterval(() => {
+    pollingIntervalRef.current = setInterval(async () => {
       fetchStatus();
-      fetchActiveJob();
+      const prevJob = activeJob;
+      await fetchActiveJob();
 
       // Aktif iş varsa ve yeni işlem yapıldıysa logları güncelle
       if (activeJob?.status === "running" && activeJob.processedItems > lastProcessedCount) {
         setLastProcessedCount(activeJob.processedItems);
         fetchRecentLogs();
+        stuckCheckCount = 0; // İlerleme var, sayacı sıfırla
+        lastSeenProcessedItems = activeJob.processedItems;
+      }
+
+      // TAKILI İŞ TESPİTİ: Eğer iş running ama 5 polling döngüsü boyunca ilerleme yoksa
+      // (yaklaşık 7.5 saniye), worker'ı yeniden tetikle
+      if (activeJob?.status === "running" &&
+          activeJob.processedItems === lastSeenProcessedItems &&
+          activeJob.processedItems < activeJob.totalItems) {
+        stuckCheckCount++;
+        if (stuckCheckCount >= 5) {
+          console.log("[NameProcessingPanel] Takılmış iş tespit edildi, yeniden tetikleniyor...");
+          retriggerStuckJob(activeJob.id);
+          stuckCheckCount = 0;
+        }
+      } else if (activeJob?.status === "running") {
+        lastSeenProcessedItems = activeJob.processedItems;
+        stuckCheckCount = 0;
       }
     }, interval);
 
@@ -167,7 +202,7 @@ export function NameProcessingPanel() {
         clearInterval(pollingIntervalRef.current);
       }
     };
-  }, [fetchStatus, fetchActiveJob, fetchRecentLogs, activeJob?.status, activeJob?.processedItems, lastProcessedCount]);
+  }, [fetchStatus, fetchActiveJob, fetchRecentLogs, activeJob?.status, activeJob?.processedItems, activeJob?.totalItems, activeJob?.id, lastProcessedCount, retriggerStuckJob]);
 
   // İş tamamlandığında logları güncelle
   useEffect(() => {
