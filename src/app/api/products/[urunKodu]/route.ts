@@ -14,14 +14,7 @@ export async function GET(
       include: {
         prices: true,
         categories: true,
-        images: {
-          orderBy: { sira: "asc" },
-        },
         seo: true,
-        logs: {
-          orderBy: { createdAt: "desc" },
-          take: 10,
-        },
       },
     });
 
@@ -104,7 +97,6 @@ export async function PUT(
       include: {
         prices: true,
         categories: true,
-        images: true,
         seo: true,
       },
     });
@@ -136,16 +128,8 @@ export async function PUT(
       });
     }
 
-    // Log the action
-    await prisma.processingLog.create({
-      data: {
-        urunId: existingProduct.urunId,
-        urunKodu,
-        islemTipi: "update",
-        durum: "success",
-        mesaj: `Ürün güncellendi: ${urunKodu}`,
-      },
-    });
+    // Log to console only (momentary)
+    console.log(`[Product Update] Ürün güncellendi: ${urunKodu}`);
 
     // Fetch updated product
     const updatedProduct = await prisma.product.findFirst({
@@ -153,7 +137,6 @@ export async function PUT(
       include: {
         prices: true,
         categories: true,
-        images: true,
         seo: true,
       },
     });
@@ -193,15 +176,8 @@ export async function DELETE(
       where: { urunId: existingProduct.urunId },
     });
 
-    // Log the action
-    await prisma.processingLog.create({
-      data: {
-        urunKodu,
-        islemTipi: "delete",
-        durum: "success",
-        mesaj: `Ürün silindi: ${urunKodu}`,
-      },
-    });
+    // Log to console only (momentary)
+    console.log(`[Product Delete] Ürün silindi: ${urunKodu}`);
 
     return NextResponse.json({
       success: true,
