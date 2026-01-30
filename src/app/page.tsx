@@ -8,7 +8,6 @@ import { ExcelUploader } from "@/components/ExcelUploader";
 import { ProductDataGrid } from "@/components/ProductDataGrid";
 import { SettingsPanel } from "@/components/SettingsPanel";
 import { NameProcessingPanel } from "@/components/NameProcessingPanel";
-import { ImageProcessingPanel } from "@/components/ImageProcessingPanel";
 import { CategoryProcessingPanel } from "@/components/CategoryProcessingPanel";
 import { ExportPanel } from "@/components/ExportPanel";
 import {
@@ -18,7 +17,6 @@ import {
   Download,
   Settings,
   Sparkles,
-  Image as ImageIcon,
   FolderTree,
   Menu,
   ChevronRight,
@@ -27,7 +25,7 @@ import {
   Loader2,
 } from "lucide-react";
 
-type ActivePage = "dashboard" | "name-process" | "image-process" | "category-process" | "upload" | "products" | "export" | "settings";
+type ActivePage = "dashboard" | "name-process" | "category-process" | "upload" | "products" | "export" | "settings";
 
 interface NavItem {
   id: ActivePage;
@@ -40,7 +38,6 @@ interface NavItem {
 const navItems: NavItem[] = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, description: "Genel bakış ve istatistikler" },
   { id: "name-process", label: "İsim Yapma", icon: Sparkles, description: "AI ile isim değiştirme", category: "İşlemler" },
-  { id: "image-process", label: "Resim Yapma", icon: ImageIcon, description: "Cloudinary'ye yükleme", category: "İşlemler" },
   { id: "category-process", label: "Kategori Yapma", icon: FolderTree, description: "AI ile kategori belirleme", category: "İşlemler" },
   { id: "upload", label: "Yükle", icon: Upload, description: "Excel dosyası yükleme", category: "Veri" },
   { id: "products", label: "Ürünler", icon: Package, description: "Ürün listesi ve detayları", category: "Veri" },
@@ -79,8 +76,6 @@ export default function Home() {
         return <Dashboard />;
       case "name-process":
         return <NameProcessingPanel />;
-      case "image-process":
-        return <ImageProcessingPanel />;
       case "category-process":
         return <CategoryProcessingPanel />;
       case "upload":
@@ -170,7 +165,7 @@ export default function Home() {
             {sidebarOpen && (
               <div>
                 <h1 className="text-lg font-bold">Ürün Yönetim</h1>
-                <p className="text-xs text-zinc-500">AI SEO + Resim</p>
+                <p className="text-xs text-zinc-500">AI SEO Sistemi</p>
               </div>
             )}
           </div>
@@ -193,7 +188,6 @@ export default function Home() {
                   // Color mapping for process pages
                   const colorMap: Record<string, { bg: string; text: string; border: string }> = {
                     "name-process": { bg: "bg-purple-500/10", text: "text-purple-400", border: "border-purple-500/20" },
-                    "image-process": { bg: "bg-blue-500/10", text: "text-blue-400", border: "border-blue-500/20" },
                     "category-process": { bg: "bg-orange-500/10", text: "text-orange-400", border: "border-orange-500/20" },
                   };
                   const colors = colorMap[item.id];
@@ -295,13 +289,11 @@ export default function Home() {
                 <>
                   <div className={`p-2 rounded-lg ${
                     activePage === "name-process" ? "bg-purple-500/10" :
-                    activePage === "image-process" ? "bg-blue-500/10" :
                     activePage === "category-process" ? "bg-orange-500/10" :
                     "bg-emerald-500/10"
                   }`}>
                     <activeNavItem.icon className={`w-5 h-5 ${
                       activePage === "name-process" ? "text-purple-400" :
-                      activePage === "image-process" ? "text-blue-400" :
                       activePage === "category-process" ? "text-orange-400" :
                       "text-emerald-400"
                     }`} />
@@ -336,7 +328,7 @@ export default function Home() {
         <footer className="border-t border-zinc-800 bg-zinc-900/30">
           <div className="px-6 py-3">
             <p className="text-center text-xs text-zinc-600">
-              Ürün Yönetim Sistemi v2.0 - AI-Powered SEO & Image Enhancement
+              Ürün Yönetim Sistemi v2.0 - AI-Powered SEO
             </p>
           </div>
         </footer>
