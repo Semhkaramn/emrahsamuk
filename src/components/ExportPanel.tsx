@@ -61,8 +61,8 @@ export function ExportPanel() {
       try {
         const response = await fetch("/api/stats");
         const data = await response.json();
-        if (data.success) {
-          setTotalProducts(data.data.total);
+        if (data.success && data.data?.products?.total !== undefined) {
+          setTotalProducts(data.data.products.total);
         }
       } catch (error) {
         console.error("Stats fetch error:", error);
@@ -388,7 +388,7 @@ export function ExportPanel() {
             <div className="flex items-center gap-2 p-3 bg-zinc-800/50 rounded-lg col-span-2">
               <Package className="w-4 h-4 text-zinc-500" />
               <span className="text-sm text-zinc-400">
-                Toplam <span className="text-emerald-400 font-semibold">{totalProducts.toLocaleString()}</span> ürün
+                Toplam <span className="text-emerald-400 font-semibold">{(totalProducts ?? 0).toLocaleString()}</span> ürün
               </span>
               <span className="text-zinc-600">•</span>
               <Split className="w-4 h-4 text-zinc-500" />
