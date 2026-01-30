@@ -4,31 +4,15 @@ import prisma from "@/lib/db";
 export interface AppSettings {
   openaiApiKey: string;
   enableSeoOptimization: boolean;
-  enableImageEnhancement: boolean;
-  imageStyle: string;
 }
 
 // Default settings
 const DEFAULT_SETTINGS: Record<string, string | null> = {
   openai_api_key: "",
   enable_seo_optimization: "true",
-  enable_image_enhancement: "true",
-  image_style: "professional",
-  cloudinary_cloud_name: "",
-  cloudinary_api_key: "",
-  cloudinary_api_secret: "",
-  cloudinary_folder: "urunler",
   use_image_for_naming: "true",
   use_image_for_category: "true",
 };
-
-// Cloudinary settings interface
-export interface CloudinarySettings {
-  cloudName: string;
-  apiKey: string;
-  apiSecret: string;
-  folder: string;
-}
 
 // Global cache - persists in memory until invalidated
 let settingsCache: Record<string, string | null> | null = null;
@@ -93,12 +77,6 @@ export function updateSettingsCache(newSettings: Record<string, string | null>):
 export interface FullAppSettings {
   openaiApiKey: string;
   enableSeoOptimization: boolean;
-  enableImageEnhancement: boolean;
-  imageStyle: string;
-  cloudinaryCloudName: string;
-  cloudinaryApiKey: string;
-  cloudinaryApiSecret: string;
-  cloudinaryFolder: string;
   useImageForNaming: boolean;
   useImageForCategory: boolean;
 }
@@ -112,13 +90,11 @@ export async function getAppSettings(): Promise<AppSettings> {
   return {
     openaiApiKey: settings.openai_api_key || "",
     enableSeoOptimization: settings.enable_seo_optimization === "true",
-    enableImageEnhancement: settings.enable_image_enhancement === "true",
-    imageStyle: settings.image_style || "professional",
   };
 }
 
 /**
- * Get full settings including Cloudinary - uses cache
+ * Get full settings - uses cache
  */
 export async function getFullAppSettings(): Promise<FullAppSettings> {
   const settings = await getCachedSettings();
@@ -126,12 +102,6 @@ export async function getFullAppSettings(): Promise<FullAppSettings> {
   return {
     openaiApiKey: settings.openai_api_key || "",
     enableSeoOptimization: settings.enable_seo_optimization === "true",
-    enableImageEnhancement: settings.enable_image_enhancement === "true",
-    imageStyle: settings.image_style || "professional",
-    cloudinaryCloudName: settings.cloudinary_cloud_name || "",
-    cloudinaryApiKey: settings.cloudinary_api_key || "",
-    cloudinaryApiSecret: settings.cloudinary_api_secret || "",
-    cloudinaryFolder: settings.cloudinary_folder || "urunler",
     useImageForNaming: settings.use_image_for_naming !== "false",
     useImageForCategory: settings.use_image_for_category !== "false",
   };
@@ -178,22 +148,6 @@ export async function isSeoOptimizationEnabled(): Promise<boolean> {
 }
 
 /**
- * Check if image enhancement is enabled - uses cache
- */
-export async function isImageEnhancementEnabled(): Promise<boolean> {
-  const setting = await getSetting("enable_image_enhancement");
-  return setting === "true";
-}
-
-/**
- * Get image style setting - uses cache
- */
-export async function getImageStyle(): Promise<string> {
-  const setting = await getSetting("image_style");
-  return setting || "professional";
-}
-
-/**
  * Check if cache is initialized
  */
 export function isCacheInitialized(): boolean {
@@ -206,30 +160,6 @@ export function isCacheInitialized(): boolean {
 export async function refreshSettingsCache(): Promise<Record<string, string | null>> {
   invalidateSettingsCache();
   return getCachedSettings();
-}
-
-/**
- * Get Cloudinary settings - uses cache
- */
-export async function getCloudinarySettings(): Promise<CloudinarySettings | null> {
-  const settings = await getCachedSettings();
-
-  const cloudName = settings.cloudinary_cloud_name;
-  const apiKey = settings.cloudinary_api_key;
-  const apiSecret = settings.cloudinary_api_secret;
-  const folder = settings.cloudinary_folder || "urunler";
-
-  // Return null if required settings are missing
-  if (!cloudName || !apiKey || !apiSecret) {
-    return null;
-  }
-
-  return {
-    cloudName,
-    apiKey,
-    apiSecret,
-    folder,
-  };
 }
 
 /**
