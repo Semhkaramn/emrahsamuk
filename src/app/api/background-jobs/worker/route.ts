@@ -28,7 +28,15 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    const config = JSON.parse(job.config || "{}");
+    // JSON.parse güvenliği - bozuk config durumunda hata vermemesi için
+    let config: Record<string, unknown> = {};
+    try {
+      config = JSON.parse(job.config || "{}");
+    } catch (parseError) {
+      console.error("Config parse error:", parseError);
+      config = {};
+    }
+
     let processedInBatch = 0;
     let successInBatch = 0;
     let errorInBatch = 0;
@@ -512,7 +520,13 @@ Yanıtını tam olarak bu JSON formatında ver:
     if (cleanContent.startsWith("```")) cleanContent = cleanContent.slice(3);
     if (cleanContent.endsWith("```")) cleanContent = cleanContent.slice(0, -3);
 
-    const seoData = JSON.parse(cleanContent.trim());
+    let seoData: any = {};
+    try {
+      seoData = JSON.parse(cleanContent.trim());
+    } catch (parseError) {
+      console.error("SEO JSON parse error:", parseError, cleanContent);
+      return null;
+    }
 
     return {
       seoTitle: seoData.seoTitle || productName,
