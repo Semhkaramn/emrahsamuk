@@ -38,7 +38,7 @@ interface NavItem {
 const navItems: NavItem[] = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, description: "Genel bakış ve istatistikler" },
   { id: "name-process", label: "İsim Yapma", icon: Sparkles, description: "AI ile isim değiştirme", category: "İşlemler" },
-  { id: "category-process", label: "Kategori Yapma", icon: FolderTree, description: "AI ile kategori belirleme", category: "İşlemler" },
+  { id: "category-process", label: "Kategori Yapma", icon: FolderTree, description: "Anahtar kelime eşleştirmesi", category: "İşlemler" },
   { id: "upload", label: "Yükle", icon: Upload, description: "Excel dosyası yükleme", category: "Veri" },
   { id: "products", label: "Ürünler", icon: Package, description: "Ürün listesi ve detayları", category: "Veri" },
   { id: "export", label: "Export", icon: Download, description: "Veri dışa aktarma", category: "Veri" },
