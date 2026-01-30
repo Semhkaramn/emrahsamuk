@@ -5,7 +5,7 @@ import { getOpenAIApiKey } from "@/lib/settings-cache";
 // GPT ayarları
 const CONFIG = {
   GPT_MODEL: "gpt-4o-mini",
-  GPT_TEMPERATURE: 0.5,
+  GPT_TEMPERATURE: 0.8,
   GPT_MAX_TOKENS: 50,
   PARALLEL_COUNT: 15,    // Aynı anda 15 paralel API çağrısı
   MAX_RETRIES: 2,
@@ -30,7 +30,7 @@ async function optimizeSEO(
   retryCount: number = 0
 ): Promise<SEOResponse> {
   const systemPrompt = `Ürün başlığından marka adını ve ürün kodunu çıkar.
-Sadece ürünün adını yaz. Kısa ve sade ol. Maksimum 6-7 kelime.
+Sadece ürünün adını seo uyumlu yap ve yaz. isimdeki rengi koru Maksimum 8 - 9 kelime.
 
 JSON formatında yanıt ver:
 {
