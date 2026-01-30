@@ -59,7 +59,6 @@ export function NameProcessingPanel() {
   const [actionLoading, setActionLoading] = useState(false);
   const [logs, setLogs] = useState<NameLog[]>([]);
 
-  const workerIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   // Fetch SEO status
@@ -98,93 +97,28 @@ export function NameProcessingPanel() {
     }
   }, []);
 
-  // Run worker (if active job is running)
-  const runWorker = useCallback(async () => {
-    if (!activeJob || activeJob.status !== "running") return;
-
-    try {
-      const response = await fetch("/api/background-jobs/worker", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          jobId: activeJob.id,
-          batchSize: 5,
-          parallelCount: 3,
-        }),
-      });
-
-      const data = await response.json();
-
-      if (data.success) {
-        setActiveJob(data.data.job);
-
-        // Add logs from results
-        if (data.data.results && data.data.results.length > 0) {
-          const newLogs = data.data.results.map((item: {
-            urunKodu: string;
-            urunId: number;
-            barkodNo: string | null;
-            eskiAdi: string;
-            yeniAdi: string;
-            success: boolean;
-          }) => ({
-            id: `${Date.now()}-${item.urunKodu}-${Math.random()}`,
-            urunKodu: item.urunKodu,
-            urunId: item.urunId,
-            barkodNo: item.barkodNo || null,
-            eskiAdi: item.eskiAdi || "-",
-            yeniAdi: item.yeniAdi || "-",
-            success: item.success,
-            timestamp: new Date(),
-          }));
-          setLogs((prev) => [...newLogs, ...prev].slice(0, 100));
-        }
-
-        // Refresh status
-        await fetchStatus();
-
-        // If completed, refresh job list
-        if (data.data.isCompleted) {
-          fetchActiveJob();
-        }
-      }
-    } catch (error) {
-      console.error("Worker error:", error);
-    }
-  }, [activeJob, fetchStatus, fetchActiveJob]);
-
   // Initial load
   useEffect(() => {
     fetchStatus();
     fetchActiveJob();
   }, [fetchStatus, fetchActiveJob]);
 
-  // Worker interval - run if active job is running
+  // Polling interval - durumu kontrol et (artık sadece polling yapıyoruz, worker server-side çalışıyor)
   useEffect(() => {
-    if (activeJob?.status === "running") {
-      workerIntervalRef.current = setInterval(runWorker, 2000);
+    // Aktif iş varsa daha sık polling yap
+    const interval = activeJob?.status === "running" ? 2000 : 5000;
 
-      return () => {
-        if (workerIntervalRef.current) {
-          clearInterval(workerIntervalRef.current);
-        }
-      };
-    }
-  }, [activeJob?.status, runWorker]);
-
-  // Polling interval - check status
-  useEffect(() => {
     pollingIntervalRef.current = setInterval(() => {
       fetchStatus();
       fetchActiveJob();
-    }, 5000);
+    }, interval);
 
     return () => {
       if (pollingIntervalRef.current) {
         clearInterval(pollingIntervalRef.current);
       }
     };
-  }, [fetchStatus, fetchActiveJob]);
+  }, [fetchStatus, fetchActiveJob, activeJob?.status]);
 
   // Start new background job
   const startBackgroundJob = async () => {
