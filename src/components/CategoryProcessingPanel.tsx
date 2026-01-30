@@ -10,6 +10,7 @@ import {
   FolderTree,
   Play,
   Pause,
+  Square,
   RefreshCw,
   CheckCircle2,
   AlertCircle,
@@ -18,6 +19,7 @@ import {
   Package,
   Hash,
   Tag,
+  Activity,
 } from "lucide-react";
 
 interface CategoryLog {
@@ -40,16 +42,30 @@ interface ProcessingStatus {
   percentComplete: number;
 }
 
+interface BackgroundJob {
+  id: number;
+  jobType: string;
+  status: string;
+  totalItems: number;
+  processedItems: number;
+  successCount: number;
+  errorCount: number;
+  lastError: string | null;
+  startedAt: string | null;
+  completedAt: string | null;
+}
+
 export function CategoryProcessingPanel() {
   const [status, setStatus] = useState<ProcessingStatus | null>(null);
-  const [isProcessing, setIsProcessing] = useState(false);
+  const [activeJob, setActiveJob] = useState<BackgroundJob | null>(null);
   const [loading, setLoading] = useState(true);
+  const [actionLoading, setActionLoading] = useState(false);
   const [logs, setLogs] = useState<CategoryLog[]>([]);
 
-  const processingRef = useRef<boolean>(false);
-  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const workerIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Fetch status
+  // Fetch category status
   const fetchStatus = useCallback(async () => {
     try {
       const response = await fetch("/api/process/category");
@@ -69,89 +85,198 @@ export function CategoryProcessingPanel() {
     }
   }, []);
 
-  useEffect(() => {
-    fetchStatus();
-  }, [fetchStatus]);
+  // Fetch active job
+  const fetchActiveJob = useCallback(async () => {
+    try {
+      const response = await fetch("/api/background-jobs?jobType=category_processing");
+      const data = await response.json();
+      if (data.success && data.data) {
+        const catJob = data.data.activeJob?.jobType === "category_processing"
+          ? data.data.activeJob
+          : null;
+        setActiveJob(catJob);
+      }
+    } catch (error) {
+      console.error("Fetch active job error:", error);
+    }
+  }, []);
 
-  // Process single batch
-  const processNext = useCallback(async () => {
-    if (!processingRef.current) return false;
+  // Run worker (if active job is running)
+  const runWorker = useCallback(async () => {
+    if (!activeJob || activeJob.status !== "running") return;
 
     try {
-      const response = await fetch("/api/process/category", {
+      const response = await fetch("/api/background-jobs/worker", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ batchSize: 1 }),
+        body: JSON.stringify({
+          jobId: activeJob.id,
+          batchSize: 5,
+          parallelCount: 3,
+        }),
       });
 
-      const result = await response.json();
+      const data = await response.json();
 
-      if (!result.success) {
-        console.error("Processing error:", result.error);
-        return false;
+      if (data.success) {
+        setActiveJob(data.data.job);
+
+        // Add logs from results
+        if (data.data.results && data.data.results.length > 0) {
+          const newLogs = data.data.results.map((item: {
+            urunKodu: string;
+            urunId: number;
+            barkodNo: string | null;
+            eskiAdi: string | null;
+            yeniAdi: string | null;
+            eskiKategori: string;
+            yeniKategori: string;
+            success: boolean;
+          }) => ({
+            id: `${Date.now()}-${item.urunKodu}-${Math.random()}`,
+            urunKodu: item.urunKodu,
+            urunId: item.urunId,
+            barkodNo: item.barkodNo || null,
+            eskiAdi: item.eskiAdi || null,
+            yeniAdi: item.yeniAdi || null,
+            eskiKategori: item.eskiKategori || "-",
+            yeniKategori: item.yeniKategori || "-",
+            success: item.success,
+            timestamp: new Date(),
+          }));
+          setLogs((prev) => [...newLogs, ...prev].slice(0, 100));
+        }
+
+        // Refresh status
+        await fetchStatus();
+
+        // If completed, refresh job list
+        if (data.data.isCompleted) {
+          fetchActiveJob();
+        }
       }
-
-      if (result.processed === 0) {
-        return false;
-      }
-
-      // Add log
-      if (result.results && result.results.length > 0) {
-        const item = result.results[0];
-        const newLog: CategoryLog = {
-          id: `${Date.now()}-${item.urunKodu}`,
-          urunKodu: item.urunKodu,
-          urunId: item.urunId,
-          barkodNo: item.barkodNo || null,
-          eskiAdi: item.eskiAdi || null,
-          yeniAdi: item.yeniAdi || null,
-          eskiKategori: item.eskiKategori || "-",
-          yeniKategori: item.yeniKategori || "-",
-          success: item.success,
-          timestamp: new Date(),
-        };
-        setLogs((prev) => [newLog, ...prev].slice(0, 50));
-      }
-
-      await fetchStatus();
-      return result.remaining > 0;
     } catch (error) {
-      console.error("Processing error:", error);
-      return false;
+      console.error("Worker error:", error);
     }
-  }, [fetchStatus]);
+  }, [activeJob, fetchStatus, fetchActiveJob]);
 
-  const startProcessing = useCallback(async () => {
-    setIsProcessing(true);
-    processingRef.current = true;
+  // Initial load
+  useEffect(() => {
+    fetchStatus();
+    fetchActiveJob();
+  }, [fetchStatus, fetchActiveJob]);
 
-    const processLoop = async () => {
-      const hasMore = await processNext();
-      if (hasMore && processingRef.current) {
-        intervalRef.current = setTimeout(processLoop, 800);
-      } else {
-        setIsProcessing(false);
-        processingRef.current = false;
+  // Worker interval - run if active job is running
+  useEffect(() => {
+    if (activeJob?.status === "running") {
+      workerIntervalRef.current = setInterval(runWorker, 2000);
+
+      return () => {
+        if (workerIntervalRef.current) {
+          clearInterval(workerIntervalRef.current);
+        }
+      };
+    }
+  }, [activeJob?.status, runWorker]);
+
+  // Polling interval - check status
+  useEffect(() => {
+    pollingIntervalRef.current = setInterval(() => {
+      fetchStatus();
+      fetchActiveJob();
+    }, 5000);
+
+    return () => {
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
       }
     };
+  }, [fetchStatus, fetchActiveJob]);
 
-    processLoop();
-  }, [processNext]);
+  // Start new background job
+  const startBackgroundJob = async () => {
+    setActionLoading(true);
+    try {
+      // Get pending product IDs (those without category processing)
+      const response = await fetch("/api/products?limit=10000");
+      const productsData = await response.json();
 
-  const stopProcessing = useCallback(() => {
-    setIsProcessing(false);
-    processingRef.current = false;
-    if (intervalRef.current) {
-      clearTimeout(intervalRef.current);
+      if (!productsData.success || !productsData.data) {
+        console.error("Failed to get products");
+        return;
+      }
+
+      const urunIds = productsData.data.map((p: { urunId: number }) => p.urunId);
+
+      if (urunIds.length === 0) {
+        alert("İşlenecek ürün bulunamadı!");
+        return;
+      }
+
+      // Create background job
+      const jobResponse = await fetch("/api/background-jobs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          jobType: "category_processing",
+          totalItems: urunIds.length,
+          config: { urunIds },
+        }),
+      });
+
+      const jobData = await jobResponse.json();
+
+      if (jobData.success) {
+        // Start the job
+        await fetch("/api/background-jobs", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: jobData.data.id, action: "start" }),
+        });
+
+        fetchActiveJob();
+      } else {
+        alert(jobData.error || "İş oluşturulamadı");
+      }
+    } catch (error) {
+      console.error("Start job error:", error);
+    } finally {
+      setActionLoading(false);
     }
-  }, []);
+  };
 
-  useEffect(() => {
-    return () => {
-      processingRef.current = false;
-      if (intervalRef.current) clearTimeout(intervalRef.current);
-    };
-  }, []);
+  // Job actions
+  const handleJobAction = async (action: string) => {
+    if (!activeJob) return;
+
+    setActionLoading(true);
+    try {
+      const response = await fetch("/api/background-jobs", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: activeJob.id, action }),
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        setActiveJob(data.data);
+        fetchActiveJob();
+      }
+    } catch (error) {
+      console.error("Action error:", error);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const getProgressPercent = () => {
+    if (activeJob) {
+      if (activeJob.totalItems === 0) return 0;
+      return Math.round((activeJob.processedItems / activeJob.totalItems) * 100);
+    }
+    return status?.percentComplete || 0;
+  };
 
   if (loading) {
     return (
@@ -171,76 +296,161 @@ export function CategoryProcessingPanel() {
           </div>
           <div>
             <h2 className="text-xl font-bold">Kategori Yapma</h2>
-            <p className="text-xs text-zinc-500">AI ile ürün kategorilerini optimize et</p>
+            <p className="text-xs text-zinc-500">
+              AI ile ürün kategorilerini optimize et
+              {activeJob?.status === "running" && (
+                <span className="text-emerald-400 ml-2">• Arka planda çalışıyor (sayfa kapatılsa bile devam eder)</span>
+              )}
+            </p>
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {isProcessing && (
+          {activeJob?.status === "running" && (
             <Badge variant="outline" className="bg-orange-500/10 text-orange-400 border-orange-500/30 animate-pulse">
-              <Loader2 className="w-3 h-3 mr-1 animate-spin" />
-              İşleniyor
+              <Activity className="w-3 h-3 mr-1 animate-pulse" />
+              Paralel İşleniyor
             </Badge>
           )}
-          <Button variant="ghost" size="sm" onClick={fetchStatus} disabled={isProcessing}>
-            <RefreshCw className={`h-4 w-4 ${isProcessing ? "animate-spin" : ""}`} />
+          <Button variant="ghost" size="sm" onClick={() => { fetchStatus(); fetchActiveJob(); }} disabled={actionLoading}>
+            <RefreshCw className={`h-4 w-4 ${actionLoading ? "animate-spin" : ""}`} />
           </Button>
         </div>
       </div>
 
       {/* Status Card */}
-      <Card className="border-zinc-800 bg-zinc-900/50">
+      <Card className={`border-2 ${
+        activeJob?.status === "running"
+          ? "border-orange-500/50 bg-orange-500/5"
+          : activeJob?.status === "paused"
+            ? "border-yellow-500/50 bg-yellow-500/5"
+            : "border-zinc-800 bg-zinc-900/50"
+      }`}>
         <CardContent className="pt-6">
-          {status && (
-            <div className="space-y-4">
-              {/* Progress */}
-              <div className="space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span className="text-zinc-400">İlerleme</span>
-                  <span className="text-zinc-200">{status.percentComplete}%</span>
-                </div>
-                <Progress value={status.percentComplete} className="h-2" />
+          <div className="space-y-4">
+            {/* Progress */}
+            <div className="space-y-2">
+              <div className="flex justify-between text-sm">
+                <span className="text-zinc-400">İlerleme</span>
+                <span className="text-zinc-200">
+                  {activeJob
+                    ? `${activeJob.processedItems.toLocaleString()} / ${activeJob.totalItems.toLocaleString()} (${getProgressPercent()}%)`
+                    : `${status?.percentComplete || 0}%`
+                  }
+                </span>
               </div>
+              <Progress value={getProgressPercent()} className="h-2" />
+            </div>
 
-              {/* Stats */}
-              <div className="grid grid-cols-3 gap-4">
-                <div className="p-4 bg-zinc-800/50 rounded-xl text-center">
-                  <p className="text-2xl font-bold text-zinc-100">{status.total}</p>
-                  <p className="text-xs text-zinc-500">Toplam</p>
-                </div>
-                <div className="p-4 bg-emerald-500/10 rounded-xl text-center">
-                  <p className="text-2xl font-bold text-emerald-400">{status.processed}</p>
-                  <p className="text-xs text-zinc-500">Tamamlandı</p>
-                </div>
-                <div className="p-4 bg-amber-500/10 rounded-xl text-center">
-                  <p className="text-2xl font-bold text-amber-400">{status.remaining}</p>
-                  <p className="text-xs text-zinc-500">Bekliyor</p>
-                </div>
+            {/* Stats */}
+            <div className="grid grid-cols-4 gap-4">
+              <div className="p-4 bg-zinc-800/50 rounded-xl text-center">
+                <p className="text-2xl font-bold text-zinc-100">
+                  {activeJob?.totalItems || status?.total || 0}
+                </p>
+                <p className="text-xs text-zinc-500">Toplam</p>
               </div>
-
-              {/* Action Button */}
-              <div className="flex gap-3">
-                {isProcessing ? (
-                  <Button
-                    onClick={stopProcessing}
-                    variant="outline"
-                    className="flex-1 border-red-500/50 text-red-400 hover:bg-red-500/10"
-                  >
-                    <Pause className="w-4 h-4 mr-2" />
-                    Durdur
-                  </Button>
-                ) : (
-                  <Button
-                    onClick={startProcessing}
-                    className="flex-1 bg-orange-600 hover:bg-orange-700"
-                    disabled={status.remaining === 0}
-                  >
-                    <Play className="w-4 h-4 mr-2" />
-                    {status.remaining === 0 ? "Tamamlandı" : "İşlemi Başlat"}
-                  </Button>
-                )}
+              <div className="p-4 bg-emerald-500/10 rounded-xl text-center">
+                <p className="text-2xl font-bold text-emerald-400">
+                  {activeJob?.successCount || status?.processed || 0}
+                </p>
+                <p className="text-xs text-zinc-500">Başarılı</p>
+              </div>
+              <div className="p-4 bg-red-500/10 rounded-xl text-center">
+                <p className="text-2xl font-bold text-red-400">
+                  {activeJob?.errorCount || 0}
+                </p>
+                <p className="text-xs text-zinc-500">Hata</p>
+              </div>
+              <div className="p-4 bg-amber-500/10 rounded-xl text-center">
+                <p className="text-2xl font-bold text-amber-400">
+                  {activeJob
+                    ? activeJob.totalItems - activeJob.processedItems
+                    : status?.remaining || 0
+                  }
+                </p>
+                <p className="text-xs text-zinc-500">Bekliyor</p>
               </div>
             </div>
-          )}
+
+            {/* Last Error */}
+            {activeJob?.lastError && (
+              <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-lg">
+                <p className="text-xs text-red-400 flex items-center gap-1">
+                  <AlertCircle className="w-3 h-3" />
+                  Son Hata:
+                </p>
+                <p className="text-sm text-red-300 mt-1">{activeJob.lastError}</p>
+              </div>
+            )}
+
+            {/* Action Buttons */}
+            <div className="flex gap-3">
+              {!activeJob || activeJob.status === "completed" || activeJob.status === "cancelled" ? (
+                <Button
+                  onClick={startBackgroundJob}
+                  className="flex-1 bg-orange-600 hover:bg-orange-700"
+                  disabled={actionLoading || (status?.remaining === 0)}
+                >
+                  {actionLoading ? (
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  ) : (
+                    <Play className="w-4 h-4 mr-2" />
+                  )}
+                  {status?.remaining === 0 ? "Tamamlandı" : "Arka Planda Başlat"}
+                </Button>
+              ) : activeJob.status === "pending" ? (
+                <Button
+                  onClick={() => handleJobAction("start")}
+                  className="flex-1 bg-emerald-600 hover:bg-emerald-700"
+                  disabled={actionLoading}
+                >
+                  {actionLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Play className="w-4 h-4 mr-2" />}
+                  Başlat
+                </Button>
+              ) : activeJob.status === "running" ? (
+                <>
+                  <Button
+                    onClick={() => handleJobAction("pause")}
+                    variant="outline"
+                    className="flex-1 border-yellow-500/50 text-yellow-400 hover:bg-yellow-500/10"
+                    disabled={actionLoading}
+                  >
+                    {actionLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Pause className="w-4 h-4 mr-2" />}
+                    Duraklat
+                  </Button>
+                  <Button
+                    onClick={() => handleJobAction("cancel")}
+                    variant="outline"
+                    className="border-red-500/50 text-red-400 hover:bg-red-500/10"
+                    disabled={actionLoading}
+                  >
+                    {actionLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Square className="w-4 h-4 mr-2" />}
+                    İptal
+                  </Button>
+                </>
+              ) : activeJob.status === "paused" ? (
+                <>
+                  <Button
+                    onClick={() => handleJobAction("resume")}
+                    className="flex-1 bg-blue-600 hover:bg-blue-700"
+                    disabled={actionLoading}
+                  >
+                    {actionLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Play className="w-4 h-4 mr-2" />}
+                    Devam Et
+                  </Button>
+                  <Button
+                    onClick={() => handleJobAction("cancel")}
+                    variant="outline"
+                    className="border-red-500/50 text-red-400 hover:bg-red-500/10"
+                    disabled={actionLoading}
+                  >
+                    <Square className="w-4 h-4 mr-2" />
+                    İptal
+                  </Button>
+                </>
+              ) : null}
+            </div>
+          </div>
         </CardContent>
       </Card>
 
@@ -252,7 +462,7 @@ export function CategoryProcessingPanel() {
             Kategori Değişiklik Logları
           </CardTitle>
           <CardDescription className="text-xs">
-            Ürün ID, barkod, isimler ve kategori değişiklikleri
+            Ürün ID, barkod, isimler ve kategori değişiklikleri (paralel işleme)
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -262,25 +472,25 @@ export function CategoryProcessingPanel() {
                 Henüz işlem yapılmadı
               </div>
             ) : (
-              <div className="space-y-4">
+              <div className="space-y-3">
                 {logs.map((log) => (
                   <div
                     key={log.id}
-                    className={`p-4 rounded-lg border ${
+                    className={`p-3 rounded-lg border ${
                       log.success
                         ? "bg-emerald-500/5 border-emerald-500/20"
                         : "bg-red-500/5 border-red-500/20"
                     }`}
                   >
-                    {/* Başlık: Ürün Kodu, ID, Barkod, Durum */}
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="flex items-center gap-3 flex-wrap">
+                    {/* Header: Product Code, ID, Barcode, Status */}
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         {log.success ? (
                           <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
                         ) : (
                           <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
                         )}
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-1.5">
                           <Package className="w-3 h-3 text-zinc-500" />
                           <span className="font-mono text-sm font-semibold text-emerald-400">
                             {log.urunKodu}
@@ -301,44 +511,44 @@ export function CategoryProcessingPanel() {
                       </span>
                     </div>
 
-                    {/* Ürün İsimleri */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mb-3">
+                    {/* Product Names */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mb-2">
                       <div className="bg-zinc-800/50 p-2 rounded">
-                        <div className="flex items-center gap-1 mb-1">
+                        <div className="flex items-center gap-1 mb-0.5">
                           <Tag className="w-3 h-3 text-amber-400" />
                           <span className="text-[10px] text-zinc-500 uppercase">Eski Adı</span>
                         </div>
-                        <p className="text-xs text-zinc-300 break-words">
+                        <p className="text-xs text-zinc-300 break-words line-clamp-1">
                           {log.eskiAdi || <span className="text-zinc-600 italic">Belirtilmemiş</span>}
                         </p>
                       </div>
                       <div className="bg-zinc-800/50 p-2 rounded">
-                        <div className="flex items-center gap-1 mb-1">
+                        <div className="flex items-center gap-1 mb-0.5">
                           <Tag className="w-3 h-3 text-emerald-400" />
                           <span className="text-[10px] text-zinc-500 uppercase">Yeni Adı (SEO)</span>
                         </div>
-                        <p className="text-xs text-zinc-100 break-words">
+                        <p className="text-xs text-zinc-100 break-words line-clamp-1">
                           {log.yeniAdi || <span className="text-zinc-600 italic">Henüz işlenmedi</span>}
                         </p>
                       </div>
                     </div>
 
-                    {/* Kategori Değişikliği */}
-                    <div className="grid grid-cols-[1fr,auto,1fr] gap-3 items-center">
+                    {/* Category Change */}
+                    <div className="grid grid-cols-[1fr,auto,1fr] gap-2 items-center">
                       <div className="bg-zinc-800/50 p-2 rounded">
-                        <div className="flex items-center gap-1 mb-1">
+                        <div className="flex items-center gap-1 mb-0.5">
                           <FolderTree className="w-3 h-3 text-amber-400" />
                           <span className="text-[10px] text-zinc-500 uppercase">Eski Kategori</span>
                         </div>
-                        <p className="text-xs text-zinc-300">{log.eskiKategori}</p>
+                        <p className="text-xs text-zinc-300 line-clamp-1">{log.eskiKategori}</p>
                       </div>
-                      <ArrowRight className="w-4 h-4 text-zinc-600" />
+                      <ArrowRight className="w-4 h-4 text-zinc-600 shrink-0" />
                       <div className="bg-orange-500/10 p-2 rounded">
-                        <div className="flex items-center gap-1 mb-1">
+                        <div className="flex items-center gap-1 mb-0.5">
                           <FolderTree className="w-3 h-3 text-orange-400" />
                           <span className="text-[10px] text-orange-400 uppercase">Yeni Kategori</span>
                         </div>
-                        <p className="text-xs text-zinc-100">{log.yeniKategori}</p>
+                        <p className="text-xs text-zinc-100 line-clamp-1">{log.yeniKategori}</p>
                       </div>
                     </div>
                   </div>
