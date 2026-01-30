@@ -123,8 +123,6 @@ export async function POST(request: NextRequest) {
       yeniAdi: string | null;
       eskiKategori: string | null;
       yeniKategori: string | null;
-      eskiResimler: string[];
-      yeniResimler: string[];
       success: boolean;
       error?: string;
     }> = [];
@@ -194,8 +192,6 @@ export async function POST(request: NextRequest) {
             yeniAdi: product.yeniAdi,
             eskiKategori: currentCategory,
             yeniKategori: categoryResult,
-            eskiResimler: [],
-            yeniResimler: [],
             success: true,
           });
         } else {
@@ -218,8 +214,6 @@ export async function POST(request: NextRequest) {
             yeniAdi: product.yeniAdi,
             eskiKategori: currentCategory,
             yeniKategori: null,
-            eskiResimler: [],
-            yeniResimler: [],
             success: false,
             error: "Kategori belirlenemedi",
           });
@@ -233,8 +227,6 @@ export async function POST(request: NextRequest) {
           yeniAdi: product.yeniAdi,
           eskiKategori: product.categories?.anaKategori || null,
           yeniKategori: null,
-          eskiResimler: [],
-          yeniResimler: [],
           success: false,
           error: err instanceof Error ? err.message : "Bilinmeyen hata",
         });
