@@ -1,7 +1,7 @@
 "use client";
 
 import { AISettings } from "@/lib/types";
-import { Key, Sparkles, Image, Settings, Eye, EyeOff, Save, Loader2, CheckCircle2, Cloud, FolderTree, Type } from "lucide-react";
+import { Key, Sparkles, Settings, Eye, EyeOff, Save, Loader2, CheckCircle2, FolderTree, Type, Image } from "lucide-react";
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Button } from "@/components/ui/button";
 
@@ -13,29 +13,15 @@ export function SettingsPanel({ disabled }: SettingsPanelProps) {
   const [settings, setSettings] = useState<AISettings>({
     openaiApiKey: "",
     enableSeoOptimization: true,
-    enableImageEnhancement: true,
-    imageStyle: "professional",
-    cloudinaryCloudName: "",
-    cloudinaryApiKey: "",
-    cloudinaryApiSecret: "",
-    cloudinaryFolder: "urunler",
     useImageForNaming: true,
     useImageForCategory: true,
   });
   const [showOpenAIKey, setShowOpenAIKey] = useState(false);
-  const [showCloudinarySecret, setShowCloudinarySecret] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
   const originalSettings = useRef<AISettings | null>(null);
-
-  const imageStyles = [
-    { value: 'professional', label: 'Profesyonel', desc: 'Beyaz arka plan, stüdyo ışığı' },
-    { value: 'lifestyle', label: 'Yaşam Tarzı', desc: 'Doğal ortam, sıcak ışık' },
-    { value: 'minimal', label: 'Minimal', desc: 'Temiz, modern estetik' },
-    { value: 'luxury', label: 'Lüks', desc: 'Premium, dramatik ışık' },
-  ];
 
   // Load settings from API
   useEffect(() => {
@@ -173,16 +159,6 @@ export function SettingsPanel({ disabled }: SettingsPanelProps) {
           onChange={(checked) => handleSettingsChange({ ...settings, enableSeoOptimization: checked })}
           disabled={disabled}
         />
-
-        <ToggleOption
-          icon={Image}
-          iconColor="text-blue-400"
-          label="Resim İyileştirme"
-          description="Ürün resimlerini AI ile daha çekici hale getir"
-          checked={settings.enableImageEnhancement}
-          onChange={(checked) => handleSettingsChange({ ...settings, enableImageEnhancement: checked })}
-          disabled={disabled}
-        />
       </div>
 
       {/* AI Processing Image Usage */}
@@ -218,113 +194,12 @@ export function SettingsPanel({ disabled }: SettingsPanelProps) {
         </div>
       </div>
 
-      {/* Image Style Selection */}
-      {settings.enableImageEnhancement && (
-        <div>
-          <label className="text-sm font-medium text-zinc-300 mb-3 block">
-            Resim Stili
-          </label>
-          <div className="grid grid-cols-2 gap-2">
-            {imageStyles.map((style) => (
-              <button
-                key={style.value}
-                type="button"
-                onClick={() => handleSettingsChange({ ...settings, imageStyle: style.value as AISettings['imageStyle'] })}
-                disabled={disabled}
-                className={`p-3 rounded-xl border text-left transition-all ${
-                  settings.imageStyle === style.value
-                    ? 'bg-emerald-500/10 border-emerald-500/50 text-emerald-400'
-                    : 'bg-zinc-800/50 border-zinc-700 text-zinc-300 hover:border-zinc-600'
-                } disabled:opacity-50`}
-              >
-                <div className="font-medium text-sm">{style.label}</div>
-                <div className="text-xs text-zinc-500 mt-0.5">{style.desc}</div>
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Cloudinary Settings */}
-      <div className="mt-6 pt-6 border-t border-zinc-800">
-        <div className="flex items-center gap-2 mb-4">
-          <Cloud className="w-5 h-5 text-blue-400" />
-          <h3 className="text-sm font-semibold text-zinc-300">Cloudinary Ayarları</h3>
-        </div>
-        <p className="text-xs text-zinc-500 mb-4">
-          Resimler Cloudinary&apos;ye yüklenir ve URL&apos;ler veritabanında saklanır
-        </p>
-
-        <div className="space-y-4">
-          <div>
-            <label className="text-xs font-medium text-zinc-400 mb-1 block">Cloud Name</label>
-            <input
-              type="text"
-              value={settings.cloudinaryCloudName}
-              onChange={(e) => handleSettingsChange({ ...settings, cloudinaryCloudName: e.target.value })}
-              disabled={disabled}
-              placeholder="your-cloud-name"
-              className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 disabled:opacity-50"
-            />
-          </div>
-
-          <div>
-            <label className="text-xs font-medium text-zinc-400 mb-1 block">API Key</label>
-            <input
-              type="text"
-              value={settings.cloudinaryApiKey}
-              onChange={(e) => handleSettingsChange({ ...settings, cloudinaryApiKey: e.target.value })}
-              disabled={disabled}
-              placeholder="123456789012345"
-              className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 disabled:opacity-50"
-            />
-          </div>
-
-          <div>
-            <label className="text-xs font-medium text-zinc-400 mb-1 block">API Secret</label>
-            <div className="relative">
-              <input
-                type={showCloudinarySecret ? "text" : "password"}
-                value={settings.cloudinaryApiSecret}
-                onChange={(e) => handleSettingsChange({ ...settings, cloudinaryApiSecret: e.target.value })}
-                disabled={disabled}
-                placeholder="abcdefghijklmnopqrstuvwxyz"
-                className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 disabled:opacity-50 pr-10"
-              />
-              <button
-                type="button"
-                onClick={() => setShowCloudinarySecret(!showCloudinarySecret)}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300"
-              >
-                {showCloudinarySecret ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              </button>
-            </div>
-          </div>
-
-          <div>
-            <label className="text-xs font-medium text-zinc-400 mb-1 block">Klasör Adı</label>
-            <input
-              type="text"
-              value={settings.cloudinaryFolder}
-              onChange={(e) => handleSettingsChange({ ...settings, cloudinaryFolder: e.target.value })}
-              disabled={disabled}
-              placeholder="urunler"
-              className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 disabled:opacity-50"
-            />
-            <p className="text-xs text-zinc-500 mt-1">
-              Resimler bu klasöre yüklenecek (örn: urunler/URUN001_1.jpg)
-            </p>
-          </div>
-        </div>
-      </div>
-
       {/* Cost Warning */}
-      {(settings.enableSeoOptimization || settings.enableImageEnhancement) && (
+      {settings.enableSeoOptimization && (
         <div className="mt-6 p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl">
           <p className="text-xs text-amber-400">
             <strong>Maliyet Uyarısı:</strong> AI işlemleri OpenAI API kredisi kullanır.
-            {settings.enableImageEnhancement && " DALL-E 3 resim başına ~$0.04 ücret alır."}
-            {settings.enableSeoOptimization && " GPT-4o-mini SEO için çok düşük maliyetlidir."}
+            GPT-4o-mini SEO için çok düşük maliyetlidir.
           </p>
         </div>
       )}
