@@ -189,28 +189,31 @@ async function checkJobStatus(jobId: number): Promise<boolean> {
 }
 
 // =============================================================================
-// SELF-CALLING TRIGGER - Optimized
+// SELF-CALLING TRIGGER - DÜZELTME: setTimeout kaldırıldı, doğrudan çağrı
 // =============================================================================
-async function triggerNextBatch(jobId: number) {
+async function triggerNextBatch(jobId: number): Promise<void> {
   const baseUrl = getBaseUrl();
 
-  // Hemen tetikle, bekleme kısaltıldı
-  setTimeout(async () => {
-    try {
-      await fetch(`${baseUrl}/api/background-jobs/worker`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          jobId,
-          batchSize: CONFIG.DEFAULT_BATCH_SIZE,
-          parallelCount: CONFIG.DEFAULT_PARALLEL_COUNT,
-          selfCalling: true,
-        }),
-      });
-    } catch (error) {
+  try {
+    // Kısa bir bekleme sonra hemen tetikle (serverless için güvenli)
+    await new Promise(resolve => setTimeout(resolve, CONFIG.NEXT_BATCH_DELAY));
+
+    // Fire-and-forget ama catch ile hata yönetimi
+    fetch(`${baseUrl}/api/background-jobs/worker`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        jobId,
+        batchSize: CONFIG.DEFAULT_BATCH_SIZE,
+        parallelCount: CONFIG.DEFAULT_PARALLEL_COUNT,
+        selfCalling: true,
+      }),
+    }).catch(error => {
       console.error("Self-calling trigger error:", error);
-    }
-  }, CONFIG.NEXT_BATCH_DELAY);
+    });
+  } catch (error) {
+    console.error("Trigger next batch error:", error);
+  }
 }
 
 // =============================================================================
@@ -357,8 +360,10 @@ export async function POST(request: NextRequest) {
       clearJobCache(jobId);
     }
 
-    // Devam edecekse hemen tetikle
+    // DÜZELTME: Devam edecekse, response'dan ÖNCE tetikle
+    // Serverless ortamda response sonrası kod çalışmayabilir
     if (shouldContinue) {
+      // Asenkron tetikleme - response beklemeden başlat
       triggerNextBatch(jobId);
     }
 
