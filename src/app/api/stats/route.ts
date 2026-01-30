@@ -12,13 +12,8 @@ export async function GET() {
       processingProducts,
       doneProducts,
       errorProducts,
-      totalImages,
-      pendingImages,
-      doneImages,
-      errorImages,
       totalCategories,
       seoOptimized,
-      recentLogs,
     ] = await Promise.all([
       prisma.product.count(),
       prisma.product.count({ where: { durum: "AKTIF" } }),
@@ -27,16 +22,8 @@ export async function GET() {
       prisma.product.count({ where: { processingStatus: "processing" } }),
       prisma.product.count({ where: { processingStatus: "done" } }),
       prisma.product.count({ where: { processingStatus: "error" } }),
-      prisma.productImage.count(),
-      prisma.productImage.count({ where: { status: "pending" } }),
-      prisma.productImage.count({ where: { status: "done" } }),
-      prisma.productImage.count({ where: { status: "error" } }),
       prisma.productCategory.count(),
       prisma.productSeo.count(),
-      prisma.processingLog.findMany({
-        orderBy: { createdAt: "desc" },
-        take: 10,
-      }),
     ]);
 
     // Get category distribution
@@ -65,12 +52,6 @@ export async function GET() {
             error: errorProducts,
           },
         },
-        images: {
-          total: totalImages,
-          pending: pendingImages,
-          done: doneImages,
-          error: errorImages,
-        },
         categories: {
           total: totalCategories,
           distribution: categoryDistribution.map((c: { anaKategori: string | null; _count: number }) => ({
@@ -82,7 +63,6 @@ export async function GET() {
           optimized: seoOptimized,
           remaining: totalProducts - seoOptimized,
         },
-        recentLogs,
       },
     });
   } catch (error) {
