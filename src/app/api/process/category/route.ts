@@ -37,7 +37,9 @@ function parseCategory(categoryString: string): ParsedCategory {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { batchSize = 50, urunId } = body; // Batch size artırıldı çünkü AI yok, çok hızlı
+    // Batch size'ı maksimum 500 ile sınırla (timeout ve memory için)
+    const { batchSize: requestedBatchSize = 500, urunId } = body;
+    const batchSize = Math.min(requestedBatchSize, 500);
 
     // Get products to process
     let products;
@@ -76,6 +78,7 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    // Sonuçları sadece özet olarak tut (memory tasarrufu)
     const results: Array<{
       urunKodu: string | null;
       urunId: number;
@@ -90,7 +93,13 @@ export async function POST(request: NextRequest) {
       error?: string;
     }> = [];
 
-    for (const product of products) {
+    // Batch işlemleri için verileri hazırla
+    const upsertOperations: Promise<unknown>[] = [];
+    const PARALLEL_BATCH = 50; // 50'şerli paralel işlem
+
+    for (let i = 0; i < products.length; i++) {
+      const product = products[i];
+
       try {
         // SADECE İSİM KULLANILACAK - yeniAdi veya eskiAdi
         const productName = product.yeniAdi || product.eskiAdi || product.urunKodu || "";
@@ -103,42 +112,44 @@ export async function POST(request: NextRequest) {
           const categoryResult = categoryToString(categoryMatch);
           const parsedCategory = parseCategory(categoryResult);
 
-          // Kategori kaydını güncelle veya oluştur
-          await prisma.productCategory.upsert({
-            where: { urunId: product.urunId },
-            update: {
-              yeniAnaKategori: parsedCategory.anaKategori,
-              yeniAltKategori1: parsedCategory.altKategori1,
-              yeniAltKategori2: parsedCategory.altKategori2,
-              yeniAltKategori3: parsedCategory.altKategori3,
-              yeniAltKategori4: parsedCategory.altKategori4,
-              yeniAltKategori5: parsedCategory.altKategori5,
-              yeniAltKategori6: parsedCategory.altKategori6,
-              yeniAltKategori7: parsedCategory.altKategori7,
-              yeniAltKategori8: parsedCategory.altKategori8,
-              yeniAltKategori9: parsedCategory.altKategori9,
-              aiKategori: `[${categoryMatch.matchedKeyword}] ${categoryResult}`,
-              processingStatus: "done",
-              processedAt: new Date(),
-            },
-            create: {
-              urunId: product.urunId,
-              anaKategori: currentCategory,
-              yeniAnaKategori: parsedCategory.anaKategori,
-              yeniAltKategori1: parsedCategory.altKategori1,
-              yeniAltKategori2: parsedCategory.altKategori2,
-              yeniAltKategori3: parsedCategory.altKategori3,
-              yeniAltKategori4: parsedCategory.altKategori4,
-              yeniAltKategori5: parsedCategory.altKategori5,
-              yeniAltKategori6: parsedCategory.altKategori6,
-              yeniAltKategori7: parsedCategory.altKategori7,
-              yeniAltKategori8: parsedCategory.altKategori8,
-              yeniAltKategori9: parsedCategory.altKategori9,
-              aiKategori: `[${categoryMatch.matchedKeyword}] ${categoryResult}`,
-              processingStatus: "done",
-              processedAt: new Date(),
-            },
-          });
+          // Upsert işlemini listeye ekle
+          upsertOperations.push(
+            prisma.productCategory.upsert({
+              where: { urunId: product.urunId },
+              update: {
+                yeniAnaKategori: parsedCategory.anaKategori,
+                yeniAltKategori1: parsedCategory.altKategori1,
+                yeniAltKategori2: parsedCategory.altKategori2,
+                yeniAltKategori3: parsedCategory.altKategori3,
+                yeniAltKategori4: parsedCategory.altKategori4,
+                yeniAltKategori5: parsedCategory.altKategori5,
+                yeniAltKategori6: parsedCategory.altKategori6,
+                yeniAltKategori7: parsedCategory.altKategori7,
+                yeniAltKategori8: parsedCategory.altKategori8,
+                yeniAltKategori9: parsedCategory.altKategori9,
+                aiKategori: `[${categoryMatch.matchedKeyword}] ${categoryResult}`,
+                processingStatus: "done",
+                processedAt: new Date(),
+              },
+              create: {
+                urunId: product.urunId,
+                anaKategori: currentCategory,
+                yeniAnaKategori: parsedCategory.anaKategori,
+                yeniAltKategori1: parsedCategory.altKategori1,
+                yeniAltKategori2: parsedCategory.altKategori2,
+                yeniAltKategori3: parsedCategory.altKategori3,
+                yeniAltKategori4: parsedCategory.altKategori4,
+                yeniAltKategori5: parsedCategory.altKategori5,
+                yeniAltKategori6: parsedCategory.altKategori6,
+                yeniAltKategori7: parsedCategory.altKategori7,
+                yeniAltKategori8: parsedCategory.altKategori8,
+                yeniAltKategori9: parsedCategory.altKategori9,
+                aiKategori: `[${categoryMatch.matchedKeyword}] ${categoryResult}`,
+                processingStatus: "done",
+                processedAt: new Date(),
+              },
+            })
+          );
 
           results.push({
             urunKodu: product.urunKodu,
@@ -154,23 +165,25 @@ export async function POST(request: NextRequest) {
           });
         } else {
           // Eşleşme bulunamadı - "BELİRLENEMEDİ" olarak işaretle
-          await prisma.productCategory.upsert({
-            where: { urunId: product.urunId },
-            update: {
-              yeniAnaKategori: "BELİRLENEMEDİ",
-              aiKategori: "Anahtar kelime bulunamadı",
-              processingStatus: "done",
-              processedAt: new Date(),
-            },
-            create: {
-              urunId: product.urunId,
-              anaKategori: currentCategory,
-              yeniAnaKategori: "BELİRLENEMEDİ",
-              aiKategori: "Anahtar kelime bulunamadı",
-              processingStatus: "done",
-              processedAt: new Date(),
-            },
-          });
+          upsertOperations.push(
+            prisma.productCategory.upsert({
+              where: { urunId: product.urunId },
+              update: {
+                yeniAnaKategori: "BELİRLENEMEDİ",
+                aiKategori: "Anahtar kelime bulunamadı",
+                processingStatus: "done",
+                processedAt: new Date(),
+              },
+              create: {
+                urunId: product.urunId,
+                anaKategori: currentCategory,
+                yeniAnaKategori: "BELİRLENEMEDİ",
+                aiKategori: "Anahtar kelime bulunamadı",
+                processingStatus: "done",
+                processedAt: new Date(),
+              },
+            })
+          );
 
           results.push({
             urunKodu: product.urunKodu,
@@ -185,17 +198,25 @@ export async function POST(request: NextRequest) {
             success: true, // İşlem başarılı, sadece eşleşme bulunamadı
           });
         }
+
+        // Her 50 işlemde bir çalıştır (paralel ama kontrollü)
+        if (upsertOperations.length >= PARALLEL_BATCH) {
+          await Promise.all(upsertOperations);
+          upsertOperations.length = 0; // Array'i temizle
+        }
       } catch (err) {
         // Hata durumunda error olarak işaretle
-        await prisma.productCategory.upsert({
-          where: { urunId: product.urunId },
-          update: { processingStatus: "error" },
-          create: {
-            urunId: product.urunId,
-            anaKategori: product.categories?.anaKategori || null,
-            processingStatus: "error",
-          },
-        });
+        upsertOperations.push(
+          prisma.productCategory.upsert({
+            where: { urunId: product.urunId },
+            update: { processingStatus: "error" },
+            create: {
+              urunId: product.urunId,
+              anaKategori: product.categories?.anaKategori || null,
+              processingStatus: "error",
+            },
+          })
+        );
 
         results.push({
           urunKodu: product.urunKodu,
@@ -213,6 +234,11 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Kalan işlemleri çalıştır
+    if (upsertOperations.length > 0) {
+      await Promise.all(upsertOperations);
+    }
+
     // Kalan ürün sayısını hesapla
     const remaining = await prisma.product.count({
       where: {
@@ -224,11 +250,14 @@ export async function POST(request: NextRequest) {
       },
     });
 
+    // Sadece son 100 sonucu döndür (memory ve bandwidth tasarrufu)
+    const limitedResults = results.slice(-100);
+
     return NextResponse.json({
       success: true,
       processed: results.filter((r) => r.success).length,
       remaining,
-      results,
+      results: limitedResults,
       stats: getCategoryStats(),
     });
   } catch (error) {
