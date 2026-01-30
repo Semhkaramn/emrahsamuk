@@ -76,7 +76,7 @@ async function getExistingCategories(): Promise<string[]> {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { batchSize = 1 } = body;
+    const { batchSize = 1, urunId } = body;
 
     const apiKey = await getOpenAIApiKey();
     if (!apiKey) {
@@ -89,21 +89,32 @@ export async function POST(request: NextRequest) {
     // Mevcut kategorileri al (tutarlılık için)
     const existingCategories = await getExistingCategories();
 
-    // Get products without processed category
-    const products = await prisma.product.findMany({
-      where: {
-        OR: [
-          { categories: null },
-          { categories: { yeniAnaKategori: null } },
-          { categories: { processingStatus: "pending" } },
-        ],
-      },
-      take: batchSize,
-      orderBy: { id: "asc" },
-      include: {
-        categories: true,
-      },
-    });
+    // Get products to process
+    let products;
+
+    if (urunId) {
+      // Tek bir ürün işle (worker'dan gelen istek)
+      products = await prisma.product.findMany({
+        where: { urunId: urunId },
+        include: { categories: true },
+      });
+    } else {
+      // Batch halinde işle (manuel başlatma)
+      products = await prisma.product.findMany({
+        where: {
+          OR: [
+            { categories: null },
+            { categories: { yeniAnaKategori: null } },
+            { categories: { processingStatus: "pending" } },
+          ],
+        },
+        take: batchSize,
+        orderBy: { id: "asc" },
+        include: {
+          categories: true,
+        },
+      });
+    }
 
     if (products.length === 0) {
       return NextResponse.json({
