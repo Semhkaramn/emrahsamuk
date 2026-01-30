@@ -42,6 +42,189 @@ function toTitleCase(str: string): string {
 // Her anahtar kelime için kategori yolu
 
 const KEYWORD_CATEGORY_MAP: Record<string, CategoryTuple> = {
+  // ==================== TRENÇKOT (EN ÖNEMLİ - EKSİKTİ!) ====================
+  "trençkot": ["Kadın", "Günlük Giyim", "Üst Giyim", "Trençkot"],
+  "trenckot": ["Kadın", "Günlük Giyim", "Üst Giyim", "Trençkot"],
+  "trenchkot": ["Kadın", "Günlük Giyim", "Üst Giyim", "Trençkot"],
+  "trench": ["Kadın", "Günlük Giyim", "Üst Giyim", "Trençkot"],
+  "kruvaze yaka": ["Kadın", "Günlük Giyim", "Üst Giyim", "Trençkot"],
+  "kemerli kısa": ["Kadın", "Günlük Giyim", "Üst Giyim", "Trençkot"],
+  "kapüşonlu trençkot": ["Kadın", "Günlük Giyim", "Üst Giyim", "Trençkot"],
+  "beli büzgülü": ["Kadın", "Günlük Giyim", "Üst Giyim", "Trençkot"],
+
+  // ==================== TRİKO (EKSİKTİ!) ====================
+  "triko": ["Kadın", "Günlük Giyim", "Üst Giyim", "Triko"],
+  "triko kadın": ["Kadın", "Günlük Giyim", "Üst Giyim", "Triko"],
+  "varaklı triko": ["Kadın", "Günlük Giyim", "Üst Giyim", "Triko"],
+  "sim şeritli triko": ["Kadın", "Günlük Giyim", "Üst Giyim", "Triko"],
+  "çizgili triko": ["Kadın", "Günlük Giyim", "Üst Giyim", "Triko"],
+  "fermuarlı triko": ["Kadın", "Günlük Giyim", "Üst Giyim", "Triko"],
+  "sakal triko": ["Kadın", "Günlük Giyim", "Üst Giyim", "Triko"],
+  "boğazlı triko": ["Kadın", "Günlük Giyim", "Üst Giyim", "Triko"],
+  "triko takım": ["Kadın", "Günlük Giyim", "Alt Üst Takım", "Triko Takım"],
+
+  // ==================== SPOR AYAKKABI (TEK BAŞINA EKSİKTİ!) ====================
+  "spor ayakkabı": ["Ayakkabı", "Kadın", "Spor Ayakkabı", ""],
+  "bağcıklı spor": ["Ayakkabı", "Kadın", "Spor Ayakkabı", ""],
+  "bağcıksız spor": ["Ayakkabı", "Kadın", "Spor Ayakkabı", ""],
+  "rahat tabanlı spor": ["Ayakkabı", "Kadın", "Spor Ayakkabı", ""],
+  "yüksek taban spor": ["Ayakkabı", "Kadın", "Spor Ayakkabı", ""],
+  "keten spor": ["Ayakkabı", "Kadın", "Spor Ayakkabı", ""],
+  "triko spor": ["Ayakkabı", "Kadın", "Spor Ayakkabı", ""],
+  "sneaker": ["Ayakkabı", "Kadın", "Sneaker", ""],
+
+  // ==================== BOT (TEK BAŞINA EKSİKTİ!) ====================
+  "bot": ["Ayakkabı", "Kadın", "Bot", ""],
+  "bayan bot": ["Ayakkabı", "Kadın", "Bot", ""],
+  "süet bot": ["Ayakkabı", "Kadın", "Bot", ""],
+  "kürklü bot": ["Ayakkabı", "Kadın", "Bot", ""],
+  "fermuarlı bot": ["Ayakkabı", "Kadın", "Bot", ""],
+  "postal": ["Ayakkabı", "Kadın", "Bot", ""],
+
+  // ==================== TERLİK (TEK BAŞINA EKSİKTİ!) ====================
+  "terlik": ["Ayakkabı", "Kadın", "Terlik", ""],
+  "ortopedik terlik": ["Ayakkabı", "Unisex", "Terlik", ""],
+  "shark slides": ["Ayakkabı", "Unisex", "Terlik", ""],
+  "köpekbalığı terlik": ["Ayakkabı", "Unisex", "Terlik", ""],
+  "ev terliği": ["Ayakkabı", "Unisex", "Terlik", ""],
+
+  // ==================== AYAKKABI GENEL (EKSİKTİ!) ====================
+  "ayakkabı": ["Ayakkabı", "Kadın", "Günlük Ayakkabı", ""],
+  "bayan ayakkabı": ["Ayakkabı", "Kadın", "Günlük Ayakkabı", ""],
+  "günlük ayakkabı": ["Ayakkabı", "Kadın", "Günlük Ayakkabı", ""],
+  "casual ayakkabı": ["Ayakkabı", "Kadın", "Günlük Ayakkabı", ""],
+  "yüksek taban": ["Ayakkabı", "Kadın", "Yüksek Taban Ayakkabı", ""],
+  "cırt cırtlı": ["Ayakkabı", "Kadın", "Spor Ayakkabı", ""],
+  "bağcıklı": ["Ayakkabı", "Kadın", "Spor Ayakkabı", ""],
+
+  // ==================== ATLET (TEK BAŞINA EKSİKTİ!) ====================
+  "atlet": ["Kadın", "İç Giyim", "Çamaşırı Takımları", "Atlet"],
+  "dantelli atlet": ["Kadın", "İç Giyim", "Çamaşırı Takımları", "Atlet"],
+  "uzun atlet": ["Kadın", "İç Giyim", "Çamaşırı Takımları", "Atlet"],
+  "ribana atlet": ["Erkek", "İç Giyim", "Atlet", ""],
+  "spor atlet": ["Erkek", "İç Giyim", "Atlet", ""],
+  "korseli atlet": ["Erkek", "İç Giyim", "Atlet", ""],
+
+  // ==================== BOXER (TEK BAŞINA EKSİKTİ!) ====================
+  "boxer": ["Kadın", "İç Giyim", "Çamaşırı Takımları", "Boxer"],
+  "şort boxer": ["Kadın", "İç Giyim", "Çamaşırı Takımları", "Boxer"],
+  "penye boxer": ["Erkek", "İç Giyim", "Boxer", ""],
+  "likralı boxer": ["Erkek", "İç Giyim", "Boxer", ""],
+  "düğmeli boxer": ["Erkek", "İç Giyim", "Boxer", ""],
+  "bambu boxer": ["Erkek", "İç Giyim", "Boxer", ""],
+  "modal boxer": ["Erkek", "İç Giyim", "Boxer", ""],
+
+  // ==================== SLİP (TEK BAŞINA EKSİKTİ!) ====================
+  "slip": ["Kadın", "İç Giyim", "Çamaşırı Takımları", "Külot"],
+  "kadın slip": ["Kadın", "İç Giyim", "Çamaşırı Takımları", "Külot"],
+  "likralı slip": ["Kadın", "İç Giyim", "Çamaşırı Takımları", "Külot"],
+  "erkek slip": ["Erkek", "İç Giyim", "Slip", ""],
+
+  // ==================== TANGA (EKSİKTİ!) ====================
+  "tanga": ["Kadın", "İç Giyim", "Çamaşırı Takımları", "Tanga"],
+  "string tanga": ["Kadın", "İç Giyim", "Çamaşırı Takımları", "Tanga"],
+  "dantelli tanga": ["Kadın", "İç Giyim", "Çamaşırı Takımları", "Tanga"],
+  "fitilli tanga": ["Kadın", "İç Giyim", "Çamaşırı Takımları", "Tanga"],
+
+  // ==================== PANÇO (EKSİKTİ!) ====================
+  "panço": ["Kadın", "Günlük Giyim", "Üst Giyim", "Panço"],
+  "kaşe panço": ["Kadın", "Günlük Giyim", "Üst Giyim", "Panço"],
+  "kemerli panço": ["Kadın", "Günlük Giyim", "Üst Giyim", "Panço"],
+
+  // ==================== KÜRK (EKSİKTİ!) ====================
+  "kürk": ["Kadın", "Günlük Giyim", "Üst Giyim", "Kürk"],
+  "kısa kürk": ["Kadın", "Günlük Giyim", "Üst Giyim", "Kürk"],
+  "peluş": ["Kadın", "Günlük Giyim", "Üst Giyim", "Kürk"],
+
+  // ==================== KAPRİ (EKSİKTİ!) ====================
+  "kapri": ["Kadın", "Günlük Giyim", "Alt Giyim", "Kapri"],
+  "kadın kapri": ["Kadın", "Günlük Giyim", "Alt Giyim", "Kapri"],
+
+  // ==================== BADI / BODY (EKSİK YAZIMLAR!) ====================
+  "badi": ["Kadın", "Günlük Giyim", "Üst Giyim", "Body"],
+  "bady": ["Kadın", "Günlük Giyim", "Üst Giyim", "Body"],
+  "yarım kol badi": ["Kadın", "Günlük Giyim", "Üst Giyim", "Body"],
+  "çıtçıtlı badi": ["Kadın", "Günlük Giyim", "Üst Giyim", "Body"],
+  "bebe badi": ["Anne & Çocuk", "Giyim", "Bebek", "Bebek Takımı"],
+
+  // ==================== JEAN / KOT (EKSİKTİ!) ====================
+  "jean": ["Kadın", "Günlük Giyim", "Alt Giyim", "Jean"],
+  "kot": ["Kadın", "Günlük Giyim", "Alt Giyim", "Jean"],
+  "denim": ["Kadın", "Günlük Giyim", "Alt Giyim", "Jean"],
+  "baggy": ["Kadın", "Günlük Giyim", "Alt Giyim", "Jean"],
+  "kot elbise": ["Kadın", "Günlük Giyim", "Elbise", ""],
+
+  // ==================== SWEETSHIRT (YANLIŞ YAZIM!) ====================
+  "sweetshirt": ["Kadın", "Günlük Giyim", "Üst Giyim", "Sweatshirt"],
+  "kapşonlu": ["Kadın", "Günlük Giyim", "Üst Giyim", "Sweatshirt"],
+  "unisex kapşonlu": ["Kadın", "Günlük Giyim", "Üst Giyim", "Sweatshirt"],
+
+  // ==================== TAKIMLAR (TEK BAŞINA EKSİKTİ!) ====================
+  "takım": ["Kadın", "Günlük Giyim", "Alt Üst Takım", ""],
+  "alt üst takım": ["Kadın", "Günlük Giyim", "Alt Üst Takım", ""],
+  "viskon takım": ["Kadın", "Günlük Giyim", "Alt Üst Takım", ""],
+  "kadife takım": ["Kadın", "Günlük Giyim", "Alt Üst Takım", ""],
+  "fermuarlı takım": ["Kadın", "Günlük Giyim", "Alt Üst Takım", ""],
+  "kapşonlu takım": ["Kadın", "Günlük Giyim", "Alt Üst Takım", ""],
+  "şerit detaylı takım": ["Kadın", "Günlük Giyim", "Alt Üst Takım", ""],
+  "leopar takım": ["Kadın", "Günlük Giyim", "Alt Üst Takım", ""],
+
+  // ==================== BEBEK (EKSİK ÜRÜNLER!) ====================
+  "bebe takım": ["Anne & Çocuk", "Giyim", "Bebek", "Bebek Takımı"],
+  "bebek giyim": ["Anne & Çocuk", "Giyim", "Bebek", "Bebek Takımı"],
+  "bebe set": ["Anne & Çocuk", "Giyim", "Bebek", "Bebek Takımı"],
+  "bebek set": ["Anne & Çocuk", "Giyim", "Bebek", "Bebek Takımı"],
+  "tüllü set": ["Anne & Çocuk", "Giyim", "Bebek", "Bebek Takımı"],
+  "ballerina": ["Anne & Çocuk", "Giyim", "Bebek", "Bebek Takımı"],
+  "2'li takım": ["Anne & Çocuk", "Giyim", "Bebek", "Bebek Takımı"],
+  "3'lü takım": ["Anne & Çocuk", "Giyim", "Bebek", "Bebek Takımı"],
+  "4 parça set": ["Anne & Çocuk", "Giyim", "Bebek", "Bebek Takımı"],
+  "5'li": ["Anne & Çocuk", "Giyim", "Bebek", "Bebek Takımı"],
+  "organik": ["Anne & Çocuk", "Giyim", "Bebek", "Bebek Takımı"],
+  "patikli alt": ["Anne & Çocuk", "Giyim", "Bebek", "Bebek Takımı"],
+  "patiksiz alt": ["Anne & Çocuk", "Giyim", "Bebek", "Bebek Takımı"],
+
+  // ==================== ÇOCUK AYAKKABI (EKSİKTİ!) ====================
+  "çocuk ayakkabı": ["Ayakkabı", "Çocuk", "Spor Ayakkabı", ""],
+  "çocuk terlik": ["Ayakkabı", "Çocuk", "Terlik", ""],
+  "çocuk bot": ["Ayakkabı", "Çocuk", "Bot", ""],
+
+  // ==================== EV GİYİM (EKSİKTİ!) ====================
+  "ev şortu": ["Kadın", "İç Giyim", "Ev Giyim", ""],
+  "ev giyim": ["Kadın", "İç Giyim", "Ev Giyim", ""],
+  "ev çorabı": ["Kadın", "İç Giyim", "Çorap", ""],
+  "pijama alt": ["Kadın", "İç Giyim", "Ev Giyim", ""],
+  "peluşlu pijama": ["Kadın", "İç Giyim", "Ev Giyim", ""],
+
+  // ==================== LOHUSA (EKSİKTİ!) ====================
+  "lohusa": ["Kadın", "İç Giyim", "Lohusa", ""],
+  "emzirme": ["Kadın", "İç Giyim", "Lohusa", ""],
+  "emzirme atleti": ["Kadın", "İç Giyim", "Lohusa", ""],
+
+  // ==================== İPEKYOL (MARKA - EKSİKTİ!) ====================
+  "ipekyol": ["Kadın", "Günlük Giyim", "Elbise", ""],
+
+  // ==================== ŞORT (TEK BAŞINA EKSİKTİ!) ====================
+  "şort": ["Kadın", "Günlük Giyim", "Alt Giyim", "Şort"],
+  "gabardin şort": ["Kadın", "Günlük Giyim", "Alt Giyim", "Şort"],
+  "cargo şort": ["Kadın", "Günlük Giyim", "Alt Giyim", "Şort"],
+
+  // ==================== EŞOFMAN (EKSİK YAZIMLAR!) ====================
+  "eşofman": ["Kadın", "Günlük Giyim", "Alt Üst Takım", "Eşofman Takımı"],
+  "eşortman": ["Kadın", "Günlük Giyim", "Alt Giyim", "Eşofman Altı"],
+  "lastikli eşofman": ["Kadın", "Günlük Giyim", "Alt Giyim", "Eşofman Altı"],
+
+  // ==================== MÜSLIN (EKSİKTİ!) ====================
+  "müslin": ["Kadın", "Günlük Giyim", "Alt Üst Takım", ""],
+  "aerobin": ["Kadın", "Günlük Giyim", "Alt Üst Takım", ""],
+  "krep": ["Kadın", "Günlük Giyim", "Alt Üst Takım", ""],
+
+  // ==================== ÇANTA (EKSİK TÜRLER!) ====================
+  "el çantası": ["Aksesuar", "Çanta", "", ""],
+  "kese çanta": ["Aksesuar", "Çanta", "", ""],
+  "incili çanta": ["Aksesuar", "Çanta", "", ""],
+  "zincir kollu çanta": ["Aksesuar", "Çanta", "", ""],
+
   // ==================== ANNE & ÇOCUK ====================
   // Bebek Battaniye / Kundak
   "bebek battaniye": ["Anne & Çocuk", "Giyim", "Bebek", "Çocuk Battaniyesi"],
@@ -430,6 +613,111 @@ const KEYWORD_CATEGORY_MAP: Record<string, CategoryTuple> = {
 
 // Öncelik grupları - daha spesifik anahtar kelimeler önce kontrol edilmeli
 const PRIORITY_KEYWORDS: string[] = [
+  // ==================== TRENÇKOT (EN ÖNEMLİ!) ====================
+  "kapüşonlu trençkot",
+  "kruvaze yaka",
+  "kemerli kısa",
+  "beli büzgülü",
+  "trençkot",
+  "trenckot",
+  "trenchkot",
+
+  // ==================== TRİKO ====================
+  "varaklı triko",
+  "sim şeritli triko",
+  "çizgili triko",
+  "fermuarlı triko",
+  "sakal triko",
+  "boğazlı triko",
+  "triko takım",
+  "triko",
+
+  // ==================== SPOR AYAKKABI ====================
+  "rahat tabanlı spor",
+  "yüksek taban spor",
+  "bağcıklı spor",
+  "bağcıksız spor",
+  "keten spor",
+  "triko spor",
+  "spor ayakkabı",
+
+  // ==================== BOT ====================
+  "bayan bot",
+  "süet bot",
+  "kürklü bot",
+  "fermuarlı bot",
+  "bot",
+  "postal",
+
+  // ==================== TERLİK ====================
+  "ortopedik terlik",
+  "shark slides",
+  "köpekbalığı terlik",
+  "ev terliği",
+  "terlik",
+
+  // ==================== İÇ GİYİM ====================
+  "dantelli atlet",
+  "ribana atlet",
+  "korseli atlet",
+  "penye boxer",
+  "likralı boxer",
+  "düğmeli boxer",
+  "bambu boxer",
+  "modal boxer",
+  "şort boxer",
+  "likralı slip",
+  "string tanga",
+  "dantelli tanga",
+  "fitilli tanga",
+  "atlet",
+  "boxer",
+  "slip",
+  "tanga",
+
+  // ==================== PANÇO / KÜRK ====================
+  "kaşe panço",
+  "kemerli panço",
+  "panço",
+  "kısa kürk",
+  "kürk",
+  "peluş",
+
+  // ==================== DİĞER ÖNEMLİ ====================
+  "kapri",
+  "yarım kol badi",
+  "çıtçıtlı badi",
+  "badi",
+  "bady",
+  "jean",
+  "kot",
+  "denim",
+  "baggy",
+  "sweetshirt",
+  "kapşonlu",
+  "eşortman",
+
+  // ==================== BEBEK ====================
+  "bebe takım",
+  "bebe set",
+  "bebek set",
+  "tüllü set",
+  "ballerina",
+  "2'li takım",
+  "3'lü takım",
+  "4 parça set",
+  "5'li",
+  "patikli alt",
+  "patiksiz alt",
+
+  // ==================== ÇOCUK ====================
+  "çocuk ayakkabı",
+  "çocuk terlik",
+  "çocuk bot",
+
+  // ==================== MARKA ====================
+  "ipekyol",
+
   // En spesifik olanlar önce
   "bebek battaniye",
   "bebek battaniyesi",
