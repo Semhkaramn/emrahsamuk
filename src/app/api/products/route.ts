@@ -13,6 +13,8 @@ export async function GET(request: NextRequest) {
     const processingStatus = searchParams.get("processingStatus") || "";
     const seoStatus = searchParams.get("seoStatus") || ""; // "pending" = seo:null, "done" = seo exists
     const categoryStatus = searchParams.get("categoryStatus") || ""; // "pending" = categories:null veya yeniAnaKategori:null
+    const orderBy = searchParams.get("orderBy") || "urunId"; // "processedAt" for logs
+    const orderDir = searchParams.get("orderDir") || "asc"; // "desc" for recent first
 
     const skip = (page - 1) * limit;
 
@@ -72,12 +74,25 @@ export async function GET(request: NextRequest) {
     // Final where clause
     const where = andConditions.length > 0 ? { AND: andConditions } : {};
 
+    // Dynamic orderBy
+    type OrderDirection = "asc" | "desc";
+    let orderByClause: Record<string, OrderDirection> = { urunId: "asc" };
+    if (orderBy === "processedAt") {
+      orderByClause = { processedAt: orderDir as OrderDirection };
+    } else if (orderBy === "createdAt") {
+      orderByClause = { createdAt: orderDir as OrderDirection };
+    } else if (orderBy === "uploadedAt") {
+      orderByClause = { uploadedAt: orderDir as OrderDirection };
+    } else if (orderBy === "urunId") {
+      orderByClause = { urunId: orderDir as OrderDirection };
+    }
+
     const [products, total] = await Promise.all([
       prisma.product.findMany({
         where,
         skip,
         take: limit,
-        orderBy: { urunId: "asc" },
+        orderBy: orderByClause,
         include: {
           prices: true,
           categories: true,
