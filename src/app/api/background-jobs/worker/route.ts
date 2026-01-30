@@ -35,14 +35,6 @@ export async function POST(request: NextRequest) {
 
     // İş tipine göre işle
     switch (job.jobType) {
-      case "image_processing":
-        const result = await processImageBatch(job, config, batchSize);
-        processedInBatch = result.processed;
-        successInBatch = result.success;
-        errorInBatch = result.error;
-        lastError = result.lastError;
-        break;
-
       case "category_processing":
         const catResult = await processCategoryBatch(job, config, batchSize);
         processedInBatch = catResult.processed;
@@ -103,74 +95,6 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
-}
-
-// Resim işleme batch fonksiyonu
-async function processImageBatch(
-  job: { id: number; processedItems: number; totalItems: number },
-  config: { useAI?: boolean; imageIds?: number[] },
-  batchSize: number
-) {
-  const { useAI = false, imageIds = [] } = config;
-
-  // İşlenecek resimleri al (offset ile)
-  const offset = job.processedItems;
-  const idsToProcess = imageIds.slice(offset, offset + batchSize);
-
-  if (idsToProcess.length === 0) {
-    return { processed: 0, success: 0, error: 0, lastError: null };
-  }
-
-  let processed = 0;
-  let success = 0;
-  let error = 0;
-  let lastError: string | null = null;
-
-  for (const imageId of idsToProcess) {
-    try {
-      const image = await prisma.productImage.findUnique({
-        where: { id: imageId },
-        include: { product: true },
-      });
-
-      if (!image || !image.eskiUrl) {
-        error++;
-        lastError = `Resim bulunamadı: ${imageId}`;
-        processed++;
-        continue;
-      }
-
-      // Resmi işle (API çağrısı yerine inline işleme)
-      const response = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/process/images/single`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          imageId: image.id,
-          urunKodu: image.product.urunKodu,
-          useAI,
-        }),
-      });
-
-      const result = await response.json();
-
-      if (result.success) {
-        success++;
-      } else {
-        error++;
-        lastError = result.error || "Resim işlenemedi";
-      }
-    } catch (err) {
-      error++;
-      lastError = err instanceof Error ? err.message : "Bilinmeyen hata";
-    }
-
-    processed++;
-
-    // Rate limiting - 500ms bekle
-    await new Promise(resolve => setTimeout(resolve, 500));
-  }
-
-  return { processed, success, error, lastError };
 }
 
 // Kategori işleme batch fonksiyonu
