@@ -16,52 +16,61 @@ export async function GET(request: NextRequest) {
 
     const skip = (page - 1) * limit;
 
-    // Build where clause
-    const where: Record<string, unknown> = {};
+    // Build where clause - AND conditions için array kullan
+    const andConditions: Record<string, unknown>[] = [];
 
+    // Search filter
     if (search) {
-      // Eğer sayısal ise urunId olarak da ara
       const searchNum = Number(search);
-      where.OR = [
-        { urunKodu: { contains: search, mode: "insensitive" } },
-        { eskiAdi: { contains: search, mode: "insensitive" } },
-        { yeniAdi: { contains: search, mode: "insensitive" } },
-        { marka: { contains: search, mode: "insensitive" } },
-        ...(isNaN(searchNum) ? [] : [{ urunId: searchNum }]),
-      ];
+      andConditions.push({
+        OR: [
+          { urunKodu: { contains: search, mode: "insensitive" } },
+          { eskiAdi: { contains: search, mode: "insensitive" } },
+          { yeniAdi: { contains: search, mode: "insensitive" } },
+          { marka: { contains: search, mode: "insensitive" } },
+          ...(isNaN(searchNum) ? [] : [{ urunId: searchNum }]),
+        ],
+      });
     }
 
     if (durum) {
-      where.durum = durum;
+      andConditions.push({ durum });
     }
 
     if (kategori) {
-      where.categories = {
-        anaKategori: kategori,
-      };
+      andConditions.push({
+        categories: {
+          anaKategori: kategori,
+        },
+      });
     }
 
     if (processingStatus) {
-      where.processingStatus = processingStatus;
+      andConditions.push({ processingStatus });
     }
 
     // SEO filtreleme - seo kaydı olmayan ürünler için
     if (seoStatus === "pending") {
-      where.seo = null;
+      andConditions.push({ seo: null });
     } else if (seoStatus === "done") {
-      where.seo = { isNot: null };
+      andConditions.push({ seo: { isNot: null } });
     }
 
     // Kategori filtreleme - kategorisi olmayan veya işlenmemiş ürünler için
     if (categoryStatus === "pending") {
-      where.OR = [
-        { categories: null },
-        { categories: { yeniAnaKategori: null, processingStatus: { not: "error" } } },
-        { categories: { processingStatus: "pending" } },
-      ];
+      andConditions.push({
+        OR: [
+          { categories: null },
+          { categories: { yeniAnaKategori: null, processingStatus: { not: "error" } } },
+          { categories: { processingStatus: "pending" } },
+        ],
+      });
     } else if (categoryStatus === "done") {
-      where.categories = { yeniAnaKategori: { not: null } };
+      andConditions.push({ categories: { yeniAnaKategori: { not: null } } });
     }
+
+    // Final where clause
+    const where = andConditions.length > 0 ? { AND: andConditions } : {};
 
     const [products, total] = await Promise.all([
       prisma.product.findMany({
