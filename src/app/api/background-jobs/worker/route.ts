@@ -2,25 +2,180 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
 import { getOpenAIApiKey } from "@/lib/settings-cache";
 
-// Base URL'i al (Netlify veya localhost)
+// =============================================================================
+// CONFIGURATION - Performans ayarları
+// =============================================================================
+const CONFIG = {
+  // Batch işleme ayarları - artırıldı
+  DEFAULT_BATCH_SIZE: 15,      // Her batch'te işlenecek ürün sayısı (5'ten 15'e)
+  DEFAULT_PARALLEL_COUNT: 8,   // Aynı anda paralel API çağrısı (3'ten 8'e)
+
+  // Bekleme süreleri - azaltıldı
+  RATE_LIMIT_DELAY: 100,       // Paralel gruplar arası bekleme (800ms'den 100ms'e)
+  NEXT_BATCH_DELAY: 200,       // Sonraki batch için bekleme (1000ms'den 200ms'e)
+
+  // Retry ayarları
+  MAX_RETRIES: 3,
+  RETRY_BASE_DELAY: 500,
+
+  // GPT ayarları
+  GPT_MODEL: "gpt-4o-mini",
+  GPT_TEMPERATURE: 0.95,       // Çeşitlilik için yüksek tutuldu
+  GPT_MAX_TOKENS: 400,
+};
+
+// =============================================================================
+// KULLANILAN SIFATLARI TAKİP ET (Session bazlı cache)
+// =============================================================================
+const usedAdjectivesCache = new Map<string, Set<string>>();
+const MAX_CACHE_SIZE = 1000; // En fazla 1000 ürün için cache tut
+
+function getUsedAdjectives(jobId: number): Set<string> {
+  const key = `job_${jobId}`;
+  if (!usedAdjectivesCache.has(key)) {
+    usedAdjectivesCache.set(key, new Set());
+  }
+  return usedAdjectivesCache.get(key)!;
+}
+
+function addUsedAdjectives(jobId: number, adjectives: string[]) {
+  const usedSet = getUsedAdjectives(jobId);
+  for (const adj of adjectives) {
+    usedSet.add(adj.toLowerCase().trim());
+  }
+  // Cache boyutunu kontrol et
+  if (usedSet.size > MAX_CACHE_SIZE) {
+    const arr = Array.from(usedSet);
+    usedAdjectivesCache.set(`job_${jobId}`, new Set(arr.slice(-500)));
+  }
+}
+
+function getAvoidList(jobId: number): string {
+  const usedSet = getUsedAdjectives(jobId);
+  if (usedSet.size === 0) return "";
+  const recent = Array.from(usedSet).slice(-30); // Son 30 sıfat
+  return recent.join(", ");
+}
+
+function clearJobCache(jobId: number) {
+  usedAdjectivesCache.delete(`job_${jobId}`);
+}
+
+// =============================================================================
+// SIFAT HAVUZLARI - Ürün kategorisine göre farklı sıfatlar
+// =============================================================================
+const ADJECTIVE_POOLS = {
+  // Üst giyim
+  tops: [
+    "rahat kesim", "hafif dokulu", "günlük", "trend", "modern kesimli",
+    "casual", "slim fit", "regular fit", "relaxed fit", "boxy kesim",
+    "oversize", "crop", "basic", "minimal", "sade", "sportif", "dinamik",
+    "aktif", "urban", "street style", "bohemian", "retro", "vintage",
+    "klasik", "zamansız", "ince", "kalın", "yazlık", "kışlık", "mevsimlik",
+  ],
+  // Alt giyim
+  bottoms: [
+    "slim fit", "regular fit", "straight", "wide leg", "bootcut", "flare",
+    "skinny", "loose fit", "tapered", "cargo", "jogger", "palazzo",
+    "yüksek bel", "normal bel", "mom fit", "dad fit", "paper bag",
+    "rahat kesim", "esnek", "stretch", "denim", "kumaş", "pamuklu",
+  ],
+  // Elbiseler
+  dresses: [
+    "midi boy", "maxi boy", "mini boy", "A-line", "kalem", "fit & flare",
+    "wrap", "shift", "bodycon", "babydoll", "empire kesim", "asimetrik",
+    "kolsuz", "kısa kol", "uzun kol", "askılı", "straplez", "tek omuz",
+    "günlük", "ofis", "akşam", "kokteyl", "plaj", "yazlık", "parti",
+  ],
+  // Ayakkabılar
+  shoes: [
+    "rahat", "konforlu", "hafif", "esnek tabanlı", "ortopedik",
+    "günlük", "spor", "casual", "klasik", "modern", "trend",
+    "yürüyüş", "koşu", "antrenman", "outdoor", "urban", "street",
+  ],
+  // Çantalar
+  bags: [
+    "günlük", "pratik", "şık", "minimal", "fonksiyonel", "geniş",
+    "kompakt", "hafif", "dayanıklı", "modern", "klasik", "vintage",
+    "crossbody", "shoulder", "tote", "clutch", "backpack", "hobo",
+  ],
+  // Aksesuar
+  accessories: [
+    "şık", "minimal", "statement", "ince", "kalın", "hassas",
+    "günlük", "özel gün", "klasik", "modern", "bohem", "vintage",
+    "trend", "zamansız", "dikkat çekici", "sade", "zarif",
+  ],
+  // Genel
+  general: [
+    "kaliteli", "özenli", "detaylı", "şık görünümlü", "trend",
+    "modern", "klasik", "casual", "sportif", "günlük", "rahat",
+    "hafif", "yumuşak", "dayanıklı", "pratik", "fonksiyonel",
+  ],
+};
+
+// Ürün tipine göre kategori belirle
+function detectProductCategory(productName: string): keyof typeof ADJECTIVE_POOLS {
+  const name = productName.toLowerCase();
+
+  // Üst giyim
+  if (/t[ıi]şört|tshirt|bluz|gömlek|kazak|sweat|hoodie|ceket|mont|yelek|crop|top|body/i.test(name)) {
+    return "tops";
+  }
+  // Alt giyim
+  if (/pantolon|jean|kot|şort|etek|tayt|legging|eşofman|jogger/i.test(name)) {
+    return "bottoms";
+  }
+  // Elbise
+  if (/elbise|dress|tulum|jumpsuit/i.test(name)) {
+    return "dresses";
+  }
+  // Ayakkabı
+  if (/ayakkab[ıi]|sneaker|bot|çizme|sandalet|terlik|loafer|babet|topuk/i.test(name)) {
+    return "shoes";
+  }
+  // Çanta
+  if (/çanta|bag|cüzdan|wallet|clutch|sırt çantası/i.test(name)) {
+    return "bags";
+  }
+  // Aksesuar
+  if (/kolye|bilezik|küpe|yüzük|saat|şapka|bere|atkı|şal|kemer|gözlük/i.test(name)) {
+    return "accessories";
+  }
+
+  return "general";
+}
+
+// Rastgele sıfatlar seç (kullanılmamış olanlardan)
+function getRandomAdjectives(category: keyof typeof ADJECTIVE_POOLS, usedSet: Set<string>, count: number = 2): string[] {
+  const pool = [...ADJECTIVE_POOLS[category], ...ADJECTIVE_POOLS.general];
+  const available = pool.filter(adj => !usedSet.has(adj.toLowerCase()));
+
+  // Eğer yeterli kullanılmamış sıfat yoksa, havuzdan rastgele seç
+  const sourcePool = available.length >= count ? available : pool;
+
+  const selected: string[] = [];
+  const shuffled = sourcePool.sort(() => Math.random() - 0.5);
+
+  for (let i = 0; i < Math.min(count, shuffled.length); i++) {
+    selected.push(shuffled[i]);
+  }
+
+  return selected;
+}
+
+// =============================================================================
+// BASE URL
+// =============================================================================
 function getBaseUrl() {
-  // Netlify production
-  if (process.env.URL) {
-    return process.env.URL;
-  }
-  // Netlify deploy preview
-  if (process.env.DEPLOY_PRIME_URL) {
-    return process.env.DEPLOY_PRIME_URL;
-  }
-  // Custom base URL
-  if (process.env.NEXT_PUBLIC_BASE_URL) {
-    return process.env.NEXT_PUBLIC_BASE_URL;
-  }
-  // Localhost fallback
+  if (process.env.URL) return process.env.URL;
+  if (process.env.DEPLOY_PRIME_URL) return process.env.DEPLOY_PRIME_URL;
+  if (process.env.NEXT_PUBLIC_BASE_URL) return process.env.NEXT_PUBLIC_BASE_URL;
   return "http://localhost:3000";
 }
 
-// İş durumunu kontrol et - paused/cancelled ise false döndür
+// =============================================================================
+// JOB STATUS CHECK
+// =============================================================================
 async function checkJobStatus(jobId: number): Promise<boolean> {
   try {
     const job = await prisma.backgroundJob.findUnique({
@@ -33,11 +188,13 @@ async function checkJobStatus(jobId: number): Promise<boolean> {
   }
 }
 
-// Self-calling worker - kendini tekrar çağırır
-async function triggerNextBatch(jobId: number, delay: number = 500) {
+// =============================================================================
+// SELF-CALLING TRIGGER - Optimized
+// =============================================================================
+async function triggerNextBatch(jobId: number) {
   const baseUrl = getBaseUrl();
 
-  // Fire-and-forget - sonucu beklemeden çağır
+  // Hemen tetikle, bekleme kısaltıldı
   setTimeout(async () => {
     try {
       await fetch(`${baseUrl}/api/background-jobs/worker`, {
@@ -45,22 +202,28 @@ async function triggerNextBatch(jobId: number, delay: number = 500) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           jobId,
-          batchSize: 5,
-          parallelCount: 3,
+          batchSize: CONFIG.DEFAULT_BATCH_SIZE,
+          parallelCount: CONFIG.DEFAULT_PARALLEL_COUNT,
           selfCalling: true,
         }),
       });
     } catch (error) {
       console.error("Self-calling trigger error:", error);
     }
-  }, delay);
+  }, CONFIG.NEXT_BATCH_DELAY);
 }
 
-// Worker - Aktif işleri işle (PARALEL + SELF-CALLING)
+// =============================================================================
+// MAIN WORKER ENDPOINT
+// =============================================================================
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { jobId, batchSize = 5, parallelCount = 3, selfCalling = false } = body;
+    const {
+      jobId,
+      batchSize = CONFIG.DEFAULT_BATCH_SIZE,
+      parallelCount = CONFIG.DEFAULT_PARALLEL_COUNT,
+    } = body;
 
     // İşi bul
     const job = await prisma.backgroundJob.findUnique({
@@ -74,7 +237,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // İş durumunu kontrol et - paused veya cancelled ise durmalı
+    // İş durumunu kontrol et
     if (job.status !== "running") {
       return NextResponse.json({
         success: false,
@@ -84,7 +247,7 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // JSON.parse güvenliği - bozuk config durumunda hata vermemesi için
+    // Config parse
     let config: Record<string, unknown> = {};
     try {
       config = JSON.parse(job.config || "{}");
@@ -110,7 +273,7 @@ export async function POST(request: NextRequest) {
       error?: string;
     }> = [];
 
-    // İş tipine göre işle (PARALEL)
+    // İş tipine göre işle
     switch (job.jobType) {
       case "category_processing":
         const catResult = await processCategoryBatchParallel(job, config, batchSize, parallelCount);
@@ -139,15 +302,13 @@ export async function POST(request: NextRequest) {
         );
     }
 
-    // İş durumunu tekrar kontrol et (işlem sırasında değişmiş olabilir)
+    // İş durumunu tekrar kontrol et
     const currentJob = await prisma.backgroundJob.findUnique({
       where: { id: jobId },
       select: { status: true },
     });
 
-    // Eğer iş durdurulduysa veya iptal edildiyse, güncelleme yap ama devam etme
     if (currentJob?.status !== "running" || wasStopped) {
-      // Sadece sayaçları güncelle, status'u değiştirme
       await prisma.backgroundJob.update({
         where: { id: jobId },
         data: {
@@ -163,11 +324,7 @@ export async function POST(request: NextRequest) {
         success: true,
         data: {
           job: currentJob,
-          batchResult: {
-            processed: processedInBatch,
-            success: successInBatch,
-            error: errorInBatch,
-          },
+          batchResult: { processed: processedInBatch, success: successInBatch, error: errorInBatch },
           results,
           isCompleted: false,
           shouldContinue: false,
@@ -195,20 +352,21 @@ export async function POST(request: NextRequest) {
 
     const shouldContinue = !isCompleted && updatedJob.status === "running";
 
-    // SELF-CALLING: İş devam edecekse kendini tekrar çağır
+    // İş tamamlandıysa cache'i temizle
+    if (isCompleted) {
+      clearJobCache(jobId);
+    }
+
+    // Devam edecekse hemen tetikle
     if (shouldContinue) {
-      triggerNextBatch(jobId, 1000); // 1 saniye bekle ve tekrar çağır
+      triggerNextBatch(jobId);
     }
 
     return NextResponse.json({
       success: true,
       data: {
         job: updatedJob,
-        batchResult: {
-          processed: processedInBatch,
-          success: successInBatch,
-          error: errorInBatch,
-        },
+        batchResult: { processed: processedInBatch, success: successInBatch, error: errorInBatch },
         results,
         isCompleted,
         shouldContinue,
@@ -223,7 +381,9 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// Kategori işleme - PARALEL
+// =============================================================================
+// CATEGORY PROCESSING - Parallel
+// =============================================================================
 async function processCategoryBatchParallel(
   job: { id: number; processedItems: number; totalItems: number },
   config: { urunIds?: number[] },
@@ -231,7 +391,6 @@ async function processCategoryBatchParallel(
   parallelCount: number
 ) {
   const { urunIds = [] } = config;
-
   const offset = job.processedItems;
   const idsToProcess = urunIds.slice(offset, offset + batchSize);
 
@@ -257,9 +416,7 @@ async function processCategoryBatchParallel(
 
   const baseUrl = getBaseUrl();
 
-  // Paralel gruplar halinde işle
   for (let i = 0; i < idsToProcess.length; i += parallelCount) {
-    // Her grup öncesinde iş durumunu kontrol et
     const isRunning = await checkJobStatus(job.id);
     if (!isRunning) {
       wasStopped = true;
@@ -322,24 +479,25 @@ async function processCategoryBatchParallel(
 
     for (const result of chunkResults) {
       results.push(result);
-      if (result.success) {
-        success++;
-      } else {
+      if (result.success) success++;
+      else {
         error++;
         lastError = result.error || null;
       }
     }
 
-    // Rate limiting - paralel grup arasında kısa bekleme
+    // Kısa bekleme
     if (i + parallelCount < idsToProcess.length && !wasStopped) {
-      await new Promise(resolve => setTimeout(resolve, 200));
+      await new Promise(resolve => setTimeout(resolve, CONFIG.RATE_LIMIT_DELAY));
     }
   }
 
   return { processed: results.length, success, error, lastError, results, wasStopped };
 }
 
-// SEO işleme - PARALEL
+// =============================================================================
+// SEO PROCESSING - Parallel with Improved Prompts
+// =============================================================================
 async function processSEOBatchParallel(
   job: { id: number; processedItems: number; totalItems: number },
   config: { urunIds?: number[] },
@@ -347,7 +505,6 @@ async function processSEOBatchParallel(
   parallelCount: number
 ) {
   const { urunIds = [] } = config;
-
   const offset = job.processedItems;
   const idsToProcess = urunIds.slice(offset, offset + batchSize);
 
@@ -355,7 +512,6 @@ async function processSEOBatchParallel(
     return { processed: 0, success: 0, error: 0, lastError: null, results: [], wasStopped: false };
   }
 
-  // API key'i al
   const apiKey = await getOpenAIApiKey();
   if (!apiKey) {
     return {
@@ -393,9 +549,10 @@ async function processSEOBatchParallel(
     },
   });
 
-  // Paralel gruplar halinde işle
+  // Kullanılan sıfatları al
+  const usedAdjectives = getUsedAdjectives(job.id);
+
   for (let i = 0; i < products.length; i += parallelCount) {
-    // Her grup öncesinde iş durumunu kontrol et
     const isRunning = await checkJobStatus(job.id);
     if (!isRunning) {
       wasStopped = true;
@@ -420,11 +577,22 @@ async function processSEOBatchParallel(
           };
         }
 
-        // SEO optimize et
-        const seoResponse = await optimizeSEO(productName, apiKey);
+        // Ürün kategorisi ve rastgele sıfatlar belirle
+        const category = detectProductCategory(productName);
+        const suggestedAdjectives = getRandomAdjectives(category, usedAdjectives, 3);
+        const avoidList = getAvoidList(job.id);
+
+        // SEO optimize et - geliştirilmiş prompt ile
+        const seoResponse = await optimizeSEO(productName, apiKey, suggestedAdjectives, avoidList, 0);
 
         if (seoResponse.success && seoResponse.data) {
           const seoResult = seoResponse.data;
+
+          // Kullanılan sıfatları kaydet
+          if (seoResult.usedAdjectives) {
+            addUsedAdjectives(job.id, seoResult.usedAdjectives);
+          }
+
           // Veritabanına kaydet
           await prisma.productSeo.upsert({
             where: { urunId: product.urunId },
@@ -443,7 +611,6 @@ async function processSEOBatchParallel(
             },
           });
 
-          // Ürünü güncelle
           await prisma.product.update({
             where: { urunId: product.urunId },
             data: {
@@ -453,7 +620,6 @@ async function processSEOBatchParallel(
             },
           });
 
-          // Kategori güncelle
           if (seoResult.category) {
             await prisma.productCategory.upsert({
               where: { urunId: product.urunId },
@@ -511,30 +677,32 @@ async function processSEOBatchParallel(
 
     for (const result of chunkResults) {
       results.push(result);
-      if (result.success) {
-        success++;
-      } else {
+      if (result.success) success++;
+      else {
         error++;
         lastError = result.error || null;
       }
     }
 
-    // Rate limiting - paralel grup arasında bekle (OpenAI rate limit için)
+    // Kısa bekleme - OpenAI rate limit için
     if (i + parallelCount < products.length && !wasStopped) {
-      await new Promise(resolve => setTimeout(resolve, 800)); // Rate limit için artırıldı
+      await new Promise(resolve => setTimeout(resolve, CONFIG.RATE_LIMIT_DELAY));
     }
   }
 
   return { processed: results.length, success, error, lastError, results, wasStopped };
 }
 
-// SEO optimize helper function - GENİŞ SIFAT YELPAZESİ
+// =============================================================================
+// SEO OPTIMIZE - Tamamen yeniden tasarlanmış prompt
+// =============================================================================
 interface SEOResult {
   seoTitle: string;
   seoKeywords: string;
   seoDescription: string;
   seoUrl: string;
   category: string;
+  usedAdjectives?: string[];
 }
 
 interface SEOResponse {
@@ -546,116 +714,53 @@ interface SEOResponse {
 async function optimizeSEO(
   productName: string,
   apiKey: string,
+  suggestedAdjectives: string[],
+  avoidList: string,
   retryCount: number = 0
 ): Promise<SEOResponse> {
-  const MAX_RETRIES = 3;
 
-  const systemPrompt = `Sen Türkiye'nin EN İYİ e-ticaret SEO uzmanısın. Ürün isimlerini Trendyol için SEO uyumlu ve AÇIKLAYICI hale getiriyorsun.
+  // Rastgele bir stil seçimi için seed
+  const styleVariants = [
+    "fonksiyonel ve pratik",
+    "modern ve güncel",
+    "klasik ve zamansız",
+    "rahat ve konforlu",
+    "şık ve dikkat çekici",
+    "minimal ve sade",
+    "sportif ve dinamik",
+    "bohemian ve özgür",
+  ];
+  const randomStyle = styleVariants[Math.floor(Math.random() * styleVariants.length)];
 
-⚠️ ÖNEMLİ KURAL - İSMİ ZENGİNLEŞTİR AMA UYDURMA:
-- Ürün adındaki mevcut bilgileri kullan ve ANLAMLI bir şekilde genişlet
-- Ürün tipini belirle ve uygun sıfatlar ekle
-- ASLA olmayan özellikler ekleme (kumaş, beden, stil gibi - bunlar isimde yoksa ekleme)
-- Rakamları, kodları ve marka isimlerini TEMİZLE
+  // Kısa ve öz prompt - daha doğal sonuçlar için
+  const systemPrompt = `Sen e-ticaret SEO uzmanısın. Ürün isimlerini Türkçe, SEO uyumlu ve DOĞAL hale getiriyorsun.
 
-🎨 GENİŞ SIFAT YELPAZESİ - HER ÜRÜNE FARKLI SIFATLAR KULLAN:
+KURALLAR:
+1. Marka, kod, barkod ve anlamsız sayıları SİL
+2. Ürün tipini koru (tişört, pantolon, elbise vs.)
+3. Renk bilgisi varsa koru
+4. 1-2 DOĞAL sıfat ekle (fazla ekleme!)
+5. Maksimum 60 karakter
 
-📌 GENEL STİL SIFATLARI:
-- Şık, Zarif, Asil, Sofistike, Lüks, Premium, Kaliteli
-- Modern, Trend, Moda, Yeni Sezon, Son Moda
-- Minimal, Sade, Klasik, Vintage, Retro, Nostaljik
-- Sportif, Dinamik, Enerjik, Aktif
-- Romantik, Feminen, Maskülen, Unisex
+ÖNERİLEN SIFATLAR (bunlardan 1-2 tanesini kullanabilirsin): ${suggestedAdjectives.join(", ")}
 
-📌 KULLANIM/ORTAM SIFATLARI:
-- Günlük, Casual, Hafta Sonu, Rahat, Konforlu
-- Ofis, İş, Toplantı, Profesyonel, Resmi
-- Gece, Parti, Davet, Özel Gün, Kokteyl
-- Tatil, Plaj, Yaz, Kış, Mevsimlik
-- Spor, Antrenman, Outdoor, Doğa
+STİL YAKLAŞIMI: ${randomStyle}
 
-📌 FİZİKSEL ÖZELLİK SIFATLARI:
-- İnce, Kalın, Hafif, Yumuşak, Esnek
-- Bol, Dar, Slim, Oversize, Regular
-- Kısa, Uzun, Mini, Midi, Maxi
-- Crop, High-waist, Düşük Bel
+${avoidList ? `⚠️ BU SIFATLARI KULLANMA (son ürünlerde kullanıldı): ${avoidList}` : ""}
 
-📌 DESEN/DETAY SIFATLARI:
-- Düz, Desenli, Çizgili, Kareli, Puantiyeli
-- Çiçekli, Yaprak Desenli, Geometrik, Soyut
-- Baskılı, Nakışlı, İşlemeli, Dantelli
-- Fırfırlı, Pileli, Büzgülü, Katmanlı
-
-📌 DOKU/GÖRÜNÜM SIFATLARI:
-- Parlak, Mat, Saten, Kadife
-- Örme, Triko, Örgü, Dokuma
-- Deri, Süet, Kürk, Tüylü
-- Transparan, Şeffaf, Tül
-
-🎯 RASTGELE SIFAT SEÇ - TEKRARLAMA:
-Her ürün için yukarıdaki listelerden FARKLI sıfatlar seç. Aynı sıfatları tekrar tekrar kullanma!
-
-🚫 ÇIKARILACAKLAR:
-- Marka adları (Nike, Adidas, Zara, LC Waikiki, Koton, DeFacto, Mavi, vs.)
-- Ürün kodları, stok kodları, SKU (ABC123, BRN-001, KV2025, 5467 vs.)
-- Barkod numaraları
-- Anlamsız kısaltmalar
-- Sadece rakamlardan oluşan kodlar
-
-⛔ KATEGORİ KELİMESİ ASLA EKLEME:
-- "Kadın Giyim", "Erkek Giyim", "Çocuk Giyim" gibi kategori kelimeleri EKLEME
-
-✅ ÖRNEK DÖNÜŞÜMLER (HER BİRİ FARKLI SIFATLARLA):
-
-❌ "mavi crop 5467"
-✅ "Trend Mavi Crop Top" veya "Modern Mavi Kısa Tişört" veya "Sportif Mavi Crop Bluz"
-
-❌ "KOTON Siyah Pantolon 456789"
-✅ "Klasik Siyah Kumaş Pantolon" veya "Ofis Tipi Siyah Pantolon" veya "Slim Fit Siyah Pantolon"
-
-❌ "Nike Air Max 90 ABC123"
-✅ "Dinamik Spor Sneaker" veya "Aktif Yaşam Spor Ayakkabı" veya "Hafif Günlük Sneaker"
-
-❌ "Elbise Kırmızı 12345"
-✅ "Romantik Kırmızı Midi Elbise" veya "Feminen Kırmızı A-Line Elbise" veya "Parti Kırmızı Gece Elbisesi"
-
-❌ "kazak bej örme"
-✅ "Yumuşak Bej Triko Kazak" veya "Rahat Bej Örme Kazak" veya "Hafif Bej Örgü Kazak"
-
-❌ "tshirt beyaz basic"
-✅ "Minimal Beyaz Basic Tişört" veya "Sade Beyaz Pamuklu Tişört" veya "Casual Beyaz Tişört"
-
-❌ "mont siyah kışlık"
-✅ "Sıcak Tutan Siyah Kışlık Mont" veya "Premium Siyah Parka Mont" veya "Kalın Siyah Puf Mont"
-
-❌ "etek midi pembe"
-✅ "Romantik Pembe Midi Etek" veya "Feminen Pembe Pileli Etek" veya "Şık Pembe A-Line Etek"
-
-📝 SEO BAŞLIĞI FORMATI:
-[Sıfat1] + [Sıfat2 (opsiyonel)] + [Renk (varsa)] + [Özellik (varsa)] + [Ürün Tipi]
-
-Yanıtını tam olarak bu JSON formatında ver:
+JSON formatında yanıt ver:
 {
-  "seoTitle": "SEO uyumlu, açıklayıcı başlık (50-80 karakter)",
-  "seoKeywords": "ürüne uygun anahtar kelimeler, virgülle ayrılmış",
-  "seoDescription": "SEO meta açıklaması (max 160 karakter)",
-  "seoUrl": "seo-uyumlu-url-slug",
-  "category": "Ana Kategori > Alt Kategori"
+  "seoTitle": "Doğal ve akıcı ürün ismi",
+  "seoKeywords": "anahtar, kelimeler",
+  "seoDescription": "Kısa açıklama (max 120 karakter)",
+  "seoUrl": "seo-uyumlu-url",
+  "category": "Kategori",
+  "usedAdjectives": ["kullandığın", "sıfatlar"]
 }`;
 
-  const userPrompt = `Ürün adı: "${productName}"
+  const userPrompt = `Ürün: "${productName}"
 
-🎯 GÖREV:
-1. Ürün kodlarını, rakamları ve marka isimlerini TEMİZLE
-2. Ürün tipini belirle (Tişört, Pantolon, Elbise, Kazak vs.)
-3. GENİŞ SIFAT YELPAZESİNDEN uygun ve FARKLI sıfatlar seç
-4. AÇIKLAYICI ve SEO UYUMLU bir isim oluştur
-
-⚠️ ÖNEMLİ:
-- Her ürün için FARKLI sıfatlar kullan, hep aynı sıfatları tekrarlama!
-- "Şık ve Zarif" gibi klişe kombinasyonlardan KAÇIN
-- Ürün tipine ve kullanım amacına UYGUN sıfatlar seç
-- "Kadın Giyim", "Erkek Giyim" gibi kategori kelimeleri ASLA ekleme!`;
+Bu ürün için DOĞAL ve SEO uyumlu bir isim oluştur.`;
 
   try {
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -665,13 +770,15 @@ Yanıtını tam olarak bu JSON formatında ver:
         Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: "gpt-4o-mini",
+        model: CONFIG.GPT_MODEL,
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: userPrompt },
         ],
-        temperature: 0.7,
-        max_tokens: 500,
+        temperature: CONFIG.GPT_TEMPERATURE,
+        max_tokens: CONFIG.GPT_MAX_TOKENS,
+        // Her çağrı için benzersiz sonuç
+        seed: Math.floor(Math.random() * 1000000),
       }),
     });
 
@@ -679,25 +786,23 @@ Yanıtını tam olarak bu JSON formatında ver:
       const errorText = await response.text();
       console.error("OpenAI API error:", response.status, errorText);
 
-      // Rate limit hatası - retry yap
-      if (response.status === 429 && retryCount < MAX_RETRIES) {
-        const waitTime = Math.pow(2, retryCount) * 1000; // Exponential backoff
-        console.log(`Rate limited, waiting ${waitTime}ms before retry ${retryCount + 1}/${MAX_RETRIES}`);
+      // Rate limit - exponential backoff ile retry
+      if (response.status === 429 && retryCount < CONFIG.MAX_RETRIES) {
+        const waitTime = Math.pow(2, retryCount) * CONFIG.RETRY_BASE_DELAY;
         await new Promise(resolve => setTimeout(resolve, waitTime));
-        return optimizeSEO(productName, apiKey, retryCount + 1);
+        return optimizeSEO(productName, apiKey, suggestedAdjectives, avoidList, retryCount + 1);
       }
 
-      // Server error - retry yap
-      if (response.status >= 500 && retryCount < MAX_RETRIES) {
-        const waitTime = Math.pow(2, retryCount) * 1000;
-        console.log(`Server error, waiting ${waitTime}ms before retry ${retryCount + 1}/${MAX_RETRIES}`);
+      // Server error - retry
+      if (response.status >= 500 && retryCount < CONFIG.MAX_RETRIES) {
+        const waitTime = Math.pow(2, retryCount) * CONFIG.RETRY_BASE_DELAY;
         await new Promise(resolve => setTimeout(resolve, waitTime));
-        return optimizeSEO(productName, apiKey, retryCount + 1);
+        return optimizeSEO(productName, apiKey, suggestedAdjectives, avoidList, retryCount + 1);
       }
 
       return {
         success: false,
-        error: `OpenAI API hatası (${response.status}): ${errorText.slice(0, 200)}`,
+        error: `OpenAI API hatası (${response.status})`,
       };
     }
 
@@ -705,13 +810,10 @@ Yanıtını tam olarak bu JSON formatında ver:
     const content = data.choices[0]?.message?.content;
 
     if (!content) {
-      return {
-        success: false,
-        error: "OpenAI boş yanıt döndürdü",
-      };
+      return { success: false, error: "OpenAI boş yanıt döndürdü" };
     }
 
-    // Parse JSON
+    // JSON parse
     let cleanContent = content.trim();
     if (cleanContent.startsWith("```json")) cleanContent = cleanContent.slice(7);
     if (cleanContent.startsWith("```")) cleanContent = cleanContent.slice(3);
@@ -723,24 +825,19 @@ Yanıtını tam olarak bu JSON formatında ver:
       seoDescription?: string;
       seoUrl?: string;
       category?: string;
+      usedAdjectives?: string[];
     }
 
     let seoData: SEOData = {};
     try {
       seoData = JSON.parse(cleanContent.trim()) as SEOData;
     } catch (parseError) {
-      console.error("SEO JSON parse error:", parseError, cleanContent);
-      // Retry for parsing errors
-      if (retryCount < MAX_RETRIES) {
-        const waitTime = 500;
-        console.log(`JSON parse error, retrying ${retryCount + 1}/${MAX_RETRIES}`);
-        await new Promise(resolve => setTimeout(resolve, waitTime));
-        return optimizeSEO(productName, apiKey, retryCount + 1);
+      console.error("SEO JSON parse error:", parseError);
+      if (retryCount < CONFIG.MAX_RETRIES) {
+        await new Promise(resolve => setTimeout(resolve, 300));
+        return optimizeSEO(productName, apiKey, suggestedAdjectives, avoidList, retryCount + 1);
       }
-      return {
-        success: false,
-        error: `JSON parse hatası: ${cleanContent.slice(0, 100)}`,
-      };
+      return { success: false, error: "JSON parse hatası" };
     }
 
     return {
@@ -751,17 +848,16 @@ Yanıtını tam olarak bu JSON formatında ver:
         seoDescription: seoData.seoDescription || "",
         seoUrl: seoData.seoUrl || "",
         category: seoData.category || "",
+        usedAdjectives: seoData.usedAdjectives || [],
       },
     };
   } catch (error) {
     console.error("SEO optimization error:", error);
 
-    // Network errors - retry
-    if (retryCount < MAX_RETRIES) {
-      const waitTime = Math.pow(2, retryCount) * 1000;
-      console.log(`Network error, retrying ${retryCount + 1}/${MAX_RETRIES}`);
+    if (retryCount < CONFIG.MAX_RETRIES) {
+      const waitTime = Math.pow(2, retryCount) * CONFIG.RETRY_BASE_DELAY;
       await new Promise(resolve => setTimeout(resolve, waitTime));
-      return optimizeSEO(productName, apiKey, retryCount + 1);
+      return optimizeSEO(productName, apiKey, suggestedAdjectives, avoidList, retryCount + 1);
     }
 
     return {
@@ -771,7 +867,9 @@ Yanıtını tam olarak bu JSON formatında ver:
   }
 }
 
-// Aktif işlerin durumunu getir (polling için)
+// =============================================================================
+// GET - Aktif iş durumu (polling için)
+// =============================================================================
 export async function GET() {
   try {
     const activeJob = await prisma.backgroundJob.findFirst({
@@ -780,13 +878,6 @@ export async function GET() {
       },
       orderBy: { createdAt: "desc" },
     });
-
-    if (!activeJob) {
-      return NextResponse.json({
-        success: true,
-        data: null,
-      });
-    }
 
     return NextResponse.json({
       success: true,
