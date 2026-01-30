@@ -20,6 +20,19 @@ function getBaseUrl() {
   return "http://localhost:3000";
 }
 
+// İş durumunu kontrol et - paused/cancelled ise false döndür
+async function checkJobStatus(jobId: number): Promise<boolean> {
+  try {
+    const job = await prisma.backgroundJob.findUnique({
+      where: { id: jobId },
+      select: { status: true },
+    });
+    return job?.status === "running";
+  } catch {
+    return false;
+  }
+}
+
 // Self-calling worker - kendini tekrar çağırır
 async function triggerNextBatch(jobId: number, delay: number = 500) {
   const baseUrl = getBaseUrl();
@@ -84,6 +97,7 @@ export async function POST(request: NextRequest) {
     let successInBatch = 0;
     let errorInBatch = 0;
     let lastError: string | null = null;
+    let wasStopped = false;
     const results: Array<{
       urunKodu: string;
       urunId: number;
@@ -104,6 +118,7 @@ export async function POST(request: NextRequest) {
         successInBatch = catResult.success;
         errorInBatch = catResult.error;
         lastError = catResult.lastError;
+        wasStopped = catResult.wasStopped;
         results.push(...catResult.results);
         break;
 
@@ -113,6 +128,7 @@ export async function POST(request: NextRequest) {
         successInBatch = seoResult.success;
         errorInBatch = seoResult.error;
         lastError = seoResult.lastError;
+        wasStopped = seoResult.wasStopped;
         results.push(...seoResult.results);
         break;
 
@@ -121,6 +137,43 @@ export async function POST(request: NextRequest) {
           { success: false, error: "Bilinmeyen iş tipi" },
           { status: 400 }
         );
+    }
+
+    // İş durumunu tekrar kontrol et (işlem sırasında değişmiş olabilir)
+    const currentJob = await prisma.backgroundJob.findUnique({
+      where: { id: jobId },
+      select: { status: true },
+    });
+
+    // Eğer iş durdurulduysa veya iptal edildiyse, güncelleme yap ama devam etme
+    if (currentJob?.status !== "running" || wasStopped) {
+      // Sadece sayaçları güncelle, status'u değiştirme
+      await prisma.backgroundJob.update({
+        where: { id: jobId },
+        data: {
+          processedItems: job.processedItems + processedInBatch,
+          successCount: job.successCount + successInBatch,
+          errorCount: job.errorCount + errorInBatch,
+          lastError: lastError || job.lastError,
+          lastActivityAt: new Date(),
+        },
+      });
+
+      return NextResponse.json({
+        success: true,
+        data: {
+          job: currentJob,
+          batchResult: {
+            processed: processedInBatch,
+            success: successInBatch,
+            error: errorInBatch,
+          },
+          results,
+          isCompleted: false,
+          shouldContinue: false,
+          stoppedByUser: true,
+        },
+      });
     }
 
     // İş durumunu güncelle
@@ -183,7 +236,7 @@ async function processCategoryBatchParallel(
   const idsToProcess = urunIds.slice(offset, offset + batchSize);
 
   if (idsToProcess.length === 0) {
-    return { processed: 0, success: 0, error: 0, lastError: null, results: [] };
+    return { processed: 0, success: 0, error: 0, lastError: null, results: [], wasStopped: false };
   }
 
   const results: Array<{
@@ -200,11 +253,19 @@ async function processCategoryBatchParallel(
   let success = 0;
   let error = 0;
   let lastError: string | null = null;
+  let wasStopped = false;
 
   const baseUrl = getBaseUrl();
 
   // Paralel gruplar halinde işle
   for (let i = 0; i < idsToProcess.length; i += parallelCount) {
+    // Her grup öncesinde iş durumunu kontrol et
+    const isRunning = await checkJobStatus(job.id);
+    if (!isRunning) {
+      wasStopped = true;
+      break;
+    }
+
     const chunk = idsToProcess.slice(i, i + parallelCount);
 
     const promises = chunk.map(async (urunId) => {
@@ -270,12 +331,12 @@ async function processCategoryBatchParallel(
     }
 
     // Rate limiting - paralel grup arasında kısa bekleme
-    if (i + parallelCount < idsToProcess.length) {
+    if (i + parallelCount < idsToProcess.length && !wasStopped) {
       await new Promise(resolve => setTimeout(resolve, 200));
     }
   }
 
-  return { processed: idsToProcess.length, success, error, lastError, results };
+  return { processed: results.length, success, error, lastError, results, wasStopped };
 }
 
 // SEO işleme - PARALEL
@@ -291,7 +352,7 @@ async function processSEOBatchParallel(
   const idsToProcess = urunIds.slice(offset, offset + batchSize);
 
   if (idsToProcess.length === 0) {
-    return { processed: 0, success: 0, error: 0, lastError: null, results: [] };
+    return { processed: 0, success: 0, error: 0, lastError: null, results: [], wasStopped: false };
   }
 
   // API key'i al
@@ -302,7 +363,8 @@ async function processSEOBatchParallel(
       success: 0,
       error: idsToProcess.length,
       lastError: "OpenAI API anahtarı ayarlanmamış",
-      results: []
+      results: [],
+      wasStopped: false,
     };
   }
 
@@ -318,6 +380,7 @@ async function processSEOBatchParallel(
   let success = 0;
   let error = 0;
   let lastError: string | null = null;
+  let wasStopped = false;
 
   // Ürünleri veritabanından al
   const products = await prisma.product.findMany({
@@ -332,6 +395,13 @@ async function processSEOBatchParallel(
 
   // Paralel gruplar halinde işle
   for (let i = 0; i < products.length; i += parallelCount) {
+    // Her grup öncesinde iş durumunu kontrol et
+    const isRunning = await checkJobStatus(job.id);
+    if (!isRunning) {
+      wasStopped = true;
+      break;
+    }
+
     const chunk = products.slice(i, i + parallelCount);
 
     const promises = chunk.map(async (product) => {
@@ -449,15 +519,15 @@ async function processSEOBatchParallel(
     }
 
     // Rate limiting - paralel grup arasında bekle (OpenAI rate limit için)
-    if (i + parallelCount < products.length) {
+    if (i + parallelCount < products.length && !wasStopped) {
       await new Promise(resolve => setTimeout(resolve, 300));
     }
   }
 
-  return { processed: idsToProcess.length, success, error, lastError, results };
+  return { processed: results.length, success, error, lastError, results, wasStopped };
 }
 
-// SEO optimize helper function
+// SEO optimize helper function - GENİŞ SIFAT YELPAZESİ
 async function optimizeSEO(
   productName: string,
   apiKey: string
@@ -477,11 +547,42 @@ async function optimizeSEO(
 - ASLA olmayan özellikler ekleme (kumaş, beden, stil gibi - bunlar isimde yoksa ekleme)
 - Rakamları, kodları ve marka isimlerini TEMİZLE
 
-🎯 İSİM OLUŞTURMA KURALLARI:
-1. Ürün tipini belirle (Tişört, Pantolon, Elbise, Kazak, Gömlek vs.)
-2. Renk varsa kullan
-3. "Şık", "Günlük", "Rahat", "Zarif" gibi genel sıfatlar ekleyebilirsin
-4. Ürün tipine uygun standart açıklamalar ekle (ama kumaş, beden gibi spesifik özellikler EKLEME)
+🎨 GENİŞ SIFAT YELPAZESİ - HER ÜRÜNE FARKLI SIFATLAR KULLAN:
+
+📌 GENEL STİL SIFATLARI:
+- Şık, Zarif, Asil, Sofistike, Lüks, Premium, Kaliteli
+- Modern, Trend, Moda, Yeni Sezon, Son Moda
+- Minimal, Sade, Klasik, Vintage, Retro, Nostaljik
+- Sportif, Dinamik, Enerjik, Aktif
+- Romantik, Feminen, Maskülen, Unisex
+
+📌 KULLANIM/ORTAM SIFATLARI:
+- Günlük, Casual, Hafta Sonu, Rahat, Konforlu
+- Ofis, İş, Toplantı, Profesyonel, Resmi
+- Gece, Parti, Davet, Özel Gün, Kokteyl
+- Tatil, Plaj, Yaz, Kış, Mevsimlik
+- Spor, Antrenman, Outdoor, Doğa
+
+📌 FİZİKSEL ÖZELLİK SIFATLARI:
+- İnce, Kalın, Hafif, Yumuşak, Esnek
+- Bol, Dar, Slim, Oversize, Regular
+- Kısa, Uzun, Mini, Midi, Maxi
+- Crop, High-waist, Düşük Bel
+
+📌 DESEN/DETAY SIFATLARI:
+- Düz, Desenli, Çizgili, Kareli, Puantiyeli
+- Çiçekli, Yaprak Desenli, Geometrik, Soyut
+- Baskılı, Nakışlı, İşlemeli, Dantelli
+- Fırfırlı, Pileli, Büzgülü, Katmanlı
+
+📌 DOKU/GÖRÜNÜM SIFATLARI:
+- Parlak, Mat, Saten, Kadife
+- Örme, Triko, Örgü, Dokuma
+- Deri, Süet, Kürk, Tüylü
+- Transparan, Şeffaf, Tül
+
+🎯 RASTGELE SIFAT SEÇ - TEKRARLAMA:
+Her ürün için yukarıdaki listelerden FARKLI sıfatlar seç. Aynı sıfatları tekrar tekrar kullanma!
 
 🚫 ÇIKARILACAKLAR:
 - Marka adları (Nike, Adidas, Zara, LC Waikiki, Koton, DeFacto, Mavi, vs.)
@@ -493,28 +594,34 @@ async function optimizeSEO(
 ⛔ KATEGORİ KELİMESİ ASLA EKLEME:
 - "Kadın Giyim", "Erkek Giyim", "Çocuk Giyim" gibi kategori kelimeleri EKLEME
 
-✅ ÖRNEK DÖNÜŞÜMLER:
+✅ ÖRNEK DÖNÜŞÜMLER (HER BİRİ FARKLI SIFATLARLA):
 
-❌ "mavi crop 5467" veya "BRN-MAVI CROP 123"
-✅ "Şık Mavi Crop Tişört" veya "Günlük Mavi Renkli Crop Top"
+❌ "mavi crop 5467"
+✅ "Trend Mavi Crop Top" veya "Modern Mavi Kısa Tişört" veya "Sportif Mavi Crop Bluz"
 
 ❌ "KOTON Siyah Pantolon 456789"
-✅ "Şık Siyah Kumaş Pantolon"
+✅ "Klasik Siyah Kumaş Pantolon" veya "Ofis Tipi Siyah Pantolon" veya "Slim Fit Siyah Pantolon"
 
 ❌ "Nike Air Max 90 ABC123"
-✅ "Spor Sneaker Ayakkabı"
+✅ "Dinamik Spor Sneaker" veya "Aktif Yaşam Spor Ayakkabı" veya "Hafif Günlük Sneaker"
 
 ❌ "Elbise Kırmızı 12345"
-✅ "Zarif Kırmızı Günlük Elbise"
+✅ "Romantik Kırmızı Midi Elbise" veya "Feminen Kırmızı A-Line Elbise" veya "Parti Kırmızı Gece Elbisesi"
 
 ❌ "kazak bej örme"
-✅ "Şık Bej Örme Kazak"
+✅ "Yumuşak Bej Triko Kazak" veya "Rahat Bej Örme Kazak" veya "Hafif Bej Örgü Kazak"
 
 ❌ "tshirt beyaz basic"
-✅ "Günlük Beyaz Basic Tişört"
+✅ "Minimal Beyaz Basic Tişört" veya "Sade Beyaz Pamuklu Tişört" veya "Casual Beyaz Tişört"
+
+❌ "mont siyah kışlık"
+✅ "Sıcak Tutan Siyah Kışlık Mont" veya "Premium Siyah Parka Mont" veya "Kalın Siyah Puf Mont"
+
+❌ "etek midi pembe"
+✅ "Romantik Pembe Midi Etek" veya "Feminen Pembe Pileli Etek" veya "Şık Pembe A-Line Etek"
 
 📝 SEO BAŞLIĞI FORMATI:
-[Sıfat] + [Renk (varsa)] + [Özellik (varsa)] + [Ürün Tipi]
+[Sıfat1] + [Sıfat2 (opsiyonel)] + [Renk (varsa)] + [Özellik (varsa)] + [Ürün Tipi]
 
 Yanıtını tam olarak bu JSON formatında ver:
 {
@@ -530,12 +637,13 @@ Yanıtını tam olarak bu JSON formatında ver:
 🎯 GÖREV:
 1. Ürün kodlarını, rakamları ve marka isimlerini TEMİZLE
 2. Ürün tipini belirle (Tişört, Pantolon, Elbise, Kazak vs.)
-3. AÇIKLAYICI ve SEO UYUMLU bir isim oluştur
-4. "Şık", "Günlük", "Rahat", "Zarif" gibi uygun sıfatlar ekle
+3. GENİŞ SIFAT YELPAZESİNDEN uygun ve FARKLI sıfatlar seç
+4. AÇIKLAYICI ve SEO UYUMLU bir isim oluştur
 
 ⚠️ ÖNEMLİ:
-- "mavi crop 5467" → "Şık Mavi Crop Tişört" (Sadece temizleme değil, zenginleştirme!)
-- Ürün tipini açıkça belirt
+- Her ürün için FARKLI sıfatlar kullan, hep aynı sıfatları tekrarlama!
+- "Şık ve Zarif" gibi klişe kombinasyonlardan KAÇIN
+- Ürün tipine ve kullanım amacına UYGUN sıfatlar seç
 - "Kadın Giyim", "Erkek Giyim" gibi kategori kelimeleri ASLA ekleme!`;
 
   try {
@@ -551,7 +659,7 @@ Yanıtını tam olarak bu JSON formatında ver:
           { role: "system", content: systemPrompt },
           { role: "user", content: userPrompt },
         ],
-        temperature: 0.3,
+        temperature: 0.7, // Daha yaratıcı ve çeşitli sonuçlar için artırıldı
         max_tokens: 500,
       }),
     });
