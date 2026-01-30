@@ -18,7 +18,6 @@ import { Progress } from "@/components/ui/progress";
 import {
   Download,
   FileSpreadsheet,
-  Image as ImageIcon,
   Package,
   FolderTree,
   Sparkles,
@@ -31,7 +30,7 @@ import {
   Split,
 } from "lucide-react";
 
-type ExportType = "urunresimleriurl" | "urunbilgisi" | "urunkategori";
+type ExportType = "urunbilgisi" | "urunkategori";
 type FilterType = "all" | "processed" | "unprocessed" | "recentUpload" | "dateRange";
 
 interface ExportState {
@@ -50,7 +49,6 @@ export function ExportPanel() {
   const [chunkSize, setChunkSize] = useState<string>("5000");
   const [totalProducts, setTotalProducts] = useState<number>(0);
   const [exportStates, setExportStates] = useState<Record<ExportType, ExportState>>({
-    urunresimleriurl: { loading: false, success: false, error: null, progress: 0, totalChunks: 0, currentChunk: 0 },
     urunbilgisi: { loading: false, success: false, error: null, progress: 0, totalChunks: 0, currentChunk: 0 },
     urunkategori: { loading: false, success: false, error: null, progress: 0, totalChunks: 0, currentChunk: 0 },
   });
@@ -106,7 +104,6 @@ export function ExportPanel() {
 
     try {
       const endpoints: Record<ExportType, string> = {
-        urunresimleriurl: "/api/export/urunresimleripcden",
         urunbilgisi: "/api/export/urunbilgisi",
         urunkategori: "/api/export/urunkategori",
       };
@@ -143,7 +140,6 @@ export function ExportPanel() {
         // Dosya adına parça numarası ekle
         const chunkLabel = totalChunks > 1 ? `_parca${chunk + 1}` : "";
         const filenames: Record<ExportType, string> = {
-          urunresimleriurl: `urunresimleriurl${filterLabel}${chunkLabel}_${dateStr}.xlsx`,
           urunbilgisi: `urunbilgisi${filterLabel}${chunkLabel}_${dateStr}.xlsx`,
           urunkategori: `urunkategori${filterLabel}${chunkLabel}_${dateStr}.xlsx`,
         };
@@ -408,7 +404,7 @@ export function ExportPanel() {
         Excel Dosyaları
       </h3>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-2">
         {/* Ürün Bilgisi Export */}
         <Card className="border-zinc-800 bg-zinc-900/50">
           <CardHeader>
@@ -462,33 +458,6 @@ export function ExportPanel() {
             </ExportButton>
           </CardContent>
         </Card>
-
-        {/* Ürün Resimleri URL Export */}
-        <Card className="border-zinc-800 bg-zinc-900/50">
-          <CardHeader>
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-blue-500/10">
-                <ImageIcon className="h-5 w-5 text-blue-400" />
-              </div>
-              <div>
-                <CardTitle className="text-base">Ürün Resimleri URL</CardTitle>
-                <CardDescription className="text-xs">
-                  urunresimleriurl.xlsx formatı
-                </CardDescription>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-zinc-400 mb-4">
-              URUNID, URUNKODU, ADI ve RESIM1-16 URL&apos;leri.
-              Yeni URL varsa onu, yoksa eskisini kullanır.
-            </p>
-            <ExportButton type="urunresimleriurl">
-              <FileSpreadsheet className="w-4 h-4 mr-2" />
-              urunresimleriurl.xlsx İndir
-            </ExportButton>
-          </CardContent>
-        </Card>
       </div>
 
       {/* Info Card */}
@@ -508,10 +477,6 @@ export function ExportPanel() {
             <p className="flex items-start gap-2">
               <span className="text-purple-400">*</span>
               <span>Kategoriler: Yeni kategori varsa onu, yoksa eski kategoriyi kullanır.</span>
-            </p>
-            <p className="flex items-start gap-2">
-              <span className="text-blue-400">*</span>
-              <span>Resimler: Yeni URL varsa (Cloudinary), yoksa eski URL kullanılır.</span>
             </p>
             <p className="flex items-start gap-2">
               <span className="text-amber-400">*</span>
