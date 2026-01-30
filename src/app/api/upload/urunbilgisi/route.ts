@@ -1063,18 +1063,8 @@ export async function POST(request: NextRequest) {
           }
         }
 
-        // Log
-        try {
-          await prisma.processingLog.create({
-            data: {
-              islemTipi: "upload",
-              durum: failed > 0 ? "partial" : "success",
-              mesaj: `ürünbilgisi.xlsx [${settings.updateMode}]: ${created.toLocaleString()} yeni, ${updated.toLocaleString()} güncellendi, ${skipped.toLocaleString()} atlandı, ${failed.toLocaleString()} hata`,
-            },
-          });
-        } catch (logErr) {
-          console.error("Log error:", logErr);
-        }
+        // Log to console only (momentary)
+        console.log(`[Upload] ürünbilgisi.xlsx [${settings.updateMode}]: ${created.toLocaleString()} yeni, ${updated.toLocaleString()} güncellendi, ${skipped.toLocaleString()} atlandı, ${failed.toLocaleString()} hata`);
 
         const resultMessage = settings.updateMode === 'new_only'
           ? `Tamamlandı! ${created.toLocaleString()} yeni ürün eklendi, ${skipped.toLocaleString()} mevcut ürün atlandı.`
