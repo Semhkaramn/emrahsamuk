@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
 import {
   Download,
   FileSpreadsheet,
@@ -27,6 +28,7 @@ import {
   Filter,
   Clock,
   AlertCircle,
+  Split,
 } from "lucide-react";
 
 type ExportType = "urunresimleriurl" | "urunbilgisi" | "urunkategori";
@@ -36,21 +38,44 @@ interface ExportState {
   loading: boolean;
   success: boolean;
   error: string | null;
+  progress: number;
+  totalChunks: number;
+  currentChunk: number;
 }
 
 export function ExportPanel() {
   const [filterType, setFilterType] = useState<FilterType>("all");
   const [sinceDate, setSinceDate] = useState<string>("");
   const [untilDate, setUntilDate] = useState<string>("");
+  const [chunkSize, setChunkSize] = useState<string>("5000");
+  const [totalProducts, setTotalProducts] = useState<number>(0);
   const [exportStates, setExportStates] = useState<Record<ExportType, ExportState>>({
-    urunresimleriurl: { loading: false, success: false, error: null },
-    urunbilgisi: { loading: false, success: false, error: null },
-    urunkategori: { loading: false, success: false, error: null },
+    urunresimleriurl: { loading: false, success: false, error: null, progress: 0, totalChunks: 0, currentChunk: 0 },
+    urunbilgisi: { loading: false, success: false, error: null, progress: 0, totalChunks: 0, currentChunk: 0 },
+    urunkategori: { loading: false, success: false, error: null, progress: 0, totalChunks: 0, currentChunk: 0 },
   });
 
-  const buildQueryString = useCallback(() => {
+  // Fetch total product count
+  useEffect(() => {
+    const fetchStats = async () => {
+      try {
+        const response = await fetch("/api/stats");
+        const data = await response.json();
+        if (data.success) {
+          setTotalProducts(data.data.total);
+        }
+      } catch (error) {
+        console.error("Stats fetch error:", error);
+      }
+    };
+    fetchStats();
+  }, []);
+
+  const buildQueryString = useCallback((offset: number, limit: number) => {
     const params = new URLSearchParams();
     params.set("filterType", filterType);
+    params.set("offset", offset.toString());
+    params.set("limit", limit.toString());
 
     if (filterType === "dateRange" && sinceDate) {
       params.set("sinceDate", new Date(sinceDate).toISOString());
@@ -63,52 +88,86 @@ export function ExportPanel() {
   }, [filterType, sinceDate, untilDate]);
 
   const handleExport = useCallback(async (type: ExportType) => {
+    const limit = parseInt(chunkSize) || 5000;
+    const totalChunks = Math.ceil(totalProducts / limit);
+
+    if (totalChunks === 0) {
+      setExportStates((prev) => ({
+        ...prev,
+        [type]: { loading: false, success: false, error: "İndirilecek ürün bulunamadı", progress: 0, totalChunks: 0, currentChunk: 0 },
+      }));
+      return;
+    }
+
     setExportStates((prev) => ({
       ...prev,
-      [type]: { loading: true, success: false, error: null },
+      [type]: { loading: true, success: false, error: null, progress: 0, totalChunks, currentChunk: 0 },
     }));
 
     try {
-      const queryString = buildQueryString();
       const endpoints: Record<ExportType, string> = {
-        urunresimleriurl: `/api/export/urunresimleripcden?${queryString}`,
-        urunbilgisi: `/api/export/urunbilgisi?${queryString}`,
-        urunkategori: `/api/export/urunkategori?${queryString}`,
+        urunresimleriurl: "/api/export/urunresimleripcden",
+        urunbilgisi: "/api/export/urunbilgisi",
+        urunkategori: "/api/export/urunkategori",
       };
 
       const filterLabel = filterType === "all" ? "" : `_${filterType}`;
       const dateStr = new Date().toISOString().split("T")[0];
-      const filenames: Record<ExportType, string> = {
-        urunresimleriurl: `urunresimleriurl${filterLabel}_${dateStr}.xlsx`,
-        urunbilgisi: `urunbilgisi${filterLabel}_${dateStr}.xlsx`,
-        urunkategori: `urunkategori${filterLabel}_${dateStr}.xlsx`,
-      };
 
-      const response = await fetch(endpoints[type]);
+      // Download each chunk
+      for (let chunk = 0; chunk < totalChunks; chunk++) {
+        const offset = chunk * limit;
+        const queryString = buildQueryString(offset, limit);
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: "İndirme hatası" }));
-        throw new Error(errorData.error || "İndirme hatası");
+        setExportStates((prev) => ({
+          ...prev,
+          [type]: {
+            ...prev[type],
+            currentChunk: chunk + 1,
+            progress: Math.round(((chunk + 1) / totalChunks) * 100)
+          },
+        }));
+
+        const response = await fetch(`${endpoints[type]}?${queryString}`);
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({ error: "İndirme hatası" }));
+          throw new Error(errorData.error || "İndirme hatası");
+        }
+
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+
+        // Dosya adına parça numarası ekle
+        const chunkLabel = totalChunks > 1 ? `_parca${chunk + 1}` : "";
+        const filenames: Record<ExportType, string> = {
+          urunresimleriurl: `urunresimleriurl${filterLabel}${chunkLabel}_${dateStr}.xlsx`,
+          urunbilgisi: `urunbilgisi${filterLabel}${chunkLabel}_${dateStr}.xlsx`,
+          urunkategori: `urunkategori${filterLabel}${chunkLabel}_${dateStr}.xlsx`,
+        };
+
+        a.download = filenames[type];
+        a.click();
+        URL.revokeObjectURL(url);
+
+        // Her parça arasında kısa bekle
+        if (chunk < totalChunks - 1) {
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
       }
-
-      const blob = await response.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = filenames[type];
-      a.click();
-      URL.revokeObjectURL(url);
 
       setExportStates((prev) => ({
         ...prev,
-        [type]: { loading: false, success: true, error: null },
+        [type]: { loading: false, success: true, error: null, progress: 100, totalChunks, currentChunk: totalChunks },
       }));
 
       // Reset success after 3 seconds
       setTimeout(() => {
         setExportStates((prev) => ({
           ...prev,
-          [type]: { ...prev[type], success: false },
+          [type]: { ...prev[type], success: false, progress: 0, totalChunks: 0, currentChunk: 0 },
         }));
       }, 3000);
     } catch (error) {
@@ -119,10 +178,13 @@ export function ExportPanel() {
           loading: false,
           success: false,
           error: error instanceof Error ? error.message : "İndirme hatası",
+          progress: 0,
+          totalChunks: 0,
+          currentChunk: 0,
         },
       }));
     }
-  }, [buildQueryString, filterType]);
+  }, [buildQueryString, filterType, chunkSize, totalProducts]);
 
   const ExportButton = ({ type, children }: { type: ExportType; children: React.ReactNode }) => {
     const state = exportStates[type];
@@ -137,17 +199,22 @@ export function ExportPanel() {
           {state.loading ? (
             <>
               <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              İndiriliyor...
+              {state.totalChunks > 1
+                ? `Parça ${state.currentChunk}/${state.totalChunks} indiriliyor...`
+                : "İndiriliyor..."}
             </>
           ) : state.success ? (
             <>
               <CheckCircle2 className="w-4 h-4 mr-2 text-emerald-400" />
-              İndirildi!
+              {state.totalChunks > 1 ? `${state.totalChunks} dosya indirildi!` : "İndirildi!"}
             </>
           ) : (
             children
           )}
         </Button>
+        {state.loading && state.totalChunks > 1 && (
+          <Progress value={state.progress} className="h-2" />
+        )}
         {state.error && (
           <p className="text-xs text-red-400 flex items-center gap-1">
             <AlertCircle className="w-3 h-3" />
@@ -174,6 +241,8 @@ export function ExportPanel() {
         return "";
     }
   };
+
+  const estimatedChunks = Math.ceil(totalProducts / (parseInt(chunkSize) || 5000));
 
   return (
     <div className="space-y-6">
@@ -278,6 +347,55 @@ export function ExportPanel() {
                filterType === "recentUpload" ? "Son 24 Saat" : "Tarih Aralığı"}
             </Badge>
             <span className="text-sm text-zinc-400">{getFilterDescription()}</span>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Chunk Size Section */}
+      <Card className="border-zinc-800 bg-zinc-900/50">
+        <CardHeader>
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-lg bg-purple-500/10">
+              <Split className="h-5 w-5 text-purple-400" />
+            </div>
+            <div>
+              <CardTitle className="text-base">Parça Boyutu</CardTitle>
+              <CardDescription className="text-xs">
+                Her Excel dosyasında kaç ürün olsun?
+              </CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+            <div className="space-y-2">
+              <Label>Dosya Başına Ürün Sayısı</Label>
+              <Select value={chunkSize} onValueChange={setChunkSize}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Parça boyutu seçin" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="1000">1.000 ürün/dosya</SelectItem>
+                  <SelectItem value="2500">2.500 ürün/dosya</SelectItem>
+                  <SelectItem value="5000">5.000 ürün/dosya</SelectItem>
+                  <SelectItem value="10000">10.000 ürün/dosya</SelectItem>
+                  <SelectItem value="25000">25.000 ürün/dosya</SelectItem>
+                  <SelectItem value="50000">50.000 ürün/dosya (Tek dosya)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex items-center gap-2 p-3 bg-zinc-800/50 rounded-lg col-span-2">
+              <Package className="w-4 h-4 text-zinc-500" />
+              <span className="text-sm text-zinc-400">
+                Toplam <span className="text-emerald-400 font-semibold">{totalProducts.toLocaleString()}</span> ürün
+              </span>
+              <span className="text-zinc-600">•</span>
+              <Split className="w-4 h-4 text-zinc-500" />
+              <span className="text-sm text-zinc-400">
+                <span className="text-purple-400 font-semibold">{estimatedChunks}</span> dosya oluşturulacak
+              </span>
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -397,7 +515,7 @@ export function ExportPanel() {
             </p>
             <p className="flex items-start gap-2">
               <span className="text-amber-400">*</span>
-              <span>Tüm dosyalar yüklediğiniz formatla aynı yapıda indirilir.</span>
+              <span>Parça boyutu: Her dosyada seçtiğiniz kadar ürün olacak şekilde dosyalar otomatik bölünür.</span>
             </p>
           </div>
         </CardContent>
