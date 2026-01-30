@@ -345,7 +345,7 @@ export function CategoryProcessingPanel() {
                 <span className="text-zinc-400">İlerleme</span>
                 <span className="text-zinc-200">
                   {activeJob
-                    ? `${activeJob.processedItems.toLocaleString()} / ${activeJob.totalItems.toLocaleString()} (${getProgressPercent()}%)`
+                    ? `${(activeJob.processedItems ?? 0).toLocaleString()} / ${(activeJob.totalItems ?? 0).toLocaleString()} (${getProgressPercent()}%)`
                     : `${status?.percentComplete || 0}%`
                   }
                 </span>
