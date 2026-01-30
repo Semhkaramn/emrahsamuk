@@ -6,8 +6,4 @@ export interface AISettings {
 export interface SEOData {
   originalName: string;
   seoTitle: string;
-  seoKeywords: string;
-  seoDescription: string;
-  seoUrl: string;
-  category?: string;
 }
