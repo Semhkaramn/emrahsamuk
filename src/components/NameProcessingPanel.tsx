@@ -52,12 +52,25 @@ interface BackgroundJob {
   completedAt: string | null;
 }
 
+interface Product {
+  urunId: number;
+  urunKodu: string | null;
+  barkodNo: string | null;
+  eskiAdi: string | null;
+  yeniAdi: string | null;
+  processedAt: string | null;
+  seo: {
+    seoBaslik: string | null;
+  } | null;
+}
+
 export function NameProcessingPanel() {
   const [status, setStatus] = useState<ProcessingStatus | null>(null);
   const [activeJob, setActiveJob] = useState<BackgroundJob | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [logs, setLogs] = useState<NameLog[]>([]);
+  const [lastProcessedCount, setLastProcessedCount] = useState(0);
 
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -97,13 +110,43 @@ export function NameProcessingPanel() {
     }
   }, []);
 
+  // Fetch recent processed products for logs
+  const fetchRecentLogs = useCallback(async () => {
+    try {
+      // Son işlenen ürünleri al (SEO'su olanlar, processedAt'e göre sıralı)
+      const response = await fetch("/api/products?seoStatus=done&limit=20");
+      const data = await response.json();
+
+      if (data.success && data.data) {
+        const newLogs: NameLog[] = data.data
+          .filter((p: Product) => p.yeniAdi || p.seo?.seoBaslik)
+          .map((p: Product) => ({
+            id: `log-${p.urunId}`,
+            urunKodu: p.urunKodu || "",
+            urunId: p.urunId,
+            barkodNo: p.barkodNo,
+            eskiAdi: p.eskiAdi || "",
+            yeniAdi: p.yeniAdi || p.seo?.seoBaslik || "",
+            success: true,
+            timestamp: p.processedAt ? new Date(p.processedAt) : new Date(),
+          }))
+          .sort((a: NameLog, b: NameLog) => b.timestamp.getTime() - a.timestamp.getTime());
+
+        setLogs(newLogs);
+      }
+    } catch (error) {
+      console.error("Fetch logs error:", error);
+    }
+  }, []);
+
   // Initial load
   useEffect(() => {
     fetchStatus();
     fetchActiveJob();
-  }, [fetchStatus, fetchActiveJob]);
+    fetchRecentLogs();
+  }, [fetchStatus, fetchActiveJob, fetchRecentLogs]);
 
-  // Polling interval - durumu kontrol et (artık sadece polling yapıyoruz, worker server-side çalışıyor)
+  // Polling interval - durumu kontrol et
   useEffect(() => {
     // Aktif iş varsa daha sık polling yap
     const interval = activeJob?.status === "running" ? 2000 : 5000;
@@ -111,6 +154,12 @@ export function NameProcessingPanel() {
     pollingIntervalRef.current = setInterval(() => {
       fetchStatus();
       fetchActiveJob();
+
+      // Aktif iş varsa ve yeni işlem yapıldıysa logları güncelle
+      if (activeJob?.status === "running" && activeJob.processedItems > lastProcessedCount) {
+        setLastProcessedCount(activeJob.processedItems);
+        fetchRecentLogs();
+      }
     }, interval);
 
     return () => {
@@ -118,7 +167,14 @@ export function NameProcessingPanel() {
         clearInterval(pollingIntervalRef.current);
       }
     };
-  }, [fetchStatus, fetchActiveJob, activeJob?.status]);
+  }, [fetchStatus, fetchActiveJob, fetchRecentLogs, activeJob?.status, activeJob?.processedItems, lastProcessedCount]);
+
+  // İş tamamlandığında logları güncelle
+  useEffect(() => {
+    if (activeJob?.status === "completed") {
+      fetchRecentLogs();
+    }
+  }, [activeJob?.status, fetchRecentLogs]);
 
   // Start new background job
   const startBackgroundJob = async () => {
@@ -161,6 +217,7 @@ export function NameProcessingPanel() {
           body: JSON.stringify({ id: jobData.data.id, action: "start" }),
         });
 
+        setLastProcessedCount(0);
         fetchActiveJob();
       } else {
         alert(jobData.error || "İş oluşturulamadı");
@@ -189,6 +246,11 @@ export function NameProcessingPanel() {
       if (data.success) {
         setActiveJob(data.data);
         fetchActiveJob();
+
+        // İptal veya duraklatma sonrası logları güncelle
+        if (action === "cancel" || action === "pause") {
+          fetchRecentLogs();
+        }
       }
     } catch (error) {
       console.error("Action error:", error);
@@ -238,7 +300,7 @@ export function NameProcessingPanel() {
               Paralel İşleniyor
             </Badge>
           )}
-          <Button variant="ghost" size="sm" onClick={() => { fetchStatus(); fetchActiveJob(); }} disabled={actionLoading}>
+          <Button variant="ghost" size="sm" onClick={() => { fetchStatus(); fetchActiveJob(); fetchRecentLogs(); }} disabled={actionLoading}>
             <RefreshCw className={`h-4 w-4 ${actionLoading ? "animate-spin" : ""}`} />
           </Button>
         </div>
@@ -387,9 +449,14 @@ export function NameProcessingPanel() {
           <CardTitle className="text-base flex items-center gap-2">
             <Sparkles className="w-4 h-4 text-purple-400" />
             İsim Değişiklik Logları
+            {logs.length > 0 && (
+              <Badge variant="outline" className="ml-2 text-xs">
+                {logs.length} kayıt
+              </Badge>
+            )}
           </CardTitle>
           <CardDescription className="text-xs">
-            Ürün ID, barkod ve isim değişiklikleri (paralel işleme)
+            Ürün ID, barkod ve isim değişiklikleri (son işlenenler)
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -442,7 +509,7 @@ export function NameProcessingPanel() {
                     <div className="grid grid-cols-[1fr,auto,1fr] gap-2 items-center">
                       <div className="bg-zinc-800/50 p-2 rounded">
                         <p className="text-[10px] text-zinc-500 mb-0.5 uppercase">Eski İsim</p>
-                        <p className="text-xs text-zinc-300 break-words line-clamp-2">{log.eskiAdi}</p>
+                        <p className="text-xs text-zinc-300 break-words line-clamp-2">{log.eskiAdi || "-"}</p>
                       </div>
                       <ArrowRight className="w-4 h-4 text-zinc-600 shrink-0" />
                       <div className="bg-purple-500/10 p-2 rounded">
