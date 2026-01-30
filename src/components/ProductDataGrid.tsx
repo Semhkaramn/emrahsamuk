@@ -243,10 +243,10 @@ export function ProductDataGrid({ onProductSelect, onProductEdit }: ProductDataG
       const response = await fetch(`/api/products?${params}`);
       const data = await response.json();
 
-      if (data.success) {
-        setProducts(data.data);
-        setTotalPages(data.pagination.totalPages);
-        setTotal(data.pagination.total);
+      if (data.success && data.data) {
+        setProducts(data.data || []);
+        setTotalPages(data.pagination?.totalPages || 1);
+        setTotal(data.pagination?.total || 0);
       }
     } catch (error) {
       console.error("Products fetch error:", error);
