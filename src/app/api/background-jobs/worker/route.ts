@@ -2,11 +2,52 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
 import { getOpenAIApiKey } from "@/lib/settings-cache";
 
-// Worker - Aktif işleri işle (PARALEL)
+// Base URL'i al (Netlify veya localhost)
+function getBaseUrl() {
+  // Netlify production
+  if (process.env.URL) {
+    return process.env.URL;
+  }
+  // Netlify deploy preview
+  if (process.env.DEPLOY_PRIME_URL) {
+    return process.env.DEPLOY_PRIME_URL;
+  }
+  // Custom base URL
+  if (process.env.NEXT_PUBLIC_BASE_URL) {
+    return process.env.NEXT_PUBLIC_BASE_URL;
+  }
+  // Localhost fallback
+  return "http://localhost:3000";
+}
+
+// Self-calling worker - kendini tekrar çağırır
+async function triggerNextBatch(jobId: number, delay: number = 500) {
+  const baseUrl = getBaseUrl();
+
+  // Fire-and-forget - sonucu beklemeden çağır
+  setTimeout(async () => {
+    try {
+      await fetch(`${baseUrl}/api/background-jobs/worker`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          jobId,
+          batchSize: 5,
+          parallelCount: 3,
+          selfCalling: true,
+        }),
+      });
+    } catch (error) {
+      console.error("Self-calling trigger error:", error);
+    }
+  }, delay);
+}
+
+// Worker - Aktif işleri işle (PARALEL + SELF-CALLING)
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { jobId, batchSize = 5, parallelCount = 3 } = body; // parallelCount: aynı anda kaç ürün işlenecek
+    const { jobId, batchSize = 5, parallelCount = 3, selfCalling = false } = body;
 
     // İşi bul
     const job = await prisma.backgroundJob.findUnique({
@@ -20,11 +61,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // İş durumunu kontrol et - paused veya cancelled ise durmalı
     if (job.status !== "running") {
       return NextResponse.json({
         success: false,
         error: "İş çalışmıyor",
         status: job.status,
+        shouldContinue: false,
       });
     }
 
@@ -97,6 +140,13 @@ export async function POST(request: NextRequest) {
       },
     });
 
+    const shouldContinue = !isCompleted && updatedJob.status === "running";
+
+    // SELF-CALLING: İş devam edecekse kendini tekrar çağır
+    if (shouldContinue) {
+      triggerNextBatch(jobId, 1000); // 1 saniye bekle ve tekrar çağır
+    }
+
     return NextResponse.json({
       success: true,
       data: {
@@ -108,7 +158,7 @@ export async function POST(request: NextRequest) {
         },
         results,
         isCompleted,
-        shouldContinue: !isCompleted && updatedJob.status === "running",
+        shouldContinue,
       },
     });
   } catch (error) {
@@ -151,13 +201,15 @@ async function processCategoryBatchParallel(
   let error = 0;
   let lastError: string | null = null;
 
+  const baseUrl = getBaseUrl();
+
   // Paralel gruplar halinde işle
   for (let i = 0; i < idsToProcess.length; i += parallelCount) {
     const chunk = idsToProcess.slice(i, i + parallelCount);
 
     const promises = chunk.map(async (urunId) => {
       try {
-        const response = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/process/category`, {
+        const response = await fetch(`${baseUrl}/api/process/category`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ urunId }),
