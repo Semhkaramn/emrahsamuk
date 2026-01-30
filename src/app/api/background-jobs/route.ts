@@ -9,11 +9,18 @@ function getBaseUrl() {
   return "http://localhost:3000";
 }
 
+// Performans ayarları
+const WORKER_CONFIG = {
+  BATCH_SIZE: 15,      // Her batch'te işlenecek ürün sayısı
+  PARALLEL_COUNT: 8,   // Aynı anda paralel API çağrısı
+  TRIGGER_DELAY: 50,   // Worker tetikleme gecikmesi (ms)
+};
+
 // Worker'ı tetikle (fire-and-forget)
 async function triggerWorker(jobId: number) {
   const baseUrl = getBaseUrl();
 
-  // Fire-and-forget - sonucu beklemeden çağır
+  // Hemen tetikle
   setTimeout(async () => {
     try {
       await fetch(`${baseUrl}/api/background-jobs/worker`, {
@@ -21,14 +28,14 @@ async function triggerWorker(jobId: number) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           jobId,
-          batchSize: 5,
-          parallelCount: 3,
+          batchSize: WORKER_CONFIG.BATCH_SIZE,
+          parallelCount: WORKER_CONFIG.PARALLEL_COUNT,
         }),
       });
     } catch (error) {
       console.error("Worker trigger error:", error);
     }
-  }, 100);
+  }, WORKER_CONFIG.TRIGGER_DELAY);
 }
 
 // Aktif ve geçmiş işleri getir
