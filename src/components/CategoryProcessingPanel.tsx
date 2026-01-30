@@ -16,7 +16,6 @@ import {
   Loader2,
   ArrowRight,
   Package,
-  Image as ImageIcon,
   Hash,
   Tag,
 } from "lucide-react";
@@ -30,8 +29,6 @@ interface CategoryLog {
   yeniAdi: string | null;
   eskiKategori: string;
   yeniKategori: string;
-  eskiResimler: string[];
-  yeniResimler: string[];
   success: boolean;
   timestamp: Date;
 }
@@ -43,122 +40,14 @@ interface ProcessingStatus {
   percentComplete: number;
 }
 
-// Büyük resim önizleme componenti
-function ImagePreview({
-  imageUrl,
-  thumbRect,
-}: {
-  imageUrl: string | null;
-  thumbRect: DOMRect | null;
-}) {
-  const [imageLoaded, setImageLoaded] = useState(false);
-
-  if (!imageUrl || !thumbRect) return null;
-
-  const previewWidth = 350;
-  const previewHeight = 350;
-
-  let left = thumbRect.right + 16;
-  let top = thumbRect.top - 100;
-
-  if (left + previewWidth > window.innerWidth - 20) {
-    left = thumbRect.left - previewWidth - 16;
-  }
-
-  if (top < 20) top = 20;
-  if (top + previewHeight > window.innerHeight - 20) {
-    top = window.innerHeight - previewHeight - 20;
-  }
-
-  return (
-    <div
-      className="fixed z-[100] pointer-events-none animate-in fade-in zoom-in-95 duration-150"
-      style={{ left, top }}
-    >
-      <div className="bg-zinc-900 border-2 border-orange-500/30 rounded-xl shadow-2xl shadow-black/50 p-3">
-        <div className="relative">
-          {!imageLoaded && (
-            <div className="w-[350px] h-[350px] flex items-center justify-center bg-zinc-800 rounded-lg">
-              <div className="animate-spin w-8 h-8 border-2 border-orange-500 border-t-transparent rounded-full" />
-            </div>
-          )}
-          <img
-            src={imageUrl}
-            alt="Önizleme"
-            className={`max-w-[350px] max-h-[350px] object-contain rounded-lg ${imageLoaded ? 'block' : 'hidden'}`}
-            onLoad={() => setImageLoaded(true)}
-            onError={(e) => {
-              (e.target as HTMLImageElement).src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100'%3E%3Crect fill='%23333' width='100' height='100'/%3E%3Ctext fill='%23666' x='50' y='50' text-anchor='middle' dy='.3em'%3EHata%3C/text%3E%3C/svg%3E";
-              setImageLoaded(true);
-            }}
-          />
-        </div>
-        <div className="mt-2 text-center">
-          <span className="text-xs text-zinc-500">Tıklayarak tam boyutta aç</span>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// Küçük resim önizleme bileşeni
-function MiniImageThumbnail({ url, index, onHover, onLeave }: { url: string; index: number; onHover: (url: string, rect: DOMRect) => void; onLeave: () => void }) {
-  const [error, setError] = useState(false);
-  const thumbRef = useRef<HTMLDivElement>(null);
-
-  if (error) return null;
-
-  const handleMouseEnter = () => {
-    if (thumbRef.current) {
-      const rect = thumbRef.current.getBoundingClientRect();
-      onHover(url, rect);
-    }
-  };
-
-  return (
-    <div
-      ref={thumbRef}
-      className="relative group cursor-pointer"
-      onMouseEnter={handleMouseEnter}
-      onMouseLeave={onLeave}
-    >
-      <img
-        src={url}
-        alt={`Resim ${index + 1}`}
-        className="w-8 h-8 object-cover rounded border border-zinc-700 hover:border-zinc-500 cursor-pointer transition-all hover:scale-110 hover:ring-2 hover:ring-orange-500/50"
-        onClick={() => window.open(url, "_blank")}
-        onError={() => setError(true)}
-      />
-      <span className="absolute -bottom-0.5 -right-0.5 text-[8px] bg-black/80 text-white px-0.5 rounded">
-        {index + 1}
-      </span>
-    </div>
-  );
-}
-
 export function CategoryProcessingPanel() {
   const [status, setStatus] = useState<ProcessingStatus | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [logs, setLogs] = useState<CategoryLog[]>([]);
 
-  // Image preview state
-  const [previewImage, setPreviewImage] = useState<string | null>(null);
-  const [previewRect, setPreviewRect] = useState<DOMRect | null>(null);
-
   const processingRef = useRef<boolean>(false);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
-
-  // Image hover handlers
-  const handleImageHover = useCallback((url: string, rect: DOMRect) => {
-    setPreviewImage(url);
-    setPreviewRect(rect);
-  }, []);
-
-  const handleImageLeave = useCallback(() => {
-    setPreviewImage(null);
-    setPreviewRect(null);
-  }, []);
 
   // Fetch status
   const fetchStatus = useCallback(async () => {
@@ -218,8 +107,6 @@ export function CategoryProcessingPanel() {
           yeniAdi: item.yeniAdi || null,
           eskiKategori: item.eskiKategori || "-",
           yeniKategori: item.yeniKategori || "-",
-          eskiResimler: item.eskiResimler || [],
-          yeniResimler: item.yeniResimler || [],
           success: item.success,
           timestamp: new Date(),
         };
@@ -284,7 +171,7 @@ export function CategoryProcessingPanel() {
           </div>
           <div>
             <h2 className="text-xl font-bold">Kategori Yapma</h2>
-            <p className="text-xs text-zinc-500">AI ile ürün kategorilerini optimize et (resim analizi dahil)</p>
+            <p className="text-xs text-zinc-500">AI ile ürün kategorilerini optimize et</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -365,7 +252,7 @@ export function CategoryProcessingPanel() {
             Kategori Değişiklik Logları
           </CardTitle>
           <CardDescription className="text-xs">
-            Ürün ID, barkod, isimler, resimler ve kategori değişiklikleri
+            Ürün ID, barkod, isimler ve kategori değişiklikleri
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -436,38 +323,6 @@ export function CategoryProcessingPanel() {
                       </div>
                     </div>
 
-                    {/* Resimler */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mb-3">
-                      <div className="bg-zinc-800/30 p-2 rounded">
-                        <div className="flex items-center gap-1.5 mb-2">
-                          <ImageIcon className="w-3 h-3 text-amber-400" />
-                          <span className="text-[10px] text-zinc-500 uppercase">Eski Resimler</span>
-                          <span className="text-[10px] text-zinc-600">({log.eskiResimler.length})</span>
-                        </div>
-                        {log.eskiResimler.length > 0 ? (
-                          <div className="flex flex-wrap gap-1">
-                            <MiniImageThumbnail url={log.eskiResimler[0]} index={0} onHover={handleImageHover} onLeave={handleImageLeave} />
-                          </div>
-                        ) : (
-                          <span className="text-[10px] text-zinc-600 italic">Resim yok</span>
-                        )}
-                      </div>
-                      <div className="bg-zinc-800/30 p-2 rounded">
-                        <div className="flex items-center gap-1.5 mb-2">
-                          <ImageIcon className="w-3 h-3 text-emerald-400" />
-                          <span className="text-[10px] text-zinc-500 uppercase">Yeni Resimler</span>
-                          <span className="text-[10px] text-zinc-600">({log.yeniResimler.length})</span>
-                        </div>
-                        {log.yeniResimler.length > 0 ? (
-                          <div className="flex flex-wrap gap-1">
-                            <MiniImageThumbnail url={log.yeniResimler[0]} index={0} onHover={handleImageHover} onLeave={handleImageLeave} />
-                          </div>
-                        ) : (
-                          <span className="text-[10px] text-zinc-600 italic">Henüz işlenmedi</span>
-                        )}
-                      </div>
-                    </div>
-
                     {/* Kategori Değişikliği */}
                     <div className="grid grid-cols-[1fr,auto,1fr] gap-3 items-center">
                       <div className="bg-zinc-800/50 p-2 rounded">
@@ -493,12 +348,6 @@ export function CategoryProcessingPanel() {
           </ScrollArea>
         </CardContent>
       </Card>
-
-      {/* Global Image Preview */}
-      <ImagePreview
-        imageUrl={previewImage}
-        thumbRect={previewRect}
-      />
     </div>
   );
 }
