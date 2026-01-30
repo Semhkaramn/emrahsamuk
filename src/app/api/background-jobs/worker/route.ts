@@ -421,9 +421,10 @@ async function processSEOBatchParallel(
         }
 
         // SEO optimize et
-        const seoResult = await optimizeSEO(productName, apiKey);
+        const seoResponse = await optimizeSEO(productName, apiKey);
 
-        if (seoResult) {
+        if (seoResponse.success && seoResponse.data) {
+          const seoResult = seoResponse.data;
           // Veritabanına kaydet
           await prisma.productSeo.upsert({
             where: { urunId: product.urunId },
@@ -485,7 +486,7 @@ async function processSEOBatchParallel(
             eskiAdi: productName,
             yeniAdi: null,
             success: false,
-            error: "SEO verisi alınamadı",
+            error: seoResponse.error || "SEO verisi alınamadı",
           };
         }
       } catch (err) {
@@ -520,7 +521,7 @@ async function processSEOBatchParallel(
 
     // Rate limiting - paralel grup arasında bekle (OpenAI rate limit için)
     if (i + parallelCount < products.length && !wasStopped) {
-      await new Promise(resolve => setTimeout(resolve, 300));
+      await new Promise(resolve => setTimeout(resolve, 800)); // Rate limit için artırıldı
     }
   }
 
@@ -528,16 +529,26 @@ async function processSEOBatchParallel(
 }
 
 // SEO optimize helper function - GENİŞ SIFAT YELPAZESİ
-async function optimizeSEO(
-  productName: string,
-  apiKey: string
-): Promise<{
+interface SEOResult {
   seoTitle: string;
   seoKeywords: string;
   seoDescription: string;
   seoUrl: string;
   category: string;
-} | null> {
+}
+
+interface SEOResponse {
+  success: boolean;
+  data?: SEOResult;
+  error?: string;
+}
+
+async function optimizeSEO(
+  productName: string,
+  apiKey: string,
+  retryCount: number = 0
+): Promise<SEOResponse> {
+  const MAX_RETRIES = 3;
 
   const systemPrompt = `Sen Türkiye'nin EN İYİ e-ticaret SEO uzmanısın. Ürün isimlerini Trendyol için SEO uyumlu ve AÇIKLAYICI hale getiriyorsun.
 
@@ -659,20 +670,46 @@ Yanıtını tam olarak bu JSON formatında ver:
           { role: "system", content: systemPrompt },
           { role: "user", content: userPrompt },
         ],
-        temperature: 0.7, // Daha yaratıcı ve çeşitli sonuçlar için artırıldı
+        temperature: 0.7,
         max_tokens: 500,
       }),
     });
 
     if (!response.ok) {
-      console.error("OpenAI API error:", await response.text());
-      return null;
+      const errorText = await response.text();
+      console.error("OpenAI API error:", response.status, errorText);
+
+      // Rate limit hatası - retry yap
+      if (response.status === 429 && retryCount < MAX_RETRIES) {
+        const waitTime = Math.pow(2, retryCount) * 1000; // Exponential backoff
+        console.log(`Rate limited, waiting ${waitTime}ms before retry ${retryCount + 1}/${MAX_RETRIES}`);
+        await new Promise(resolve => setTimeout(resolve, waitTime));
+        return optimizeSEO(productName, apiKey, retryCount + 1);
+      }
+
+      // Server error - retry yap
+      if (response.status >= 500 && retryCount < MAX_RETRIES) {
+        const waitTime = Math.pow(2, retryCount) * 1000;
+        console.log(`Server error, waiting ${waitTime}ms before retry ${retryCount + 1}/${MAX_RETRIES}`);
+        await new Promise(resolve => setTimeout(resolve, waitTime));
+        return optimizeSEO(productName, apiKey, retryCount + 1);
+      }
+
+      return {
+        success: false,
+        error: `OpenAI API hatası (${response.status}): ${errorText.slice(0, 200)}`,
+      };
     }
 
     const data = await response.json();
     const content = data.choices[0]?.message?.content;
 
-    if (!content) return null;
+    if (!content) {
+      return {
+        success: false,
+        error: "OpenAI boş yanıt döndürdü",
+      };
+    }
 
     // Parse JSON
     let cleanContent = content.trim();
@@ -693,19 +730,44 @@ Yanıtını tam olarak bu JSON formatında ver:
       seoData = JSON.parse(cleanContent.trim()) as SEOData;
     } catch (parseError) {
       console.error("SEO JSON parse error:", parseError, cleanContent);
-      return null;
+      // Retry for parsing errors
+      if (retryCount < MAX_RETRIES) {
+        const waitTime = 500;
+        console.log(`JSON parse error, retrying ${retryCount + 1}/${MAX_RETRIES}`);
+        await new Promise(resolve => setTimeout(resolve, waitTime));
+        return optimizeSEO(productName, apiKey, retryCount + 1);
+      }
+      return {
+        success: false,
+        error: `JSON parse hatası: ${cleanContent.slice(0, 100)}`,
+      };
     }
 
     return {
-      seoTitle: seoData.seoTitle || productName,
-      seoKeywords: seoData.seoKeywords || "",
-      seoDescription: seoData.seoDescription || "",
-      seoUrl: seoData.seoUrl || "",
-      category: seoData.category || "",
+      success: true,
+      data: {
+        seoTitle: seoData.seoTitle || productName,
+        seoKeywords: seoData.seoKeywords || "",
+        seoDescription: seoData.seoDescription || "",
+        seoUrl: seoData.seoUrl || "",
+        category: seoData.category || "",
+      },
     };
   } catch (error) {
     console.error("SEO optimization error:", error);
-    return null;
+
+    // Network errors - retry
+    if (retryCount < MAX_RETRIES) {
+      const waitTime = Math.pow(2, retryCount) * 1000;
+      console.log(`Network error, retrying ${retryCount + 1}/${MAX_RETRIES}`);
+      await new Promise(resolve => setTimeout(resolve, waitTime));
+      return optimizeSEO(productName, apiKey, retryCount + 1);
+    }
+
+    return {
+      success: false,
+      error: `Bağlantı hatası: ${error instanceof Error ? error.message : "Bilinmeyen hata"}`,
+    };
   }
 }
 
