@@ -44,9 +44,7 @@ model Product {
   // İlişkiler
   prices     ProductPrice?
   categories ProductCategory?
-  images     ProductImage[]
   seo        ProductSeo?
-  logs       ProcessingLog[]
 
   @@index([urunId])
   @@index([urunKodu])
@@ -129,7 +127,7 @@ model ProductCategory {
   yeniAltKategori8  String? @map("yeni_alt_kategori_8") @db.VarChar(100)
   yeniAltKategori9  String? @map("yeni_alt_kategori_9") @db.VarChar(100)
 
-  // AI ham kategori çıktısı (loglama için)
+  // AI ham kategori çıktısı
   aiKategori    String? @map("ai_kategori") @db.VarChar(255)
   // Kategori işleme durumu
   processingStatus String? @default("pending") @map("processing_status") @db.VarChar(20)
@@ -143,29 +141,6 @@ model ProductCategory {
   @@index([yeniAnaKategori])
   @@index([processingStatus])
   @@map("product_categories")
-}
-
-// Resimler Tablosu
-model ProductImage {
-  id            Int       @id @default(autoincrement())
-  urunId        Int       @map("urun_id")
-  sira          Int       // 1-16
-  eskiUrl       String?   @map("eski_url") @db.Text
-  yeniUrl       String?   @map("yeni_url") @db.Text // İşlenmiş resim URL'si (Cloudinary)
-  cloudinaryId  String?   @map("cloudinary_id") @db.VarChar(255)
-  status        String?   @default("pending") @db.VarChar(20) // pending, processing, done, error
-  errorMessage  String?   @map("error_message") @db.Text
-  processedAt   DateTime? @map("processed_at") // AI ile işlenme zamanı
-  aiPrompt      String?   @map("ai_prompt") @db.Text // AI için kullanılan prompt
-
-  // İlişki
-  product Product @relation(fields: [urunId], references: [urunId], onDelete: Cascade)
-
-  @@unique([urunId, sira])
-  @@index([urunId])
-  @@index([status])
-  @@index([processedAt])
-  @@map("product_images")
 }
 
 // SEO Bilgileri Tablosu
@@ -184,31 +159,6 @@ model ProductSeo {
   @@map("product_seo")
 }
 
-// İşlem Kayıtları Tablosu
-model ProcessingLog {
-  id           Int      @id @default(autoincrement())
-  urunId       Int?     @map("urun_id")
-  urunKodu     String?  @map("urun_kodu") @db.VarChar(100)
-  islemTipi    String?  @map("islem_tipi") @db.VarChar(50)
-  durum        String?  @db.VarChar(20)
-  mesaj        String?  @db.Text
-  eskiDeger    String?  @map("eski_deger") @db.Text
-  yeniDeger    String?  @map("yeni_deger") @db.Text
-  eskiResimler String?  @map("eski_resimler") @db.Text // JSON string
-  yeniResimler String?  @map("yeni_resimler") @db.Text // JSON string
-  eskiKategori String?  @map("eski_kategori") @db.VarChar(255)
-  yeniKategori String?  @map("yeni_kategori") @db.VarChar(255)
-  createdAt    DateTime @default(now()) @map("created_at")
-
-  // İlişki
-  product Product? @relation(fields: [urunId], references: [urunId], onDelete: SetNull)
-
-  @@index([urunId])
-  @@index([islemTipi])
-  @@index([createdAt])
-  @@map("processing_logs")
-}
-
 // Sistem Ayarları Tablosu
 model Settings {
   id          Int      @id @default(autoincrement())
@@ -223,7 +173,7 @@ model Settings {
 // Arka Plan İşleri Tablosu
 model BackgroundJob {
   id            Int       @id @default(autoincrement())
-  jobType       String    @map("job_type") @db.VarChar(50) // image_processing, category_processing, seo_processing
+  jobType       String    @map("job_type") @db.VarChar(50) // category_processing, seo_processing
   status        String    @default("pending") @db.VarChar(20) // pending, running, paused, completed, failed, cancelled
   totalItems    Int       @default(0) @map("total_items")
   processedItems Int      @default(0) @map("processed_items")
@@ -231,7 +181,7 @@ model BackgroundJob {
   errorCount    Int       @default(0) @map("error_count")
 
   // İş konfigürasyonu (JSON)
-  config        String?   @db.Text // JSON: { useAI: true, imageIds: [...], etc. }
+  config        String?   @db.Text // JSON: { urunIds: [...], etc. }
 
   // Sonuçlar ve hatalar
   lastError     String?   @map("last_error") @db.Text
