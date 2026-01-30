@@ -114,7 +114,7 @@ export function NameProcessingPanel() {
   const fetchRecentLogs = useCallback(async () => {
     try {
       // Son işlenen ürünleri al (SEO'su olanlar, processedAt'e göre sıralı)
-      const response = await fetch("/api/products?seoStatus=done&limit=20");
+      const response = await fetch("/api/products?seoStatus=done&limit=20&orderBy=processedAt&orderDir=desc");
       const data = await response.json();
 
       if (data.success && data.data) {
