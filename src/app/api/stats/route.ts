@@ -26,16 +26,16 @@ export async function GET() {
       prisma.productSeo.count(),
     ]);
 
-    // Get category distribution
+    // Get category distribution with subcategories
     const categoryDistribution = await prisma.productCategory.groupBy({
-      by: ["anaKategori"],
+      by: ["anaKategori", "altKategori1"],
       _count: true,
       orderBy: {
         _count: {
           anaKategori: "desc",
         },
       },
-      take: 10,
+      take: 20,
     });
 
     return NextResponse.json({
@@ -54,10 +54,15 @@ export async function GET() {
         },
         categories: {
           total: totalCategories,
-          distribution: categoryDistribution.map((c: { anaKategori: string | null; _count: number }) => ({
-            name: c.anaKategori || "Kategorisiz",
-            count: c._count,
-          })),
+          distribution: categoryDistribution.map((c: { anaKategori: string | null; altKategori1: string | null; _count: number }) => {
+            const ana = c.anaKategori || "Kategorisiz";
+            const alt = c.altKategori1;
+            const name = alt ? `${ana} > ${alt}` : ana;
+            return {
+              name,
+              count: c._count,
+            };
+          }),
         },
         seo: {
           optimized: seoOptimized,
