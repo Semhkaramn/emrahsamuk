@@ -197,8 +197,8 @@ export function CategoryProcessingPanel() {
   const startBackgroundJob = async () => {
     setActionLoading(true);
     try {
-      // Get pending product IDs (those without category processing)
-      const response = await fetch("/api/products?limit=10000");
+      // Get products without category processing (categories: null or yeniAnaKategori: null)
+      const response = await fetch("/api/products?categoryStatus=pending&limit=10000");
       const productsData = await response.json();
 
       if (!productsData.success || !productsData.data) {
@@ -209,7 +209,7 @@ export function CategoryProcessingPanel() {
       const urunIds = productsData.data.map((p: { urunId: number }) => p.urunId);
 
       if (urunIds.length === 0) {
-        alert("İşlenecek ürün bulunamadı!");
+        alert("İşlenecek ürün bulunamadı! (Kategorisi olmayan ürün yok)");
         return;
       }
 
