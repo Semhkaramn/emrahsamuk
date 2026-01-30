@@ -10,8 +10,6 @@ export interface AppSettings {
 const DEFAULT_SETTINGS: Record<string, string | null> = {
   openai_api_key: "",
   enable_seo_optimization: "true",
-  use_image_for_naming: "true",
-  use_image_for_category: "true",
 };
 
 // Global cache - persists in memory until invalidated
@@ -72,16 +70,6 @@ export function updateSettingsCache(newSettings: Record<string, string | null>):
 }
 
 /**
- * Full settings interface for frontend
- */
-export interface FullAppSettings {
-  openaiApiKey: string;
-  enableSeoOptimization: boolean;
-  useImageForNaming: boolean;
-  useImageForCategory: boolean;
-}
-
-/**
  * Get settings in frontend format - uses cache
  */
 export async function getAppSettings(): Promise<AppSettings> {
@@ -91,36 +79,6 @@ export async function getAppSettings(): Promise<AppSettings> {
     openaiApiKey: settings.openai_api_key || "",
     enableSeoOptimization: settings.enable_seo_optimization === "true",
   };
-}
-
-/**
- * Get full settings - uses cache
- */
-export async function getFullAppSettings(): Promise<FullAppSettings> {
-  const settings = await getCachedSettings();
-
-  return {
-    openaiApiKey: settings.openai_api_key || "",
-    enableSeoOptimization: settings.enable_seo_optimization === "true",
-    useImageForNaming: settings.use_image_for_naming !== "false",
-    useImageForCategory: settings.use_image_for_category !== "false",
-  };
-}
-
-/**
- * Check if image should be used for naming - uses cache
- */
-export async function isImageUsedForNaming(): Promise<boolean> {
-  const setting = await getSetting("use_image_for_naming");
-  return setting !== "false";
-}
-
-/**
- * Check if image should be used for category - uses cache
- */
-export async function isImageUsedForCategory(): Promise<boolean> {
-  const setting = await getSetting("use_image_for_category");
-  return setting !== "false";
 }
 
 /**
