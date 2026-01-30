@@ -273,7 +273,7 @@ export function ProductDataGrid({ onProductSelect, onProductEdit }: ProductDataG
             <Package className="h-5 w-5 text-emerald-400" />
             Ürünler
             <span className="text-sm font-normal text-zinc-500">
-              ({total.toLocaleString()})
+              ({(total ?? 0).toLocaleString()})
             </span>
           </CardTitle>
           <Button
