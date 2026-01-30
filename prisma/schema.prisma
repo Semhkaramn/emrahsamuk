@@ -219,3 +219,34 @@ model Settings {
 
   @@map("settings")
 }
+
+// Arka Plan İşleri Tablosu
+model BackgroundJob {
+  id            Int       @id @default(autoincrement())
+  jobType       String    @map("job_type") @db.VarChar(50) // image_processing, category_processing, seo_processing
+  status        String    @default("pending") @db.VarChar(20) // pending, running, paused, completed, failed, cancelled
+  totalItems    Int       @default(0) @map("total_items")
+  processedItems Int      @default(0) @map("processed_items")
+  successCount  Int       @default(0) @map("success_count")
+  errorCount    Int       @default(0) @map("error_count")
+
+  // İş konfigürasyonu (JSON)
+  config        String?   @db.Text // JSON: { useAI: true, imageIds: [...], etc. }
+
+  // Sonuçlar ve hatalar
+  lastError     String?   @map("last_error") @db.Text
+  results       String?   @db.Text // JSON: işlem sonuçları
+
+  // Zamanlar
+  startedAt     DateTime? @map("started_at")
+  pausedAt      DateTime? @map("paused_at")
+  completedAt   DateTime? @map("completed_at")
+  lastActivityAt DateTime? @map("last_activity_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  @@index([jobType])
+  @@index([status])
+  @@index([createdAt])
+  @@map("background_jobs")
+}
