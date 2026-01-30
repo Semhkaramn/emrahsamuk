@@ -93,24 +93,24 @@ export function Dashboard() {
   const statCards = [
     {
       title: "Toplam Ürün",
-      value: stats.products.total,
-      description: `${stats.products.active} aktif, ${stats.products.passive} pasif`,
+      value: stats.products?.total ?? 0,
+      description: `${stats.products?.active ?? 0} aktif, ${stats.products?.passive ?? 0} pasif`,
       icon: Package,
       color: "text-emerald-400",
       bgColor: "bg-emerald-500/10",
     },
     {
       title: "Kategoriler",
-      value: stats.categories.total,
-      description: `${stats.categories.distribution.length} ana kategori`,
+      value: stats.categories?.total ?? 0,
+      description: `${stats.categories?.distribution?.length ?? 0} ana kategori`,
       icon: FolderTree,
       color: "text-purple-400",
       bgColor: "bg-purple-500/10",
     },
     {
       title: "SEO Optimize",
-      value: stats.seo.optimized,
-      description: `${stats.seo.remaining} kalan`,
+      value: stats.seo?.optimized ?? 0,
+      description: `${stats.seo?.remaining ?? 0} kalan`,
       icon: Search,
       color: "text-amber-400",
       bgColor: "bg-amber-500/10",
@@ -132,7 +132,7 @@ export function Dashboard() {
               </div>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{stat.value.toLocaleString()}</div>
+              <div className="text-2xl font-bold">{(stat.value ?? 0).toLocaleString()}</div>
               <p className="text-xs text-zinc-500 mt-1">{stat.description}</p>
             </CardContent>
           </Card>
