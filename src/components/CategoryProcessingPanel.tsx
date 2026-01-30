@@ -55,12 +55,30 @@ interface BackgroundJob {
   completedAt: string | null;
 }
 
+interface Product {
+  urunId: number;
+  urunKodu: string | null;
+  barkodNo: string | null;
+  eskiAdi: string | null;
+  yeniAdi: string | null;
+  processedAt: string | null;
+  categories: {
+    anaKategori: string | null;
+    altKategori1: string | null;
+    yeniAnaKategori: string | null;
+    yeniAltKategori1: string | null;
+    aiKategori: string | null;
+    processedAt: string | null;
+  } | null;
+}
+
 export function CategoryProcessingPanel() {
   const [status, setStatus] = useState<ProcessingStatus | null>(null);
   const [activeJob, setActiveJob] = useState<BackgroundJob | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [logs, setLogs] = useState<CategoryLog[]>([]);
+  const [lastProcessedCount, setLastProcessedCount] = useState(0);
 
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -100,11 +118,56 @@ export function CategoryProcessingPanel() {
     }
   }, []);
 
+  // Fetch recent processed products for logs
+  const fetchRecentLogs = useCallback(async () => {
+    try {
+      // Son işlenen ürünleri al (kategorisi olanlar, processedAt'e göre sıralı)
+      const response = await fetch("/api/products?categoryStatus=done&limit=20&orderBy=processedAt&orderDir=desc");
+      const data = await response.json();
+
+      if (data.success && data.data) {
+        const newLogs: CategoryLog[] = data.data
+          .filter((p: Product) => p.categories?.aiKategori || p.categories?.yeniAnaKategori)
+          .map((p: Product) => {
+            const eskiKategori = [
+              p.categories?.anaKategori,
+              p.categories?.altKategori1
+            ].filter(Boolean).join(" > ") || "-";
+
+            const yeniKategori = p.categories?.aiKategori ||
+              [p.categories?.yeniAnaKategori, p.categories?.yeniAltKategori1]
+                .filter(Boolean).join(" > ") || "-";
+
+            return {
+              id: `log-${p.urunId}`,
+              urunKodu: p.urunKodu || "",
+              urunId: p.urunId,
+              barkodNo: p.barkodNo,
+              eskiAdi: p.eskiAdi,
+              yeniAdi: p.yeniAdi,
+              eskiKategori,
+              yeniKategori,
+              success: true,
+              timestamp: p.categories?.processedAt
+                ? new Date(p.categories.processedAt)
+                : new Date(),
+            };
+          })
+          .sort((a: CategoryLog, b: CategoryLog) => b.timestamp.getTime() - a.timestamp.getTime());
+
+        setLogs(newLogs);
+      }
+    } catch (error) {
+      console.error("Fetch logs error:", error);
+    }
+  }, []);
+
   // Initial load
   useEffect(() => {
     fetchStatus();
     fetchActiveJob();
-  }, [fetchStatus, fetchActiveJob]);
+    fetchRecentLogs();
+  }, [fetchStatus, fetchActiveJob, fetchRecentLogs]);
 
   // Polling interval - durumu kontrol et (artık sadece polling yapıyoruz, worker server-side çalışıyor)
   useEffect(() => {
@@ -114,6 +177,12 @@ export function CategoryProcessingPanel() {
     pollingIntervalRef.current = setInterval(() => {
       fetchStatus();
       fetchActiveJob();
+
+      // Aktif iş varsa ve yeni işlem yapıldıysa logları güncelle
+      if (activeJob?.status === "running" && activeJob.processedItems > lastProcessedCount) {
+        setLastProcessedCount(activeJob.processedItems);
+        fetchRecentLogs();
+      }
     }, interval);
 
     return () => {
@@ -121,7 +190,14 @@ export function CategoryProcessingPanel() {
         clearInterval(pollingIntervalRef.current);
       }
     };
-  }, [fetchStatus, fetchActiveJob, activeJob?.status]);
+  }, [fetchStatus, fetchActiveJob, fetchRecentLogs, activeJob?.status, activeJob?.processedItems, lastProcessedCount]);
+
+  // İş tamamlandığında logları güncelle
+  useEffect(() => {
+    if (activeJob?.status === "completed") {
+      fetchRecentLogs();
+    }
+  }, [activeJob?.status, fetchRecentLogs]);
 
   // Start new background job
   const startBackgroundJob = async () => {
@@ -164,6 +240,7 @@ export function CategoryProcessingPanel() {
           body: JSON.stringify({ id: jobData.data.id, action: "start" }),
         });
 
+        setLastProcessedCount(0);
         fetchActiveJob();
       } else {
         alert(jobData.error || "İş oluşturulamadı");
@@ -192,6 +269,11 @@ export function CategoryProcessingPanel() {
       if (data.success) {
         setActiveJob(data.data);
         fetchActiveJob();
+
+        // İptal veya duraklatma sonrası logları güncelle
+        if (action === "cancel" || action === "pause") {
+          fetchRecentLogs();
+        }
       }
     } catch (error) {
       console.error("Action error:", error);
@@ -241,7 +323,7 @@ export function CategoryProcessingPanel() {
               Paralel İşleniyor
             </Badge>
           )}
-          <Button variant="ghost" size="sm" onClick={() => { fetchStatus(); fetchActiveJob(); }} disabled={actionLoading}>
+          <Button variant="ghost" size="sm" onClick={() => { fetchStatus(); fetchActiveJob(); fetchRecentLogs(); }} disabled={actionLoading}>
             <RefreshCw className={`h-4 w-4 ${actionLoading ? "animate-spin" : ""}`} />
           </Button>
         </div>
@@ -390,6 +472,11 @@ export function CategoryProcessingPanel() {
           <CardTitle className="text-base flex items-center gap-2">
             <FolderTree className="w-4 h-4 text-orange-400" />
             Kategori Değişiklik Logları
+            {logs.length > 0 && (
+              <Badge variant="outline" className="ml-2 text-xs">
+                {logs.length} kayıt
+              </Badge>
+            )}
           </CardTitle>
           <CardDescription className="text-xs">
             Ürün ID, barkod, isimler ve kategori değişiklikleri (paralel işleme)
