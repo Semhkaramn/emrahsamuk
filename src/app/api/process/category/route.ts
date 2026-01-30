@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
-import { getOpenAIApiKey } from "@/lib/settings-cache";
+import { matchCategory, categoryToString, getCategoryStats } from "@/lib/category-matcher";
 
 interface ParsedCategory {
   anaKategori: string | null;
@@ -33,61 +33,11 @@ function parseCategory(categoryString: string): ParsedCategory {
   };
 }
 
-// Mevcut kategorileri getir (tutarlılık için)
-async function getExistingCategories(): Promise<string[]> {
-  const categories = await prisma.productCategory.findMany({
-    where: {
-      yeniAnaKategori: { not: null },
-      processingStatus: "done",
-    },
-    select: {
-      yeniAnaKategori: true,
-      yeniAltKategori1: true,
-      yeniAltKategori2: true,
-      yeniAltKategori3: true,
-      yeniAltKategori4: true,
-      yeniAltKategori5: true,
-    },
-    distinct: ["yeniAnaKategori", "yeniAltKategori1", "yeniAltKategori2"],
-  });
-
-  // Kategori yollarını oluştur
-  const categoryPaths = new Set<string>();
-
-  for (const cat of categories) {
-    const parts = [
-      cat.yeniAnaKategori,
-      cat.yeniAltKategori1,
-      cat.yeniAltKategori2,
-      cat.yeniAltKategori3,
-      cat.yeniAltKategori4,
-      cat.yeniAltKategori5,
-    ].filter(Boolean);
-
-    if (parts.length > 0) {
-      categoryPaths.add(parts.join(" > "));
-    }
-  }
-
-  return Array.from(categoryPaths).slice(0, 50); // En fazla 50 kategori gönder
-}
-
-// POST - Kategori işleme
+// POST - Kategori işleme (Manuel Anahtar Kelime Eşlemesi)
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { batchSize = 1, urunId } = body;
-
-    const apiKey = await getOpenAIApiKey();
-    if (!apiKey) {
-      return NextResponse.json(
-        { success: false, error: "OpenAI API anahtarı ayarlanmamış." },
-        { status: 400 }
-      );
-    }
-
-    // Mevcut kategorileri al (tutarlılık için)
-    const existingCategories = await getExistingCategories();
+    const { batchSize = 50, urunId } = body; // Batch size artırıldı çünkü AI yok, çok hızlı
 
     // Get products to process
     let products;
@@ -134,6 +84,8 @@ export async function POST(request: NextRequest) {
       yeniAdi: string | null;
       eskiKategori: string | null;
       yeniKategori: string | null;
+      matchedKeyword: string | null;
+      confidence: string | null;
       success: boolean;
       error?: string;
     }> = [];
@@ -144,16 +96,11 @@ export async function POST(request: NextRequest) {
         const productName = product.yeniAdi || product.eskiAdi || product.urunKodu || "";
         const currentCategory = product.categories?.anaKategori || null;
 
-        // AI ile kategori belirle (SADECE İSİM ANALİZİ - RESİM YOK)
-        const categoryResult = await determineCategoryFromName(
-          productName,
-          currentCategory,
-          existingCategories,
-          apiKey
-        );
+        // Manuel anahtar kelime eşleştirmesi ile kategori belirle
+        const categoryMatch = matchCategory(productName);
 
-        if (categoryResult) {
-          // Kategoriyi parse et
+        if (categoryMatch) {
+          const categoryResult = categoryToString(categoryMatch);
           const parsedCategory = parseCategory(categoryResult);
 
           // Kategori kaydını güncelle veya oluştur
@@ -170,7 +117,7 @@ export async function POST(request: NextRequest) {
               yeniAltKategori7: parsedCategory.altKategori7,
               yeniAltKategori8: parsedCategory.altKategori8,
               yeniAltKategori9: parsedCategory.altKategori9,
-              aiKategori: categoryResult,
+              aiKategori: `[${categoryMatch.matchedKeyword}] ${categoryResult}`,
               processingStatus: "done",
               processedAt: new Date(),
             },
@@ -187,13 +134,11 @@ export async function POST(request: NextRequest) {
               yeniAltKategori7: parsedCategory.altKategori7,
               yeniAltKategori8: parsedCategory.altKategori8,
               yeniAltKategori9: parsedCategory.altKategori9,
-              aiKategori: categoryResult,
+              aiKategori: `[${categoryMatch.matchedKeyword}] ${categoryResult}`,
               processingStatus: "done",
               processedAt: new Date(),
             },
           });
-
-          // NOT: Log kaydı yapılmıyor - sadece anlık sonuç döndürülüyor
 
           results.push({
             urunKodu: product.urunKodu,
@@ -203,17 +148,27 @@ export async function POST(request: NextRequest) {
             yeniAdi: product.yeniAdi,
             eskiKategori: currentCategory,
             yeniKategori: categoryResult,
+            matchedKeyword: categoryMatch.matchedKeyword,
+            confidence: categoryMatch.confidence,
             success: true,
           });
         } else {
-          // Hata durumunda error olarak işaretle
+          // Eşleşme bulunamadı - "BELİRLENEMEDİ" olarak işaretle
           await prisma.productCategory.upsert({
             where: { urunId: product.urunId },
-            update: { processingStatus: "error" },
+            update: {
+              yeniAnaKategori: "BELİRLENEMEDİ",
+              aiKategori: "Anahtar kelime bulunamadı",
+              processingStatus: "done",
+              processedAt: new Date(),
+            },
             create: {
               urunId: product.urunId,
               anaKategori: currentCategory,
-              processingStatus: "error",
+              yeniAnaKategori: "BELİRLENEMEDİ",
+              aiKategori: "Anahtar kelime bulunamadı",
+              processingStatus: "done",
+              processedAt: new Date(),
             },
           });
 
@@ -224,12 +179,24 @@ export async function POST(request: NextRequest) {
             eskiAdi: product.eskiAdi,
             yeniAdi: product.yeniAdi,
             eskiKategori: currentCategory,
-            yeniKategori: null,
-            success: false,
-            error: "Kategori belirlenemedi",
+            yeniKategori: "BELİRLENEMEDİ",
+            matchedKeyword: null,
+            confidence: null,
+            success: true, // İşlem başarılı, sadece eşleşme bulunamadı
           });
         }
       } catch (err) {
+        // Hata durumunda error olarak işaretle
+        await prisma.productCategory.upsert({
+          where: { urunId: product.urunId },
+          update: { processingStatus: "error" },
+          create: {
+            urunId: product.urunId,
+            anaKategori: product.categories?.anaKategori || null,
+            processingStatus: "error",
+          },
+        });
+
         results.push({
           urunKodu: product.urunKodu,
           urunId: product.urunId,
@@ -238,13 +205,12 @@ export async function POST(request: NextRequest) {
           yeniAdi: product.yeniAdi,
           eskiKategori: product.categories?.anaKategori || null,
           yeniKategori: null,
+          matchedKeyword: null,
+          confidence: null,
           success: false,
           error: err instanceof Error ? err.message : "Bilinmeyen hata",
         });
       }
-
-      // Rate limiting için bekle
-      await new Promise((resolve) => setTimeout(resolve, 500));
     }
 
     // Kalan ürün sayısını hesapla
@@ -263,6 +229,7 @@ export async function POST(request: NextRequest) {
       processed: results.filter((r) => r.success).length,
       remaining,
       results,
+      stats: getCategoryStats(),
     });
   } catch (error) {
     console.error("Category processing error:", error);
@@ -276,7 +243,7 @@ export async function POST(request: NextRequest) {
 // GET - Kategori durumunu getir
 export async function GET() {
   try {
-    const [total, processed, pending, withCategory] = await Promise.all([
+    const [total, processed, pending, withCategory, unmatched] = await Promise.all([
       prisma.product.count(),
       prisma.productCategory.count({ where: { processingStatus: "done" } }),
       prisma.productCategory.count({
@@ -288,11 +255,17 @@ export async function GET() {
         }
       }),
       prisma.productCategory.count(),
+      prisma.productCategory.count({
+        where: { yeniAnaKategori: "BELİRLENEMEDİ" }
+      }),
     ]);
 
     // Kategorisi olmayan ürünler
     const withoutCategory = total - withCategory;
     const totalPending = pending + withoutCategory;
+
+    // Kategori istatistikleri
+    const stats = getCategoryStats();
 
     return NextResponse.json({
       success: true,
@@ -300,7 +273,9 @@ export async function GET() {
         total,
         processed,
         pending: totalPending,
+        unmatched,
         percentComplete: total > 0 ? Math.round((processed / total) * 100) : 0,
+        keywordStats: stats,
       },
     });
   } catch (error) {
@@ -310,180 +285,4 @@ export async function GET() {
       { status: 500 }
     );
   }
-}
-
-// SADECE İSİMDEN KATEGORİ BELİRLE - RESİM YOK
-async function determineCategoryFromName(
-  productName: string,
-  currentCategory: string | null,
-  existingCategories: string[],
-  apiKey: string
-): Promise<string | null> {
-  // Mevcut kategori listesini oluştur
-  const existingCategoryList = existingCategories.length > 0
-    ? `\n\nMEVCUT KATEGORİLER (Tutarlılık için bu kategorileri tercih et):\n${existingCategories.map(c => `- ${c}`).join("\n")}`
-    : "";
-
-  const systemPrompt = `Sen bir Trendyol e-ticaret kategori uzmanısın. SADECE ürün ismine bakarak doğru kategoriyi belirliyorsun.
-
-⚠️ ÖNEMLİ KURALLAR:
-1. SADECE ürün ismindeki kelimelere bak
-2. Ürün isminden ürün tipini çıkar ve uygun kategoriye yerleştir
-3. Benzer ürünler MUTLAKA aynı kategori yapısında olmalı
-4. Mevcut kategorilerde uygun bir kategori varsa, ONU KULLAN
-5. Kategori isimleri TÜRKÇE olmalı
-
-📂 KATEGORİ FORMATI:
-[Cinsiyet/Ana] > [Giyim Tipi] > [Ürün Tipi]
-
-🎯 ÖRNEK DÖNÜŞÜMLER:
-
-"Siyah Triko Kazak" → Kadın > Üst Giyim > Kazak
-"Mavi Kot Pantolon" → Kadın > Alt Giyim > Pantolon
-"Beyaz Gömlek Slim Fit" → Erkek > Üst Giyim > Gömlek
-"Kırmızı Elbise" → Kadın > Elbise > Günlük Elbise
-"Deri Ceket" → Kadın > Dış Giyim > Ceket
-"Spor Ayakkabı" → Kadın > Ayakkabı > Spor Ayakkabı
-"Midi Etek" → Kadın > Alt Giyim > Etek
-"Bluz Çiçekli" → Kadın > Üst Giyim > Bluz
-"Sweatshirt Kapüşonlu" → Kadın > Üst Giyim > Sweatshirt
-"Mont Kışlık" → Kadın > Dış Giyim > Mont
-"Tişört Baskılı" → Erkek > Üst Giyim > Tişört
-"Şort Deniz" → Erkek > Alt Giyim > Şort
-"Hırka Örme" → Kadın > Üst Giyim > Hırka
-"Tayt Spor" → Kadın > Alt Giyim > Tayt
-"Yelek Kürklü" → Kadın > Dış Giyim > Yelek
-
-📋 ANA KATEGORİLER:
-- Kadın
-- Erkek
-- Çocuk
-- Bebek
-
-📋 GİYİM TİPLERİ:
-- Üst Giyim (Kazak, Gömlek, Tişört, Bluz, Sweatshirt, Hırka, Crop Top, Atlet)
-- Alt Giyim (Pantolon, Etek, Şort, Tayt, Eşofman Altı)
-- Dış Giyim (Ceket, Mont, Kaban, Trençkot, Yelek, Parka)
-- Elbise (Günlük Elbise, Abiye, Gece Elbisesi, Yazlık Elbise)
-- Ayakkabı (Spor Ayakkabı, Topuklu, Bot, Sandalet, Terlik)
-- Çanta (El Çantası, Omuz Çantası, Sırt Çantası)
-- Aksesuar (Şapka, Kemer, Şal, Atkı)
-- İç Giyim (Sütyen, Külot, Pijama, Gecelik)
-- Takım (Eşofman Takımı, Takım Elbise)
-
-⚠️ İSİMDE CİNSİYET BELİRTİLMEMİŞSE:
-- Elbise, Bluz, Etek → Kadın
-- Kravat, Papyon → Erkek
-- Genel ürünler → Kadın (varsayılan)
-
-${existingCategoryList}
-
-Sadece kategori yolunu döndür, başka bir şey yazma. Örnek: "Kadın > Üst Giyim > Kazak"`;
-
-  const userPrompt = `Ürün adı: "${productName}"
-${currentCategory ? `Mevcut kategori: ${currentCategory}` : ""}
-
-Bu ürün için en uygun Trendyol kategorisini belirle. SADECE ürün ismine bak.`;
-
-  try {
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: "gpt-4o-mini",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt },
-        ],
-        temperature: 0.1, // Daha tutarlı sonuçlar için düşük temperature
-        max_tokens: 100,
-      }),
-    });
-
-    if (!response.ok) {
-      console.error("OpenAI API error:", await response.text());
-      return null;
-    }
-
-    const data = await response.json();
-    const result = data.choices[0]?.message?.content?.trim();
-
-    if (!result) return null;
-
-    // Kategoriyi normalize et
-    return normalizeCategory(result, existingCategories);
-  } catch (error) {
-    console.error("Category determination error:", error);
-    return null;
-  }
-}
-
-// Kategoriyi normalize et - mevcut kategorilere benzer olanı bul
-function normalizeCategory(category: string, existingCategories: string[]): string {
-  if (existingCategories.length === 0) return category;
-
-  // Kategoriyi parçala
-  const parts = category.split(">").map(s => s.trim());
-
-  // Mevcut kategorilerde tam eşleşme ara
-  for (const existing of existingCategories) {
-    const existingParts = existing.split(">").map(s => s.trim());
-
-    // İlk 2-3 seviye eşleşiyorsa, mevcut kategoriyi kullan
-    if (parts.length >= 2 && existingParts.length >= 2) {
-      if (parts[0].toLowerCase() === existingParts[0].toLowerCase() &&
-          parts[1].toLowerCase() === existingParts[1].toLowerCase()) {
-        // Alt seviyeler de benzer mi kontrol et
-        if (parts.length >= 3 && existingParts.length >= 3) {
-          // 3. seviye benzerliği kontrol et
-          const similarity = calculateSimilarity(parts[2], existingParts[2]);
-          if (similarity > 0.7) {
-            // Mevcut kategori yapısını kullan
-            return existing;
-          }
-        }
-      }
-    }
-  }
-
-  return category;
-}
-
-// İki string arasındaki benzerliği hesapla (0-1 arası)
-function calculateSimilarity(str1: string, str2: string): number {
-  const s1 = str1.toLowerCase();
-  const s2 = str2.toLowerCase();
-
-  if (s1 === s2) return 1;
-
-  // Levenshtein mesafesi ile benzerlik
-  const maxLen = Math.max(s1.length, s2.length);
-  if (maxLen === 0) return 1;
-
-  const distance = levenshteinDistance(s1, s2);
-  return 1 - distance / maxLen;
-}
-
-function levenshteinDistance(str1: string, str2: string): number {
-  const m = str1.length;
-  const n = str2.length;
-  const dp: number[][] = Array(m + 1).fill(null).map(() => Array(n + 1).fill(0));
-
-  for (let i = 0; i <= m; i++) dp[i][0] = i;
-  for (let j = 0; j <= n; j++) dp[0][j] = j;
-
-  for (let i = 1; i <= m; i++) {
-    for (let j = 1; j <= n; j++) {
-      if (str1[i - 1] === str2[j - 1]) {
-        dp[i][j] = dp[i - 1][j - 1];
-      } else {
-        dp[i][j] = 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
-      }
-    }
-  }
-
-  return dp[m][n];
 }
