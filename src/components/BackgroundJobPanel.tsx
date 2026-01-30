@@ -67,9 +67,10 @@ export function BackgroundJobPanel() {
       const response = await fetch("/api/background-jobs");
       const data = await response.json();
 
-      if (data.success) {
-        setActiveJob(data.data.activeJob);
-        setRecentJobs(data.data.jobs.filter((j: BackgroundJob) =>
+      if (data.success && data.data) {
+        setActiveJob(data.data.activeJob || null);
+        const jobs = data.data.jobs || [];
+        setRecentJobs(jobs.filter((j: BackgroundJob) =>
           !data.data.activeJob || j.id !== data.data.activeJob.id
         ));
       }
