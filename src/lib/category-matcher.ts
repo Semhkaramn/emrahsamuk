@@ -387,13 +387,23 @@ const KEYWORD_CATEGORY_MAP: Record<string, CategoryTuple> = {
   "okul çantası": ["Kadın", "Aksesuar", "Sırt Çantası", ""],
 
   // ==================== KADIN ====================
-  // Elbise
+  // Elbise - tüm varyasyonlar
   "elbise": ["Kadın", "Günlük Giyim", "Elbise", ""],
+  "elbıse": ["Kadın", "Günlük Giyim", "Elbise", ""], // Yanlış yazım
+  "kadın elbise": ["Kadın", "Günlük Giyim", "Elbise", ""],
+  "bayan elbise": ["Kadın", "Günlük Giyim", "Elbise", ""],
   "midi elbise": ["Kadın", "Günlük Giyim", "Elbise", ""],
   "mini elbise": ["Kadın", "Günlük Giyim", "Elbise", ""],
   "maxi elbise": ["Kadın", "Günlük Giyim", "Elbise", ""],
+  "uzun elbise": ["Kadın", "Günlük Giyim", "Elbise", ""],
+  "kısa elbise": ["Kadın", "Günlük Giyim", "Elbise", ""],
   "triko elbise": ["Kadın", "Günlük Giyim", "Elbise", ""],
   "deri elbise": ["Kadın", "Günlük Giyim", "Elbise", ""],
+  "yazlık elbise": ["Kadın", "Günlük Giyim", "Elbise", ""],
+  "kışlık elbise": ["Kadın", "Günlük Giyim", "Elbise", ""],
+  "düğün elbise": ["Kadın", "Günlük Giyim", "Elbise", ""],
+  "gece elbise": ["Kadın", "Günlük Giyim", "Elbise", ""],
+  "kokteyl elbise": ["Kadın", "Günlük Giyim", "Elbise", ""],
 
   // Bluz
   "bluz": ["Kadın", "Günlük Giyim", "Üst Giyim", "Bluz"],
@@ -790,12 +800,21 @@ const PRIORITY_KEYWORDS: string[] = [
   "pantolon takım",
   "etek takım",
 
-  // Giyim spesifik
+  // Giyim spesifik - Elbise varyasyonları
+  "kadın elbise",
+  "bayan elbise",
   "triko elbise",
   "deri elbise",
   "midi elbise",
   "mini elbise",
   "maxi elbise",
+  "uzun elbise",
+  "kısa elbise",
+  "yazlık elbise",
+  "kışlık elbise",
+  "düğün elbise",
+  "gece elbise",
+  "kokteyl elbise",
   "abiye elbise",
   "palazzo pantolon",
   "kargo pantolon",
@@ -835,6 +854,40 @@ const PRIORITY_KEYWORDS: string[] = [
 ];
 
 /**
+ * Türkçe karakter uyumlu küçük harfe çevirme
+ */
+function turkishLowerCase(str: string): string {
+  return str
+    .replace(/İ/g, "i")
+    .replace(/I/g, "ı")
+    .replace(/Ğ/g, "ğ")
+    .replace(/Ü/g, "ü")
+    .replace(/Ş/g, "ş")
+    .replace(/Ö/g, "ö")
+    .replace(/Ç/g, "ç")
+    .toLocaleLowerCase("tr-TR");
+}
+
+/**
+ * Ürün adını normalize et - kodları, sayıları ve özel karakterleri temizle
+ */
+function normalizeProductName(productName: string): string {
+  let normalized = turkishLowerCase(productName);
+
+  // Tire ve özel karakterleri boşluğa çevir
+  normalized = normalized.replace(/[-_/\\|]/g, " ");
+
+  // Başta ve sonda sayıları kaldır (ürün kodları genelde baş veya sonda)
+  normalized = normalized.replace(/^\d+\s*/g, ""); // Baştaki sayılar
+  normalized = normalized.replace(/\s*\d+$/g, ""); // Sondaki sayılar
+
+  // Çoklu boşlukları tekleştir
+  normalized = normalized.replace(/\s+/g, " ").trim();
+
+  return normalized;
+}
+
+/**
  * Ürün adından kategori belirle
  */
 export function matchCategory(productName: string): CategoryMatch | null {
@@ -842,13 +895,19 @@ export function matchCategory(productName: string): CategoryMatch | null {
     return null;
   }
 
-  const normalizedName = productName.toLowerCase().trim();
+  // İlk olarak tam normalize et
+  const normalizedName = normalizeProductName(productName);
+
+  // Ayrıca basit lowercase versiyonu da tut (bazı durumlar için)
+  const simpleLowerName = turkishLowerCase(productName).replace(/[-_]/g, " ");
+
   let matchedKeyword = "";
   let categories: CategoryTuple | null = null;
 
   // Öncelik 1: Spesifik anahtar kelimeleri kontrol et
   for (const keyword of PRIORITY_KEYWORDS) {
-    if (normalizedName.includes(keyword.toLowerCase())) {
+    const lowerKeyword = turkishLowerCase(keyword);
+    if (normalizedName.includes(lowerKeyword) || simpleLowerName.includes(lowerKeyword)) {
       if (KEYWORD_CATEGORY_MAP[keyword]) {
         categories = KEYWORD_CATEGORY_MAP[keyword];
         matchedKeyword = keyword;
@@ -864,7 +923,8 @@ export function matchCategory(productName: string): CategoryMatch | null {
       .sort((a, b) => b.length - a.length); // Uzun olanlar önce
 
     for (const keyword of allKeywords) {
-      if (normalizedName.includes(keyword.toLowerCase())) {
+      const lowerKeyword = turkishLowerCase(keyword);
+      if (normalizedName.includes(lowerKeyword) || simpleLowerName.includes(lowerKeyword)) {
         categories = KEYWORD_CATEGORY_MAP[keyword];
         matchedKeyword = keyword;
         break;
