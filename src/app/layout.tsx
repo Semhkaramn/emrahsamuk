@@ -15,8 +15,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Ürün Yönetim Sistemi | AI-Powered SEO & Image Enhancement",
-  description: "AI destekli ürün yönetim sistemi - SEO optimizasyonu, kategori belirleme ve resim işleme",
+  title: "Ürün Yönetim Sistemi | AI-Powered SEO & Kategori",
+  description: "AI destekli ürün yönetim sistemi - SEO optimizasyonu ve kategori belirleme",
 };
 
 export default function RootLayout({
