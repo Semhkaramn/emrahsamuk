@@ -20,6 +20,9 @@ import {
   Hash,
   Tag,
   Activity,
+  Search,
+  Zap,
+  AlertTriangle,
 } from "lucide-react";
 
 interface CategoryLog {
@@ -31,6 +34,8 @@ interface CategoryLog {
   yeniAdi: string | null;
   eskiKategori: string;
   yeniKategori: string;
+  matchedKeyword?: string;
+  confidence?: string;
   success: boolean;
   timestamp: Date;
 }
@@ -39,7 +44,13 @@ interface ProcessingStatus {
   total: number;
   processed: number;
   remaining: number;
+  unmatched: number;
   percentComplete: number;
+  keywordStats?: {
+    totalKeywords: number;
+    categories: string[];
+    priorityGroups: { group1: number; group2: number; group3: number };
+  };
 }
 
 interface BackgroundJob {
@@ -92,7 +103,9 @@ export function CategoryProcessingPanel() {
           total: data.data.total,
           processed: data.data.processed || 0,
           remaining: data.data.pending,
+          unmatched: data.data.unmatched || 0,
           percentComplete: data.data.percentComplete,
+          keywordStats: data.data.keywordStats,
         });
       }
     } catch (error) {
@@ -134,9 +147,20 @@ export function CategoryProcessingPanel() {
               p.categories?.altKategori1
             ].filter(Boolean).join(" > ") || "-";
 
-            const yeniKategori = p.categories?.aiKategori ||
-              [p.categories?.yeniAnaKategori, p.categories?.yeniAltKategori1]
-                .filter(Boolean).join(" > ") || "-";
+            // aiKategori formatı: "[keyword] kategori yolu" veya sadece kategori
+            const aiKategori = p.categories?.aiKategori || "";
+            let matchedKeyword = "";
+            let yeniKategori = "";
+
+            const keywordMatch = aiKategori.match(/^\[(.+?)\]\s*(.+)$/);
+            if (keywordMatch) {
+              matchedKeyword = keywordMatch[1];
+              yeniKategori = keywordMatch[2];
+            } else {
+              yeniKategori = aiKategori ||
+                [p.categories?.yeniAnaKategori, p.categories?.yeniAltKategori1]
+                  .filter(Boolean).join(" > ") || "-";
+            }
 
             return {
               id: `log-${p.urunId}`,
@@ -147,7 +171,8 @@ export function CategoryProcessingPanel() {
               yeniAdi: p.yeniAdi,
               eskiKategori,
               yeniKategori,
-              success: true,
+              matchedKeyword: matchedKeyword || undefined,
+              success: yeniKategori !== "BELİRLENEMEDİ",
               timestamp: p.categories?.processedAt
                 ? new Date(p.categories.processedAt)
                 : new Date(),
@@ -172,7 +197,7 @@ export function CategoryProcessingPanel() {
   // Polling interval - durumu kontrol et (artık sadece polling yapıyoruz, worker server-side çalışıyor)
   useEffect(() => {
     // Aktif iş varsa daha sık polling yap
-    const interval = activeJob?.status === "running" ? 2000 : 5000;
+    const interval = activeJob?.status === "running" ? 1000 : 5000; // Daha hızlı çünkü AI yok
 
     pollingIntervalRef.current = setInterval(() => {
       fetchStatus();
@@ -303,24 +328,28 @@ export function CategoryProcessingPanel() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="p-2 rounded-xl bg-gradient-to-br from-orange-500 to-amber-600">
+          <div className="p-2 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600">
             <FolderTree className="w-6 h-6 text-white" />
           </div>
           <div>
             <h2 className="text-xl font-bold">Kategori Yapma</h2>
             <p className="text-xs text-zinc-500">
-              AI ile ürün kategorilerini optimize et
+              Anahtar kelime eşleştirmesi ile hızlı kategori belirleme
               {activeJob?.status === "running" && (
-                <span className="text-emerald-400 ml-2">• Arka planda çalışıyor (sayfa kapatılsa bile devam eder)</span>
+                <span className="text-emerald-400 ml-2">• Arka planda çalışıyor (çok hızlı!)</span>
               )}
             </p>
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <Badge variant="outline" className="bg-emerald-500/10 text-emerald-400 border-emerald-500/30">
+            <Zap className="w-3 h-3 mr-1" />
+            API Gereksiz
+          </Badge>
           {activeJob?.status === "running" && (
-            <Badge variant="outline" className="bg-orange-500/10 text-orange-400 border-orange-500/30 animate-pulse">
+            <Badge variant="outline" className="bg-blue-500/10 text-blue-400 border-blue-500/30 animate-pulse">
               <Activity className="w-3 h-3 mr-1 animate-pulse" />
-              Paralel İşleniyor
+              İşleniyor
             </Badge>
           )}
           <Button variant="ghost" size="sm" onClick={() => { fetchStatus(); fetchActiveJob(); fetchRecentLogs(); }} disabled={actionLoading}>
@@ -329,10 +358,41 @@ export function CategoryProcessingPanel() {
         </div>
       </div>
 
+      {/* Keyword Stats Card */}
+      {status?.keywordStats && (
+        <Card className="border-zinc-800 bg-zinc-900/50">
+          <CardContent className="pt-4 pb-3">
+            <div className="flex items-center gap-6 text-sm">
+              <div className="flex items-center gap-2">
+                <Search className="w-4 h-4 text-blue-400" />
+                <span className="text-zinc-400">Toplam Anahtar Kelime:</span>
+                <span className="font-semibold text-zinc-100">{status.keywordStats.totalKeywords}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <FolderTree className="w-4 h-4 text-emerald-400" />
+                <span className="text-zinc-400">Kategori Sayısı:</span>
+                <span className="font-semibold text-zinc-100">{status.keywordStats.categories.length}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Tag className="w-4 h-4 text-amber-400" />
+                <span className="text-zinc-400">Öncelik Grupları:</span>
+                <span className="font-semibold">
+                  <span className="text-emerald-400">{status.keywordStats.priorityGroups.group1}</span>
+                  <span className="text-zinc-600"> / </span>
+                  <span className="text-amber-400">{status.keywordStats.priorityGroups.group2}</span>
+                  <span className="text-zinc-600"> / </span>
+                  <span className="text-blue-400">{status.keywordStats.priorityGroups.group3}</span>
+                </span>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Status Card */}
       <Card className={`border-2 ${
         activeJob?.status === "running"
-          ? "border-orange-500/50 bg-orange-500/5"
+          ? "border-emerald-500/50 bg-emerald-500/5"
           : activeJob?.status === "paused"
             ? "border-yellow-500/50 bg-yellow-500/5"
             : "border-zinc-800 bg-zinc-900/50"
@@ -354,7 +414,7 @@ export function CategoryProcessingPanel() {
             </div>
 
             {/* Stats */}
-            <div className="grid grid-cols-4 gap-4">
+            <div className="grid grid-cols-5 gap-4">
               <div className="p-4 bg-zinc-800/50 rounded-xl text-center">
                 <p className="text-2xl font-bold text-zinc-100">
                   {activeJob?.totalItems || status?.total || 0}
@@ -365,7 +425,13 @@ export function CategoryProcessingPanel() {
                 <p className="text-2xl font-bold text-emerald-400">
                   {activeJob?.successCount || status?.processed || 0}
                 </p>
-                <p className="text-xs text-zinc-500">Başarılı</p>
+                <p className="text-xs text-zinc-500">Eşleşti</p>
+              </div>
+              <div className="p-4 bg-amber-500/10 rounded-xl text-center">
+                <p className="text-2xl font-bold text-amber-400">
+                  {status?.unmatched || 0}
+                </p>
+                <p className="text-xs text-zinc-500">Eşleşmedi</p>
               </div>
               <div className="p-4 bg-red-500/10 rounded-xl text-center">
                 <p className="text-2xl font-bold text-red-400">
@@ -373,8 +439,8 @@ export function CategoryProcessingPanel() {
                 </p>
                 <p className="text-xs text-zinc-500">Hata</p>
               </div>
-              <div className="p-4 bg-amber-500/10 rounded-xl text-center">
-                <p className="text-2xl font-bold text-amber-400">
+              <div className="p-4 bg-blue-500/10 rounded-xl text-center">
+                <p className="text-2xl font-bold text-blue-400">
                   {activeJob
                     ? activeJob.totalItems - activeJob.processedItems
                     : status?.remaining || 0
@@ -400,7 +466,7 @@ export function CategoryProcessingPanel() {
               {!activeJob || activeJob.status === "completed" || activeJob.status === "cancelled" ? (
                 <Button
                   onClick={startBackgroundJob}
-                  className="flex-1 bg-orange-600 hover:bg-orange-700"
+                  className="flex-1 bg-emerald-600 hover:bg-emerald-700"
                   disabled={actionLoading || (status?.remaining === 0)}
                 >
                   {actionLoading ? (
@@ -408,7 +474,7 @@ export function CategoryProcessingPanel() {
                   ) : (
                     <Play className="w-4 h-4 mr-2" />
                   )}
-                  {status?.remaining === 0 ? "Tamamlandı" : "Arka Planda Başlat"}
+                  {status?.remaining === 0 ? "Tamamlandı" : "Hızlı Kategori Eşleştir"}
                 </Button>
               ) : activeJob.status === "pending" ? (
                 <Button
@@ -470,7 +536,7 @@ export function CategoryProcessingPanel() {
       <Card className="border-zinc-800 bg-zinc-900/50">
         <CardHeader className="pb-3">
           <CardTitle className="text-base flex items-center gap-2">
-            <FolderTree className="w-4 h-4 text-orange-400" />
+            <FolderTree className="w-4 h-4 text-emerald-400" />
             Kategori Değişiklik Logları
             {logs.length > 0 && (
               <Badge variant="outline" className="ml-2 text-xs">
@@ -479,7 +545,7 @@ export function CategoryProcessingPanel() {
             )}
           </CardTitle>
           <CardDescription className="text-xs">
-            Ürün ID, barkod, isimler ve kategori değişiklikleri (paralel işleme)
+            Ürün ID, barkod, anahtar kelime eşleşmesi ve kategori değişiklikleri
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -496,7 +562,7 @@ export function CategoryProcessingPanel() {
                     className={`p-3 rounded-lg border ${
                       log.success
                         ? "bg-emerald-500/5 border-emerald-500/20"
-                        : "bg-red-500/5 border-red-500/20"
+                        : "bg-amber-500/5 border-amber-500/20"
                     }`}
                   >
                     {/* Header: Product Code, ID, Barcode, Status */}
@@ -505,7 +571,7 @@ export function CategoryProcessingPanel() {
                         {log.success ? (
                           <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
                         ) : (
-                          <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
+                          <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
                         )}
                         <div className="flex items-center gap-1.5">
                           <Package className="w-3 h-3 text-zinc-500" />
@@ -520,6 +586,12 @@ export function CategoryProcessingPanel() {
                         {log.barkodNo && (
                           <Badge variant="outline" className="text-[10px] bg-blue-500/10 border-blue-500/30 text-blue-400">
                             Barkod: {log.barkodNo}
+                          </Badge>
+                        )}
+                        {log.matchedKeyword && (
+                          <Badge variant="outline" className="text-[10px] bg-purple-500/10 border-purple-500/30 text-purple-400">
+                            <Search className="w-2.5 h-2.5 mr-1" />
+                            {log.matchedKeyword}
                           </Badge>
                         )}
                       </div>
@@ -560,10 +632,12 @@ export function CategoryProcessingPanel() {
                         <p className="text-xs text-zinc-300 line-clamp-1">{log.eskiKategori}</p>
                       </div>
                       <ArrowRight className="w-4 h-4 text-zinc-600 shrink-0" />
-                      <div className="bg-orange-500/10 p-2 rounded">
+                      <div className={`p-2 rounded ${log.success ? "bg-emerald-500/10" : "bg-amber-500/10"}`}>
                         <div className="flex items-center gap-1 mb-0.5">
-                          <FolderTree className="w-3 h-3 text-orange-400" />
-                          <span className="text-[10px] text-orange-400 uppercase">Yeni Kategori</span>
+                          <FolderTree className={`w-3 h-3 ${log.success ? "text-emerald-400" : "text-amber-400"}`} />
+                          <span className={`text-[10px] uppercase ${log.success ? "text-emerald-400" : "text-amber-400"}`}>
+                            Yeni Kategori
+                          </span>
                         </div>
                         <p className="text-xs text-zinc-100 line-clamp-1">{log.yeniKategori}</p>
                       </div>
