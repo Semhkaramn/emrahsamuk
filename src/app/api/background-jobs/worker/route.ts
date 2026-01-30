@@ -572,9 +572,17 @@ Yanıtını tam olarak bu JSON formatında ver:
     if (cleanContent.startsWith("```")) cleanContent = cleanContent.slice(3);
     if (cleanContent.endsWith("```")) cleanContent = cleanContent.slice(0, -3);
 
-    let seoData: any = {};
+    interface SEOData {
+      seoTitle?: string;
+      seoKeywords?: string;
+      seoDescription?: string;
+      seoUrl?: string;
+      category?: string;
+    }
+
+    let seoData: SEOData = {};
     try {
-      seoData = JSON.parse(cleanContent.trim());
+      seoData = JSON.parse(cleanContent.trim()) as SEOData;
     } catch (parseError) {
       console.error("SEO JSON parse error:", parseError, cleanContent);
       return null;
