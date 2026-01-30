@@ -679,7 +679,7 @@ export function ExcelUploader() {
             {/* Detaylı İlerleme Bilgisi */}
             {state.totalCount > 0 && (
               <div className="flex justify-between text-xs text-zinc-500 mt-1">
-                <span>{state.processedCount.toLocaleString()} / {state.totalCount.toLocaleString()} kayit</span>
+                <span>{(state.processedCount ?? 0).toLocaleString()} / {(state.totalCount ?? 0).toLocaleString()} kayit</span>
                 <span className="text-zinc-400">
                   {state.liveStats.created > 0 && <span className="text-emerald-400 mr-2">+{state.liveStats.created}</span>}
                   {state.liveStats.updated > 0 && <span className="text-blue-400 mr-2">~{state.liveStats.updated}</span>}
@@ -719,42 +719,42 @@ export function ExcelUploader() {
               <div className="text-xs text-zinc-500 space-y-1 mt-2 p-2 bg-zinc-800/50 rounded-lg w-full">
                 <div className="flex justify-between">
                   <span>Toplam:</span>
-                  <span className="font-medium text-zinc-300">{result.stats.total?.toLocaleString()}</span>
+                  <span className="font-medium text-zinc-300">{(result.stats.total ?? 0).toLocaleString()}</span>
                 </div>
                 {result.stats.created !== undefined && (
                   <div className="flex justify-between">
                     <span>Olusturulan:</span>
-                    <span className="font-medium text-emerald-400">{result.stats.created?.toLocaleString()}</span>
+                    <span className="font-medium text-emerald-400">{(result.stats.created ?? 0).toLocaleString()}</span>
                   </div>
                 )}
                 {result.stats.updated !== undefined && (
                   <div className="flex justify-between">
                     <span>Guncellenen:</span>
-                    <span className="font-medium text-blue-400">{result.stats.updated?.toLocaleString()}</span>
+                    <span className="font-medium text-blue-400">{(result.stats.updated ?? 0).toLocaleString()}</span>
                   </div>
                 )}
                 {result.stats.skipped !== undefined && result.stats.skipped > 0 && (
                   <div className="flex justify-between">
                     <span>Atlanan:</span>
-                    <span className="font-medium text-amber-400">{result.stats.skipped?.toLocaleString()}</span>
+                    <span className="font-medium text-amber-400">{(result.stats.skipped ?? 0).toLocaleString()}</span>
                   </div>
                 )}
                 {result.stats.failed !== undefined && result.stats.failed > 0 && (
                   <div className="flex justify-between">
                     <span>Hatali:</span>
-                    <span className="font-medium text-red-400">{result.stats.failed?.toLocaleString()}</span>
+                    <span className="font-medium text-red-400">{(result.stats.failed ?? 0).toLocaleString()}</span>
                   </div>
                 )}
                 {result.stats.productsProcessed !== undefined && (
                   <div className="flex justify-between">
                     <span>Islenen Urun:</span>
-                    <span className="font-medium text-zinc-300">{result.stats.productsProcessed?.toLocaleString()}</span>
+                    <span className="font-medium text-zinc-300">{(result.stats.productsProcessed ?? 0).toLocaleString()}</span>
                   </div>
                 )}
                 {result.stats.imagesUpdated !== undefined && (
                   <div className="flex justify-between">
                     <span>Islenen Resim:</span>
-                    <span className="font-medium text-blue-400">{result.stats.imagesUpdated?.toLocaleString()}</span>
+                    <span className="font-medium text-blue-400">{(result.stats.imagesUpdated ?? 0).toLocaleString()}</span>
                   </div>
                 )}
               </div>
