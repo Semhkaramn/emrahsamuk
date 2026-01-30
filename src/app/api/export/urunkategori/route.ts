@@ -102,14 +102,8 @@ export async function GET(request: NextRequest) {
     // Generate buffer
     const buffer = XLSX.write(workbook, { type: "buffer", bookType: "xlsx" });
 
-    // Log the export
-    await prisma.processingLog.create({
-      data: {
-        islemTipi: "export",
-        durum: "success",
-        mesaj: `ürünkategori.xlsx export edildi. ${products.length} ürün (Filtre: ${filterType})`,
-      },
-    });
+    // Log to console only (momentary)
+    console.log(`[Export] ürünkategori.xlsx export edildi. ${products.length} ürün (Filtre: ${filterType})`);
 
     const filename = `urunkategori_${filterType}_${new Date().toISOString().split("T")[0]}.xlsx`;
 
