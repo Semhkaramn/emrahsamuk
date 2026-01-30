@@ -116,8 +116,9 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     console.error("Export urunkategori error:", error);
+    const errorMessage = error instanceof Error ? error.message : "Bilinmeyen hata";
     return NextResponse.json(
-      { success: false, error: "Export sırasında hata oluştu" },
+      { success: false, error: `Export hatası: ${errorMessage}` },
       { status: 500 }
     );
   }
