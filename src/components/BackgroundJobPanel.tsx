@@ -14,7 +14,6 @@ import {
   CheckCircle2,
   AlertCircle,
   Loader2,
-  Image as ImageIcon,
   FolderTree,
   Sparkles,
   Clock,
@@ -40,7 +39,6 @@ interface BackgroundJob {
 }
 
 const jobTypeLabels: Record<string, { label: string; icon: React.ReactNode; color: string }> = {
-  image_processing: { label: "Resim İşleme", icon: <ImageIcon className="w-4 h-4" />, color: "blue" },
   category_processing: { label: "Kategori İşleme", icon: <FolderTree className="w-4 h-4" />, color: "purple" },
   seo_processing: { label: "SEO İşleme", icon: <Sparkles className="w-4 h-4" />, color: "emerald" },
 };
@@ -360,7 +358,7 @@ export function BackgroundJobPanel() {
             <Clock className="w-12 h-12 text-zinc-600 mx-auto mb-3" />
             <p className="text-zinc-500">Aktif arka plan işi yok</p>
             <p className="text-xs text-zinc-600 mt-1">
-              Resim, kategori veya SEO işleme panelinden yeni bir iş başlatabilirsiniz
+              Kategori veya SEO işleme panelinden yeni bir iş başlatabilirsiniz
             </p>
           </CardContent>
         </Card>
