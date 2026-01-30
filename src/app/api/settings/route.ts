@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
 import {
-  getFullAppSettings,
+  getAppSettings,
   invalidateSettingsCache,
   updateSettingsCache,
 } from "@/lib/settings-cache";
@@ -10,8 +10,6 @@ function getSettingDescription(key: string): string {
   const descriptions: Record<string, string> = {
     openai_api_key: "OpenAI API anahtarı",
     enable_seo_optimization: "SEO optimizasyonu aktif/pasif",
-    use_image_for_naming: "İsim değiştirmede resim analizi kullan",
-    use_image_for_category: "Kategori belirlemede resim analizi kullan",
   };
   return descriptions[key] || "";
 }
@@ -19,7 +17,7 @@ function getSettingDescription(key: string): string {
 // GET - Tüm ayarları getir (cache'den)
 export async function GET() {
   try {
-    const frontendSettings = await getFullAppSettings();
+    const frontendSettings = await getAppSettings();
 
     return NextResponse.json({
       success: true,
@@ -41,16 +39,12 @@ export async function PUT(request: NextRequest) {
     const {
       openaiApiKey,
       enableSeoOptimization,
-      useImageForNaming,
-      useImageForCategory,
     } = body;
 
     // Transform from frontend format to DB format
     const settingsToUpdate = [
       { key: "openai_api_key", value: openaiApiKey || "" },
       { key: "enable_seo_optimization", value: String(enableSeoOptimization ?? true) },
-      { key: "use_image_for_naming", value: String(useImageForNaming ?? true) },
-      { key: "use_image_for_category", value: String(useImageForCategory ?? true) },
     ];
 
     // Upsert each setting in DB
