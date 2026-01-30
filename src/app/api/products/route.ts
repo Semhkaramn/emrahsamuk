@@ -11,6 +11,8 @@ export async function GET(request: NextRequest) {
     const durum = searchParams.get("durum") || "";
     const kategori = searchParams.get("kategori") || "";
     const processingStatus = searchParams.get("processingStatus") || "";
+    const seoStatus = searchParams.get("seoStatus") || ""; // "pending" = seo:null, "done" = seo exists
+    const categoryStatus = searchParams.get("categoryStatus") || ""; // "pending" = categories:null veya yeniAnaKategori:null
 
     const skip = (page - 1) * limit;
 
@@ -41,6 +43,24 @@ export async function GET(request: NextRequest) {
 
     if (processingStatus) {
       where.processingStatus = processingStatus;
+    }
+
+    // SEO filtreleme - seo kaydı olmayan ürünler için
+    if (seoStatus === "pending") {
+      where.seo = null;
+    } else if (seoStatus === "done") {
+      where.seo = { isNot: null };
+    }
+
+    // Kategori filtreleme - kategorisi olmayan veya işlenmemiş ürünler için
+    if (categoryStatus === "pending") {
+      where.OR = [
+        { categories: null },
+        { categories: { yeniAnaKategori: null, processingStatus: { not: "error" } } },
+        { categories: { processingStatus: "pending" } },
+      ];
+    } else if (categoryStatus === "done") {
+      where.categories = { yeniAnaKategori: { not: null } };
     }
 
     const [products, total] = await Promise.all([
