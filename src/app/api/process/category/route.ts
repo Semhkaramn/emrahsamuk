@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
-import { getOpenAIApiKey, isImageUsedForCategory } from "@/lib/settings-cache";
+import { getOpenAIApiKey } from "@/lib/settings-cache";
 
 interface ParsedCategory {
   anaKategori: string | null;
@@ -15,7 +15,7 @@ interface ParsedCategory {
   altKategori9: string | null;
 }
 
-// Kategori string'ini parse et (örn: "KADIN > Elbise > Yazlık Elbise")
+// Kategori string'ini parse et (örn: "Kadın > Üst Giyim > Kazak")
 function parseCategory(categoryString: string): ParsedCategory {
   const parts = categoryString.split(">").map((s) => s.trim()).filter(Boolean);
 
@@ -86,9 +86,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check if image should be used from settings
-    const useImageFromSettings = await isImageUsedForCategory();
-
     // Mevcut kategorileri al (tutarlılık için)
     const existingCategories = await getExistingCategories();
 
@@ -105,10 +102,6 @@ export async function POST(request: NextRequest) {
       orderBy: { id: "asc" },
       include: {
         categories: true,
-        images: {
-          orderBy: { sira: "asc" },
-          take: 1,
-        },
       },
     });
 
@@ -138,26 +131,13 @@ export async function POST(request: NextRequest) {
 
     for (const product of products) {
       try {
+        // SADECE İSİM KULLANILACAK - yeniAdi veya eskiAdi
         const productName = product.yeniAdi || product.eskiAdi || product.urunKodu || "";
         const currentCategory = product.categories?.anaKategori || null;
 
-        // Only use image if setting is enabled
-        const imageUrl = useImageFromSettings
-          ? (product.images[0]?.yeniUrl || product.images[0]?.eskiUrl || null)
-          : null;
-
-        // Eski ve yeni resim URL'lerini al
-        const eskiResimler = product.images
-          .filter(img => img.eskiUrl)
-          .map(img => img.eskiUrl as string);
-        const yeniResimler = product.images
-          .filter(img => img.yeniUrl)
-          .map(img => img.yeniUrl as string);
-
-        // AI ile kategori belirle (isim + görsel analizi + mevcut kategoriler)
-        const categoryResult = await optimizeCategoryWithVision(
+        // AI ile kategori belirle (SADECE İSİM ANALİZİ - RESİM YOK)
+        const categoryResult = await determineCategoryFromName(
           productName,
-          imageUrl,
           currentCategory,
           existingCategories,
           apiKey
@@ -204,21 +184,7 @@ export async function POST(request: NextRequest) {
             },
           });
 
-          await prisma.processingLog.create({
-            data: {
-              urunId: product.urunId,
-              urunKodu: product.urunKodu,
-              islemTipi: "category",
-              durum: "success",
-              mesaj: `Kategori belirlendi: ${categoryResult}`,
-              eskiDeger: product.eskiAdi,
-              yeniDeger: product.yeniAdi,
-              eskiKategori: currentCategory,
-              yeniKategori: categoryResult,
-              eskiResimler: JSON.stringify(eskiResimler),
-              yeniResimler: JSON.stringify(yeniResimler),
-            },
-          });
+          // NOT: Log kaydı yapılmıyor - sadece anlık sonuç döndürülüyor
 
           results.push({
             urunKodu: product.urunKodu,
@@ -228,12 +194,12 @@ export async function POST(request: NextRequest) {
             yeniAdi: product.yeniAdi,
             eskiKategori: currentCategory,
             yeniKategori: categoryResult,
-            eskiResimler,
-            yeniResimler,
+            eskiResimler: [],
+            yeniResimler: [],
             success: true,
           });
         } else {
-          // Hata durumunda pending olarak işaretle
+          // Hata durumunda error olarak işaretle
           await prisma.productCategory.upsert({
             where: { urunId: product.urunId },
             update: { processingStatus: "error" },
@@ -252,20 +218,13 @@ export async function POST(request: NextRequest) {
             yeniAdi: product.yeniAdi,
             eskiKategori: currentCategory,
             yeniKategori: null,
-            eskiResimler,
-            yeniResimler,
+            eskiResimler: [],
+            yeniResimler: [],
             success: false,
             error: "Kategori belirlenemedi",
           });
         }
       } catch (err) {
-        const eskiResimler = product.images
-          .filter(img => img.eskiUrl)
-          .map(img => img.eskiUrl as string);
-        const yeniResimler = product.images
-          .filter(img => img.yeniUrl)
-          .map(img => img.yeniUrl as string);
-
         results.push({
           urunKodu: product.urunKodu,
           urunId: product.urunId,
@@ -274,8 +233,8 @@ export async function POST(request: NextRequest) {
           yeniAdi: product.yeniAdi,
           eskiKategori: product.categories?.anaKategori || null,
           yeniKategori: null,
-          eskiResimler,
-          yeniResimler,
+          eskiResimler: [],
+          yeniResimler: [],
           success: false,
           error: err instanceof Error ? err.message : "Bilinmeyen hata",
         });
@@ -350,91 +309,80 @@ export async function GET() {
   }
 }
 
-// AI ile kategori belirleme (görsel + isim analizi + mevcut kategoriler)
-async function optimizeCategoryWithVision(
+// SADECE İSİMDEN KATEGORİ BELİRLE - RESİM YOK
+async function determineCategoryFromName(
   productName: string,
-  imageUrl: string | null,
   currentCategory: string | null,
   existingCategories: string[],
   apiKey: string
 ): Promise<string | null> {
   // Mevcut kategori listesini oluştur
   const existingCategoryList = existingCategories.length > 0
-    ? `\n\nMEVCUT KATEGORİLER (Tutarlılık için bu kategorileri tercih et, benzer ürünleri aynı kategoriye koy):\n${existingCategories.map(c => `- ${c}`).join("\n")}`
+    ? `\n\nMEVCUT KATEGORİLER (Tutarlılık için bu kategorileri tercih et):\n${existingCategories.map(c => `- ${c}`).join("\n")}`
     : "";
 
-  const systemPrompt = `Sen bir e-ticaret kategori uzmanısın. Ürünleri doğru ve TUTARLI kategorilere yerleştiriyorsun.
+  const systemPrompt = `Sen bir Trendyol e-ticaret kategori uzmanısın. SADECE ürün ismine bakarak doğru kategoriyi belirliyorsun.
 
-ÖNEMLI KURALLAR:
-1. Benzer ürünler MUTLAKA aynı kategori yapısında olmalı
-2. Örneğin: Tüm elbiseler "KADIN > Giyim > Elbise" altında olmalı, "KADIN > Üst Giyim > Elbise" gibi farklı yapılar KULLANMA
-3. Mevcut kategorilerde uygun bir kategori varsa, ONU KULLAN - yeni kategori yapısı oluşturma
-4. Kategori isimleri TÜRKÇE ve BÜYÜK HARFLE başlamalı (örn: KADIN, ERKEK, ÇOCUK)
-5. Maksimum 5-6 seviye derinlik kullan
-6. ürün isminde ne yazıyorsa öncelik onu kullan kategori atarken
+⚠️ ÖNEMLİ KURALLAR:
+1. SADECE ürün ismindeki kelimelere bak
+2. Ürün isminden ürün tipini çıkar ve uygun kategoriye yerleştir
+3. Benzer ürünler MUTLAKA aynı kategori yapısında olmalı
+4. Mevcut kategorilerde uygun bir kategori varsa, ONU KULLAN
+5. Kategori isimleri TÜRKÇE olmalı
 
-Kategori formatı: Ana Kategori > Alt Kategori 1 > Alt Kategori 2 > ... (en fazla 10 seviye)
+📂 KATEGORİ FORMATI:
+[Cinsiyet/Ana] > [Giyim Tipi] > [Ürün Tipi]
 
-Standart Ana Kategoriler:
-- KADIN
-- ERKEK
-- ÇOCUK
-- ANNE & BEBEK
-- EV & YAŞAM
-- ELEKTRONİK
-- AKSESUAR
-- AYAKKABI & ÇANTA
-- KOZMETİK & KİŞİSEL BAKIM
-- SPOR & OUTDOOR
+🎯 ÖRNEK DÖNÜŞÜMLER:
+
+"Siyah Triko Kazak" → Kadın > Üst Giyim > Kazak
+"Mavi Kot Pantolon" → Kadın > Alt Giyim > Pantolon
+"Beyaz Gömlek Slim Fit" → Erkek > Üst Giyim > Gömlek
+"Kırmızı Elbise" → Kadın > Elbise > Günlük Elbise
+"Deri Ceket" → Kadın > Dış Giyim > Ceket
+"Spor Ayakkabı" → Kadın > Ayakkabı > Spor Ayakkabı
+"Midi Etek" → Kadın > Alt Giyim > Etek
+"Bluz Çiçekli" → Kadın > Üst Giyim > Bluz
+"Sweatshirt Kapüşonlu" → Kadın > Üst Giyim > Sweatshirt
+"Mont Kışlık" → Kadın > Dış Giyim > Mont
+"Tişört Baskılı" → Erkek > Üst Giyim > Tişört
+"Şort Deniz" → Erkek > Alt Giyim > Şort
+"Hırka Örme" → Kadın > Üst Giyim > Hırka
+"Tayt Spor" → Kadın > Alt Giyim > Tayt
+"Yelek Kürklü" → Kadın > Dış Giyim > Yelek
+
+📋 ANA KATEGORİLER:
+- Kadın
+- Erkek
+- Çocuk
+- Bebek
+
+📋 GİYİM TİPLERİ:
+- Üst Giyim (Kazak, Gömlek, Tişört, Bluz, Sweatshirt, Hırka, Crop Top, Atlet)
+- Alt Giyim (Pantolon, Etek, Şort, Tayt, Eşofman Altı)
+- Dış Giyim (Ceket, Mont, Kaban, Trençkot, Yelek, Parka)
+- Elbise (Günlük Elbise, Abiye, Gece Elbisesi, Yazlık Elbise)
+- Ayakkabı (Spor Ayakkabı, Topuklu, Bot, Sandalet, Terlik)
+- Çanta (El Çantası, Omuz Çantası, Sırt Çantası)
+- Aksesuar (Şapka, Kemer, Şal, Atkı)
+- İç Giyim (Sütyen, Külot, Pijama, Gecelik)
+- Takım (Eşofman Takımı, Takım Elbise)
+
+⚠️ İSİMDE CİNSİYET BELİRTİLMEMİŞSE:
+- Elbise, Bluz, Etek → Kadın
+- Kravat, Papyon → Erkek
+- Genel ürünler → Kadın (varsayılan)
+
 ${existingCategoryList}
 
-Sadece kategori yolunu döndür, başka bir şey yazma.`;
+Sadece kategori yolunu döndür, başka bir şey yazma. Örnek: "Kadın > Üst Giyim > Kazak"`;
 
   const userPrompt = `Ürün adı: "${productName}"
-${currentCategory ? `Mevcut kategori: ${currentCategory}` : "Mevcut kategori yok"}
+${currentCategory ? `Mevcut kategori: ${currentCategory}` : ""}
 
-Bu ürün için en uygun e-ticaret kategorisini belirle. Mevcut kategorilerden uygun olan varsa onu kullan.`;
+Bu ürün için en uygun Trendyol kategorisini belirle. SADECE ürün ismine bak.`;
 
   try {
-    // Eğer görsel varsa, vision modeli kullan
-    if (imageUrl) {
-      const response = await fetch("https://api.openai.com/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify({
-          model: "gpt-4o",
-          messages: [
-            { role: "system", content: systemPrompt },
-            {
-              role: "user",
-              content: [
-                { type: "text", text: userPrompt },
-                {
-                  type: "image_url",
-                  image_url: {
-                    url: imageUrl,
-                    detail: "low",
-                  },
-                },
-              ],
-            },
-          ],
-          temperature: 0.1, // Daha tutarlı sonuçlar için düşük temperature
-          max_tokens: 150,
-        }),
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        const result = data.choices[0]?.message?.content?.trim();
-        if (result) return normalizeCategory(result, existingCategories);
-      }
-    }
-
-    // Görsel yoksa veya görsel analizi başarısızsa, sadece isimle dene
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -447,18 +395,25 @@ Bu ürün için en uygun e-ticaret kategorisini belirle. Mevcut kategorilerden u
           { role: "system", content: systemPrompt },
           { role: "user", content: userPrompt },
         ],
-        temperature: 0.1,
-        max_tokens: 150,
+        temperature: 0.1, // Daha tutarlı sonuçlar için düşük temperature
+        max_tokens: 100,
       }),
     });
 
-    if (!response.ok) return null;
+    if (!response.ok) {
+      console.error("OpenAI API error:", await response.text());
+      return null;
+    }
 
     const data = await response.json();
     const result = data.choices[0]?.message?.content?.trim();
-    return result ? normalizeCategory(result, existingCategories) : null;
+
+    if (!result) return null;
+
+    // Kategoriyi normalize et
+    return normalizeCategory(result, existingCategories);
   } catch (error) {
-    console.error("Category optimization error:", error);
+    console.error("Category determination error:", error);
     return null;
   }
 }
