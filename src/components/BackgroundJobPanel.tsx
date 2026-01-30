@@ -267,7 +267,7 @@ export function BackgroundJobPanel() {
                 <div className="flex justify-between text-sm">
                   <span className="text-zinc-400">İlerleme</span>
                   <span className="text-zinc-300 font-medium">
-                    {activeJob.processedItems.toLocaleString()} / {activeJob.totalItems.toLocaleString()}
+                    {(activeJob.processedItems ?? 0).toLocaleString()} / {(activeJob.totalItems ?? 0).toLocaleString()}
                     {" "}({getProgressPercent(activeJob)}%)
                   </span>
                 </div>
@@ -278,15 +278,15 @@ export function BackgroundJobPanel() {
               <div className="grid grid-cols-4 gap-4">
                 <div className="p-3 bg-zinc-800/50 rounded-lg">
                   <p className="text-xs text-zinc-500">Toplam</p>
-                  <p className="text-lg font-bold text-zinc-200">{activeJob.totalItems.toLocaleString()}</p>
+                  <p className="text-lg font-bold text-zinc-200">{(activeJob.totalItems ?? 0).toLocaleString()}</p>
                 </div>
                 <div className="p-3 bg-emerald-500/10 rounded-lg">
                   <p className="text-xs text-emerald-400">Başarılı</p>
-                  <p className="text-lg font-bold text-emerald-400">{activeJob.successCount.toLocaleString()}</p>
+                  <p className="text-lg font-bold text-emerald-400">{(activeJob.successCount ?? 0).toLocaleString()}</p>
                 </div>
                 <div className="p-3 bg-red-500/10 rounded-lg">
                   <p className="text-xs text-red-400">Hata</p>
-                  <p className="text-lg font-bold text-red-400">{activeJob.errorCount.toLocaleString()}</p>
+                  <p className="text-lg font-bold text-red-400">{(activeJob.errorCount ?? 0).toLocaleString()}</p>
                 </div>
                 <div className="p-3 bg-zinc-800/50 rounded-lg">
                   <p className="text-xs text-zinc-500">Süre</p>
