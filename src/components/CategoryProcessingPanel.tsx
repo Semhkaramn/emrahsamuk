@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -135,9 +135,9 @@ export function CategoryProcessingPanel() {
   };
 
   // Load status on mount
-  useState(() => {
+  useEffect(() => {
     fetchStatus();
-  });
+  }, [fetchStatus]);
 
   return (
     <div className="space-y-6">
