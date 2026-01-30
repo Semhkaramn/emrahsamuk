@@ -85,19 +85,53 @@ export function BackgroundJobPanel() {
     fetchJobs();
   }, [fetchJobs]);
 
-  // Polling interval - durumu kontrol et (artık sadece polling yapıyoruz, worker server-side çalışıyor)
+  // Takılmış işi yeniden tetikleme fonksiyonu
+  const retriggerStuckJob = useCallback(async (jobId: number) => {
+    try {
+      console.log("[BackgroundJobPanel] Takılmış iş yeniden tetikleniyor:", jobId);
+      await fetch("/api/background-jobs/worker", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jobId, batchSize: 15, parallelCount: 8 }),
+      });
+    } catch (error) {
+      console.error("Retrigger error:", error);
+    }
+  }, []);
+
+  // Polling interval - durumu kontrol et ve takılmış işleri yeniden tetikle
   useEffect(() => {
     // Aktif iş varsa daha sık polling yap
     const interval = activeJob?.status === "running" ? 2000 : 5000;
+    let lastSeenProcessedItems = activeJob?.processedItems || 0;
+    let stuckCheckCount = 0;
 
-    pollingIntervalRef.current = setInterval(fetchJobs, interval);
+    pollingIntervalRef.current = setInterval(async () => {
+      await fetchJobs();
+
+      // TAKILI İŞ TESPİTİ: Eğer iş running ama 4 polling döngüsü boyunca ilerleme yoksa
+      // (yaklaşık 8 saniye), worker'ı yeniden tetikle
+      if (activeJob?.status === "running" &&
+          activeJob.processedItems === lastSeenProcessedItems &&
+          activeJob.processedItems < activeJob.totalItems) {
+        stuckCheckCount++;
+        if (stuckCheckCount >= 4) {
+          console.log("[BackgroundJobPanel] Takılmış iş tespit edildi, yeniden tetikleniyor...");
+          retriggerStuckJob(activeJob.id);
+          stuckCheckCount = 0;
+        }
+      } else if (activeJob?.status === "running") {
+        lastSeenProcessedItems = activeJob.processedItems;
+        stuckCheckCount = 0;
+      }
+    }, interval);
 
     return () => {
       if (pollingIntervalRef.current) {
         clearInterval(pollingIntervalRef.current);
       }
     };
-  }, [fetchJobs, activeJob?.status]);
+  }, [fetchJobs, activeJob?.status, activeJob?.processedItems, activeJob?.totalItems, activeJob?.id, retriggerStuckJob]);
 
   // İş aksiyonları
   const handleJobAction = async (jobId: number, action: string) => {
