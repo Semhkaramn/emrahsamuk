@@ -78,24 +78,41 @@ export function CategoryProcessingPanel() {
     }
   }, []);
 
-  // Process all products at once
+  // Process products in batches with progress tracking
   const processAllCategories = async () => {
     setProcessing(true);
     setLogs([]);
 
+    const BATCH_SIZE = 500; // Her seferinde 500 ürün işle
+    let processedTotal = 0;
+    let hasMore = true;
+    const allLogs: CategoryLog[] = [];
+
     try {
-      // Process all products in one request (batchSize very high)
-      const response = await fetch("/api/process/category", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ batchSize: 100000 }), // Process all at once
-      });
+      while (hasMore) {
+        const response = await fetch("/api/process/category", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ batchSize: BATCH_SIZE }),
+        });
 
-      const data = await response.json();
+        const data = await response.json();
 
-      if (data.success) {
-        // Convert results to logs
-        const newLogs: CategoryLog[] = (data.results || []).map((r: {
+        if (!data.success) {
+          console.error("Processing error:", data.error);
+          break;
+        }
+
+        // İşlenen ürün yoksa dur
+        if (data.processed === 0) {
+          hasMore = false;
+          break;
+        }
+
+        processedTotal += data.processed;
+
+        // Son 100 logu göster (memory tasarrufu için)
+        const newLogs: CategoryLog[] = (data.results || []).slice(-100).map((r: {
           urunKodu: string | null;
           urunId: number;
           barkodNo: string | null;
@@ -107,7 +124,7 @@ export function CategoryProcessingPanel() {
           confidence: string | null;
           success: boolean;
         }, index: number) => ({
-          id: `log-${r.urunId}-${index}`,
+          id: `log-${r.urunId}-${index}-${Date.now()}`,
           urunKodu: r.urunKodu || "",
           urunId: r.urunId,
           barkodNo: r.barkodNo,
@@ -120,17 +137,29 @@ export function CategoryProcessingPanel() {
           success: r.success && r.yeniKategori !== "BELİRLENEMEDİ",
         }));
 
-        setLogs(newLogs);
+        // Son 200 logu tut
+        allLogs.push(...newLogs);
+        if (allLogs.length > 200) {
+          allLogs.splice(0, allLogs.length - 200);
+        }
+        setLogs([...allLogs]);
 
-        // Refresh status
+        // Kalan ürün var mı kontrol et
+        hasMore = data.remaining > 0;
+
+        // Status'u güncelle
         await fetchStatus();
-      } else {
-        console.error("Processing error:", data.error);
+
+        // API'ye çok hızlı istek atmamak için kısa bekleme
+        await new Promise(resolve => setTimeout(resolve, 100));
       }
+
+      console.log(`Toplam ${processedTotal} ürün işlendi`);
     } catch (error) {
       console.error("Processing error:", error);
     } finally {
       setProcessing(false);
+      await fetchStatus();
     }
   };
 
