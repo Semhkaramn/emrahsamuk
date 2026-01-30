@@ -9,6 +9,8 @@ export async function GET(request: NextRequest) {
     const filterType = searchParams.get("filterType") || "all";
     const sinceDate = searchParams.get("sinceDate");
     const untilDate = searchParams.get("untilDate");
+    const offset = parseInt(searchParams.get("offset") || "0");
+    const limit = parseInt(searchParams.get("limit") || "50000");
 
     // Build where clause based on filters
     const whereClause: Prisma.ProductWhereInput = {};
@@ -38,13 +40,15 @@ export async function GET(request: NextRequest) {
       };
     }
 
-    // Get all products with categories
+    // Get products with pagination (offset/limit)
     const products = await prisma.product.findMany({
       where: Object.keys(whereClause).length > 0 ? whereClause : undefined,
       include: {
         categories: true,
       },
       orderBy: { urunId: "asc" },
+      skip: offset,
+      take: limit,
     });
 
     // Create Excel data matching original ürünkategori.xlsx format EXACTLY
