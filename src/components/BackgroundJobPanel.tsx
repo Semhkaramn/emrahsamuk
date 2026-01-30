@@ -58,7 +58,6 @@ export function BackgroundJobPanel() {
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
 
-  const workerIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   // İşleri getir
@@ -81,64 +80,24 @@ export function BackgroundJobPanel() {
     }
   }, []);
 
-  // Worker'ı çalıştır (aktif iş varsa)
-  const runWorker = useCallback(async () => {
-    if (!activeJob || activeJob.status !== "running") return;
-
-    try {
-      const response = await fetch("/api/background-jobs/worker", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          jobId: activeJob.id,
-          batchSize: 3,
-        }),
-      });
-
-      const data = await response.json();
-
-      if (data.success) {
-        setActiveJob(data.data.job);
-
-        // İş tamamlandıysa listeyi güncelle
-        if (data.data.isCompleted) {
-          fetchJobs();
-        }
-      }
-    } catch (error) {
-      console.error("Worker error:", error);
-    }
-  }, [activeJob, fetchJobs]);
-
   // İlk yüklemede işleri getir
   useEffect(() => {
     fetchJobs();
   }, [fetchJobs]);
 
-  // Worker interval - aktif iş varsa çalıştır
+  // Polling interval - durumu kontrol et (artık sadece polling yapıyoruz, worker server-side çalışıyor)
   useEffect(() => {
-    if (activeJob?.status === "running") {
-      // Worker'ı başlat
-      workerIntervalRef.current = setInterval(runWorker, 2000);
+    // Aktif iş varsa daha sık polling yap
+    const interval = activeJob?.status === "running" ? 2000 : 5000;
 
-      return () => {
-        if (workerIntervalRef.current) {
-          clearInterval(workerIntervalRef.current);
-        }
-      };
-    }
-  }, [activeJob?.status, runWorker]);
-
-  // Polling interval - durumu kontrol et
-  useEffect(() => {
-    pollingIntervalRef.current = setInterval(fetchJobs, 5000);
+    pollingIntervalRef.current = setInterval(fetchJobs, interval);
 
     return () => {
       if (pollingIntervalRef.current) {
         clearInterval(pollingIntervalRef.current);
       }
     };
-  }, [fetchJobs]);
+  }, [fetchJobs, activeJob?.status]);
 
   // İş aksiyonları
   const handleJobAction = async (jobId: number, action: string) => {
@@ -249,7 +208,7 @@ export function BackgroundJobPanel() {
                     </Badge>
                   </CardTitle>
                   <CardDescription className="text-xs">
-                    Arka planda çalışıyor - Tarayıcı kapatılsa bile devam eder
+                    Sunucuda arka planda çalışıyor - Tarayıcıyı kapatsanız bile işlem devam eder
                   </CardDescription>
                 </div>
               </div>
