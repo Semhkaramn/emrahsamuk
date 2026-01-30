@@ -10,14 +10,15 @@ import {
   Sparkles,
   Play,
   Pause,
+  Square,
   RefreshCw,
   CheckCircle2,
   AlertCircle,
   Loader2,
   ArrowRight,
   Package,
-  Image as ImageIcon,
   Hash,
+  Activity,
 } from "lucide-react";
 
 interface NameLog {
@@ -27,8 +28,6 @@ interface NameLog {
   barkodNo: string | null;
   eskiAdi: string;
   yeniAdi: string;
-  eskiResimler: string[];
-  yeniResimler: string[];
   success: boolean;
   timestamp: Date;
 }
@@ -40,134 +39,30 @@ interface ProcessingStatus {
   percentComplete: number;
 }
 
-// Büyük resim önizleme componenti
-function ImagePreview({
-  imageUrl,
-  thumbRect,
-}: {
-  imageUrl: string | null;
-  thumbRect: DOMRect | null;
-}) {
-  const [imageLoaded, setImageLoaded] = useState(false);
-
-  if (!imageUrl || !thumbRect) return null;
-
-  const previewWidth = 350;
-  const previewHeight = 350;
-
-  let left = thumbRect.right + 16;
-  let top = thumbRect.top - 100;
-
-  if (left + previewWidth > window.innerWidth - 20) {
-    left = thumbRect.left - previewWidth - 16;
-  }
-
-  if (top < 20) top = 20;
-  if (top + previewHeight > window.innerHeight - 20) {
-    top = window.innerHeight - previewHeight - 20;
-  }
-
-  return (
-    <div
-      className="fixed z-[100] pointer-events-none animate-in fade-in zoom-in-95 duration-150"
-      style={{ left, top }}
-    >
-      <div className="bg-zinc-900 border-2 border-emerald-500/30 rounded-xl shadow-2xl shadow-black/50 p-3">
-        <div className="relative">
-          {!imageLoaded && (
-            <div className="w-[350px] h-[350px] flex items-center justify-center bg-zinc-800 rounded-lg">
-              <div className="animate-spin w-8 h-8 border-2 border-emerald-500 border-t-transparent rounded-full" />
-            </div>
-          )}
-          <img
-            src={imageUrl}
-            alt="Önizleme"
-            className={`max-w-[350px] max-h-[350px] object-contain rounded-lg ${imageLoaded ? 'block' : 'hidden'}`}
-            onLoad={() => setImageLoaded(true)}
-            onError={(e) => {
-              (e.target as HTMLImageElement).src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100'%3E%3Crect fill='%23333' width='100' height='100'/%3E%3Ctext fill='%23666' x='50' y='50' text-anchor='middle' dy='.3em'%3EHata%3C/text%3E%3C/svg%3E";
-              setImageLoaded(true);
-            }}
-          />
-        </div>
-        <div className="mt-2 text-center">
-          <span className="text-xs text-zinc-500">Tıklayarak tam boyutta aç</span>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// Küçük resim önizleme bileşeni
-function MiniImageThumbnail({
-  url,
-  index,
-  onHover,
-  onLeave,
-}: {
-  url: string;
-  index: number;
-  onHover: (url: string, rect: DOMRect) => void;
-  onLeave: () => void;
-}) {
-  const [error, setError] = useState(false);
-  const thumbRef = useRef<HTMLDivElement>(null);
-
-  if (error) return null;
-
-  const handleMouseEnter = () => {
-    if (thumbRef.current) {
-      const rect = thumbRef.current.getBoundingClientRect();
-      onHover(url, rect);
-    }
-  };
-
-  return (
-    <div
-      ref={thumbRef}
-      className="relative group cursor-pointer"
-      onMouseEnter={handleMouseEnter}
-      onMouseLeave={onLeave}
-    >
-      <img
-        src={url}
-        alt={`Resim ${index + 1}`}
-        className="w-8 h-8 object-cover rounded border border-zinc-700 hover:border-zinc-500 cursor-pointer transition-all hover:scale-110 hover:ring-2 hover:ring-emerald-500/50"
-        onClick={() => window.open(url, "_blank")}
-        onError={() => setError(true)}
-      />
-      <span className="absolute -bottom-0.5 -right-0.5 text-[8px] bg-black/80 text-white px-0.5 rounded">
-        {index + 1}
-      </span>
-    </div>
-  );
+interface BackgroundJob {
+  id: number;
+  jobType: string;
+  status: string;
+  totalItems: number;
+  processedItems: number;
+  successCount: number;
+  errorCount: number;
+  lastError: string | null;
+  startedAt: string | null;
+  completedAt: string | null;
 }
 
 export function NameProcessingPanel() {
   const [status, setStatus] = useState<ProcessingStatus | null>(null);
-  const [isProcessing, setIsProcessing] = useState(false);
+  const [activeJob, setActiveJob] = useState<BackgroundJob | null>(null);
   const [loading, setLoading] = useState(true);
+  const [actionLoading, setActionLoading] = useState(false);
   const [logs, setLogs] = useState<NameLog[]>([]);
 
-  // Image preview state
-  const [previewImage, setPreviewImage] = useState<string | null>(null);
-  const [previewRect, setPreviewRect] = useState<DOMRect | null>(null);
+  const workerIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  const processingRef = useRef<boolean>(false);
-  const intervalRef = useRef<NodeJS.Timeout | null>(null);
-
-  // Image hover handlers
-  const handleImageHover = useCallback((url: string, rect: DOMRect) => {
-    setPreviewImage(url);
-    setPreviewRect(rect);
-  }, []);
-
-  const handleImageLeave = useCallback(() => {
-    setPreviewImage(null);
-    setPreviewRect(null);
-  }, []);
-
-  // Fetch status
+  // Fetch SEO status
   const fetchStatus = useCallback(async () => {
     try {
       const response = await fetch("/api/process/seo");
@@ -187,89 +82,194 @@ export function NameProcessingPanel() {
     }
   }, []);
 
-  useEffect(() => {
-    fetchStatus();
-  }, [fetchStatus]);
+  // Fetch active job
+  const fetchActiveJob = useCallback(async () => {
+    try {
+      const response = await fetch("/api/background-jobs?jobType=seo_processing");
+      const data = await response.json();
+      if (data.success && data.data) {
+        const seoJob = data.data.activeJob?.jobType === "seo_processing"
+          ? data.data.activeJob
+          : null;
+        setActiveJob(seoJob);
+      }
+    } catch (error) {
+      console.error("Fetch active job error:", error);
+    }
+  }, []);
 
-  // Process single batch
-  const processNext = useCallback(async () => {
-    if (!processingRef.current) return false;
+  // Run worker (if active job is running)
+  const runWorker = useCallback(async () => {
+    if (!activeJob || activeJob.status !== "running") return;
 
     try {
-      const response = await fetch("/api/process/seo", {
+      const response = await fetch("/api/background-jobs/worker", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ batchSize: 1, onlyPending: true }),
+        body: JSON.stringify({
+          jobId: activeJob.id,
+          batchSize: 5,
+          parallelCount: 3,
+        }),
       });
 
-      const result = await response.json();
+      const data = await response.json();
 
-      if (!result.success) {
-        console.error("Processing error:", result.error);
-        return false;
+      if (data.success) {
+        setActiveJob(data.data.job);
+
+        // Add logs from results
+        if (data.data.results && data.data.results.length > 0) {
+          const newLogs = data.data.results.map((item: {
+            urunKodu: string;
+            urunId: number;
+            barkodNo: string | null;
+            eskiAdi: string;
+            yeniAdi: string;
+            success: boolean;
+          }) => ({
+            id: `${Date.now()}-${item.urunKodu}-${Math.random()}`,
+            urunKodu: item.urunKodu,
+            urunId: item.urunId,
+            barkodNo: item.barkodNo || null,
+            eskiAdi: item.eskiAdi || "-",
+            yeniAdi: item.yeniAdi || "-",
+            success: item.success,
+            timestamp: new Date(),
+          }));
+          setLogs((prev) => [...newLogs, ...prev].slice(0, 100));
+        }
+
+        // Refresh status
+        await fetchStatus();
+
+        // If completed, refresh job list
+        if (data.data.isCompleted) {
+          fetchActiveJob();
+        }
       }
-
-      if (result.processed === 0) {
-        return false;
-      }
-
-      // Add log
-      if (result.results && result.results.length > 0) {
-        const item = result.results[0];
-        const newLog: NameLog = {
-          id: `${Date.now()}-${item.urunKodu}`,
-          urunKodu: item.urunKodu,
-          urunId: item.urunId,
-          barkodNo: item.barkodNo || null,
-          eskiAdi: item.eskiAdi || "-",
-          yeniAdi: item.yeniAdi || "-",
-          eskiResimler: item.eskiResimler || [],
-          yeniResimler: item.yeniResimler || [],
-          success: item.success,
-          timestamp: new Date(),
-        };
-        setLogs((prev) => [newLog, ...prev].slice(0, 50));
-      }
-
-      await fetchStatus();
-      return result.remaining > 0;
     } catch (error) {
-      console.error("Processing error:", error);
-      return false;
+      console.error("Worker error:", error);
     }
-  }, [fetchStatus]);
+  }, [activeJob, fetchStatus, fetchActiveJob]);
 
-  const startProcessing = useCallback(async () => {
-    setIsProcessing(true);
-    processingRef.current = true;
+  // Initial load
+  useEffect(() => {
+    fetchStatus();
+    fetchActiveJob();
+  }, [fetchStatus, fetchActiveJob]);
 
-    const processLoop = async () => {
-      const hasMore = await processNext();
-      if (hasMore && processingRef.current) {
-        intervalRef.current = setTimeout(processLoop, 800);
-      } else {
-        setIsProcessing(false);
-        processingRef.current = false;
+  // Worker interval - run if active job is running
+  useEffect(() => {
+    if (activeJob?.status === "running") {
+      workerIntervalRef.current = setInterval(runWorker, 2000);
+
+      return () => {
+        if (workerIntervalRef.current) {
+          clearInterval(workerIntervalRef.current);
+        }
+      };
+    }
+  }, [activeJob?.status, runWorker]);
+
+  // Polling interval - check status
+  useEffect(() => {
+    pollingIntervalRef.current = setInterval(() => {
+      fetchStatus();
+      fetchActiveJob();
+    }, 5000);
+
+    return () => {
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
       }
     };
+  }, [fetchStatus, fetchActiveJob]);
 
-    processLoop();
-  }, [processNext]);
+  // Start new background job
+  const startBackgroundJob = async () => {
+    setActionLoading(true);
+    try {
+      // Get pending product IDs
+      const response = await fetch("/api/products?processingStatus=pending&limit=10000");
+      const productsData = await response.json();
 
-  const stopProcessing = useCallback(() => {
-    setIsProcessing(false);
-    processingRef.current = false;
-    if (intervalRef.current) {
-      clearTimeout(intervalRef.current);
+      if (!productsData.success || !productsData.data) {
+        console.error("Failed to get products");
+        return;
+      }
+
+      const urunIds = productsData.data.map((p: { urunId: number }) => p.urunId);
+
+      if (urunIds.length === 0) {
+        alert("İşlenecek ürün bulunamadı!");
+        return;
+      }
+
+      // Create background job
+      const jobResponse = await fetch("/api/background-jobs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          jobType: "seo_processing",
+          totalItems: urunIds.length,
+          config: { urunIds },
+        }),
+      });
+
+      const jobData = await jobResponse.json();
+
+      if (jobData.success) {
+        // Start the job
+        await fetch("/api/background-jobs", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: jobData.data.id, action: "start" }),
+        });
+
+        fetchActiveJob();
+      } else {
+        alert(jobData.error || "İş oluşturulamadı");
+      }
+    } catch (error) {
+      console.error("Start job error:", error);
+    } finally {
+      setActionLoading(false);
     }
-  }, []);
+  };
 
-  useEffect(() => {
-    return () => {
-      processingRef.current = false;
-      if (intervalRef.current) clearTimeout(intervalRef.current);
-    };
-  }, []);
+  // Job actions
+  const handleJobAction = async (action: string) => {
+    if (!activeJob) return;
+
+    setActionLoading(true);
+    try {
+      const response = await fetch("/api/background-jobs", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: activeJob.id, action }),
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        setActiveJob(data.data);
+        fetchActiveJob();
+      }
+    } catch (error) {
+      console.error("Action error:", error);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const getProgressPercent = () => {
+    if (activeJob) {
+      if (activeJob.totalItems === 0) return 0;
+      return Math.round((activeJob.processedItems / activeJob.totalItems) * 100);
+    }
+    return status?.percentComplete || 0;
+  };
 
   if (loading) {
     return (
@@ -289,76 +289,161 @@ export function NameProcessingPanel() {
           </div>
           <div>
             <h2 className="text-xl font-bold">İsim Değiştirme</h2>
-            <p className="text-xs text-zinc-500">AI ile ürün isimlerini SEO uyumlu hale getir (resim analizi dahil)</p>
+            <p className="text-xs text-zinc-500">
+              AI ile ürün isimlerini SEO uyumlu hale getir
+              {activeJob?.status === "running" && (
+                <span className="text-emerald-400 ml-2">• Arka planda çalışıyor (sayfa kapatılsa bile devam eder)</span>
+              )}
+            </p>
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {isProcessing && (
+          {activeJob?.status === "running" && (
             <Badge variant="outline" className="bg-purple-500/10 text-purple-400 border-purple-500/30 animate-pulse">
-              <Loader2 className="w-3 h-3 mr-1 animate-spin" />
-              İşleniyor
+              <Activity className="w-3 h-3 mr-1 animate-pulse" />
+              Paralel İşleniyor
             </Badge>
           )}
-          <Button variant="ghost" size="sm" onClick={fetchStatus} disabled={isProcessing}>
-            <RefreshCw className={`h-4 w-4 ${isProcessing ? "animate-spin" : ""}`} />
+          <Button variant="ghost" size="sm" onClick={() => { fetchStatus(); fetchActiveJob(); }} disabled={actionLoading}>
+            <RefreshCw className={`h-4 w-4 ${actionLoading ? "animate-spin" : ""}`} />
           </Button>
         </div>
       </div>
 
       {/* Status Card */}
-      <Card className="border-zinc-800 bg-zinc-900/50">
+      <Card className={`border-2 ${
+        activeJob?.status === "running"
+          ? "border-purple-500/50 bg-purple-500/5"
+          : activeJob?.status === "paused"
+            ? "border-orange-500/50 bg-orange-500/5"
+            : "border-zinc-800 bg-zinc-900/50"
+      }`}>
         <CardContent className="pt-6">
-          {status && (
-            <div className="space-y-4">
-              {/* Progress */}
-              <div className="space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span className="text-zinc-400">İlerleme</span>
-                  <span className="text-zinc-200">{status.percentComplete}%</span>
-                </div>
-                <Progress value={status.percentComplete} className="h-2" />
+          <div className="space-y-4">
+            {/* Progress */}
+            <div className="space-y-2">
+              <div className="flex justify-between text-sm">
+                <span className="text-zinc-400">İlerleme</span>
+                <span className="text-zinc-200">
+                  {activeJob
+                    ? `${activeJob.processedItems.toLocaleString()} / ${activeJob.totalItems.toLocaleString()} (${getProgressPercent()}%)`
+                    : `${status?.percentComplete || 0}%`
+                  }
+                </span>
               </div>
+              <Progress value={getProgressPercent()} className="h-2" />
+            </div>
 
-              {/* Stats */}
-              <div className="grid grid-cols-3 gap-4">
-                <div className="p-4 bg-zinc-800/50 rounded-xl text-center">
-                  <p className="text-2xl font-bold text-zinc-100">{status.total}</p>
-                  <p className="text-xs text-zinc-500">Toplam</p>
-                </div>
-                <div className="p-4 bg-emerald-500/10 rounded-xl text-center">
-                  <p className="text-2xl font-bold text-emerald-400">{status.optimized}</p>
-                  <p className="text-xs text-zinc-500">Tamamlandı</p>
-                </div>
-                <div className="p-4 bg-amber-500/10 rounded-xl text-center">
-                  <p className="text-2xl font-bold text-amber-400">{status.remaining}</p>
-                  <p className="text-xs text-zinc-500">Bekliyor</p>
-                </div>
+            {/* Stats */}
+            <div className="grid grid-cols-4 gap-4">
+              <div className="p-4 bg-zinc-800/50 rounded-xl text-center">
+                <p className="text-2xl font-bold text-zinc-100">
+                  {activeJob?.totalItems || status?.total || 0}
+                </p>
+                <p className="text-xs text-zinc-500">Toplam</p>
               </div>
-
-              {/* Action Button */}
-              <div className="flex gap-3">
-                {isProcessing ? (
-                  <Button
-                    onClick={stopProcessing}
-                    variant="outline"
-                    className="flex-1 border-red-500/50 text-red-400 hover:bg-red-500/10"
-                  >
-                    <Pause className="w-4 h-4 mr-2" />
-                    Durdur
-                  </Button>
-                ) : (
-                  <Button
-                    onClick={startProcessing}
-                    className="flex-1 bg-purple-600 hover:bg-purple-700"
-                    disabled={status.remaining === 0}
-                  >
-                    <Play className="w-4 h-4 mr-2" />
-                    {status.remaining === 0 ? "Tamamlandı" : "İşlemi Başlat"}
-                  </Button>
-                )}
+              <div className="p-4 bg-emerald-500/10 rounded-xl text-center">
+                <p className="text-2xl font-bold text-emerald-400">
+                  {activeJob?.successCount || status?.optimized || 0}
+                </p>
+                <p className="text-xs text-zinc-500">Başarılı</p>
+              </div>
+              <div className="p-4 bg-red-500/10 rounded-xl text-center">
+                <p className="text-2xl font-bold text-red-400">
+                  {activeJob?.errorCount || 0}
+                </p>
+                <p className="text-xs text-zinc-500">Hata</p>
+              </div>
+              <div className="p-4 bg-amber-500/10 rounded-xl text-center">
+                <p className="text-2xl font-bold text-amber-400">
+                  {activeJob
+                    ? activeJob.totalItems - activeJob.processedItems
+                    : status?.remaining || 0
+                  }
+                </p>
+                <p className="text-xs text-zinc-500">Bekliyor</p>
               </div>
             </div>
-          )}
+
+            {/* Last Error */}
+            {activeJob?.lastError && (
+              <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-lg">
+                <p className="text-xs text-red-400 flex items-center gap-1">
+                  <AlertCircle className="w-3 h-3" />
+                  Son Hata:
+                </p>
+                <p className="text-sm text-red-300 mt-1">{activeJob.lastError}</p>
+              </div>
+            )}
+
+            {/* Action Buttons */}
+            <div className="flex gap-3">
+              {!activeJob || activeJob.status === "completed" || activeJob.status === "cancelled" ? (
+                <Button
+                  onClick={startBackgroundJob}
+                  className="flex-1 bg-purple-600 hover:bg-purple-700"
+                  disabled={actionLoading || (status?.remaining === 0)}
+                >
+                  {actionLoading ? (
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  ) : (
+                    <Play className="w-4 h-4 mr-2" />
+                  )}
+                  {status?.remaining === 0 ? "Tamamlandı" : "Arka Planda Başlat"}
+                </Button>
+              ) : activeJob.status === "pending" ? (
+                <Button
+                  onClick={() => handleJobAction("start")}
+                  className="flex-1 bg-emerald-600 hover:bg-emerald-700"
+                  disabled={actionLoading}
+                >
+                  {actionLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Play className="w-4 h-4 mr-2" />}
+                  Başlat
+                </Button>
+              ) : activeJob.status === "running" ? (
+                <>
+                  <Button
+                    onClick={() => handleJobAction("pause")}
+                    variant="outline"
+                    className="flex-1 border-orange-500/50 text-orange-400 hover:bg-orange-500/10"
+                    disabled={actionLoading}
+                  >
+                    {actionLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Pause className="w-4 h-4 mr-2" />}
+                    Duraklat
+                  </Button>
+                  <Button
+                    onClick={() => handleJobAction("cancel")}
+                    variant="outline"
+                    className="border-red-500/50 text-red-400 hover:bg-red-500/10"
+                    disabled={actionLoading}
+                  >
+                    {actionLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Square className="w-4 h-4 mr-2" />}
+                    İptal
+                  </Button>
+                </>
+              ) : activeJob.status === "paused" ? (
+                <>
+                  <Button
+                    onClick={() => handleJobAction("resume")}
+                    className="flex-1 bg-blue-600 hover:bg-blue-700"
+                    disabled={actionLoading}
+                  >
+                    {actionLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Play className="w-4 h-4 mr-2" />}
+                    Devam Et
+                  </Button>
+                  <Button
+                    onClick={() => handleJobAction("cancel")}
+                    variant="outline"
+                    className="border-red-500/50 text-red-400 hover:bg-red-500/10"
+                    disabled={actionLoading}
+                  >
+                    <Square className="w-4 h-4 mr-2" />
+                    İptal
+                  </Button>
+                </>
+              ) : null}
+            </div>
+          </div>
         </CardContent>
       </Card>
 
@@ -370,7 +455,7 @@ export function NameProcessingPanel() {
             İsim Değişiklik Logları
           </CardTitle>
           <CardDescription className="text-xs">
-            Ürün ID, barkod, resimler ve isim değişiklikleri
+            Ürün ID, barkod ve isim değişiklikleri (paralel işleme)
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -380,25 +465,25 @@ export function NameProcessingPanel() {
                 Henüz işlem yapılmadı
               </div>
             ) : (
-              <div className="space-y-4">
+              <div className="space-y-3">
                 {logs.map((log) => (
                   <div
                     key={log.id}
-                    className={`p-4 rounded-lg border ${
+                    className={`p-3 rounded-lg border ${
                       log.success
                         ? "bg-emerald-500/5 border-emerald-500/20"
                         : "bg-red-500/5 border-red-500/20"
                     }`}
                   >
-                    {/* Başlık: Ürün Kodu, ID, Barkod, Durum */}
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="flex items-center gap-3 flex-wrap">
+                    {/* Header: Product Code, ID, Barcode, Status */}
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         {log.success ? (
                           <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
                         ) : (
                           <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
                         )}
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-1.5">
                           <Package className="w-3 h-3 text-zinc-500" />
                           <span className="font-mono text-sm font-semibold text-emerald-400">
                             {log.urunKodu}
@@ -419,48 +504,16 @@ export function NameProcessingPanel() {
                       </span>
                     </div>
 
-                    {/* Resimler */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mb-3">
-                      <div className="bg-zinc-800/30 p-2 rounded">
-                        <div className="flex items-center gap-1.5 mb-2">
-                          <ImageIcon className="w-3 h-3 text-amber-400" />
-                          <span className="text-[10px] text-zinc-500 uppercase">Eski Resimler</span>
-                          <span className="text-[10px] text-zinc-600">({log.eskiResimler.length})</span>
-                        </div>
-                        {log.eskiResimler.length > 0 ? (
-                          <div className="flex flex-wrap gap-1">
-                            <MiniImageThumbnail url={log.eskiResimler[0]} index={0} onHover={handleImageHover} onLeave={handleImageLeave} />
-                          </div>
-                        ) : (
-                          <span className="text-[10px] text-zinc-600 italic">Resim yok</span>
-                        )}
-                      </div>
-                      <div className="bg-zinc-800/30 p-2 rounded">
-                        <div className="flex items-center gap-1.5 mb-2">
-                          <ImageIcon className="w-3 h-3 text-emerald-400" />
-                          <span className="text-[10px] text-zinc-500 uppercase">Yeni Resimler</span>
-                          <span className="text-[10px] text-zinc-600">({log.yeniResimler.length})</span>
-                        </div>
-                        {log.yeniResimler.length > 0 ? (
-                          <div className="flex flex-wrap gap-1">
-                            <MiniImageThumbnail url={log.yeniResimler[0]} index={0} onHover={handleImageHover} onLeave={handleImageLeave} />
-                          </div>
-                        ) : (
-                          <span className="text-[10px] text-zinc-600 italic">Henüz işlenmedi</span>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* İsim Değişikliği */}
-                    <div className="grid grid-cols-[1fr,auto,1fr] gap-3 items-center">
+                    {/* Name Change */}
+                    <div className="grid grid-cols-[1fr,auto,1fr] gap-2 items-center">
                       <div className="bg-zinc-800/50 p-2 rounded">
-                        <p className="text-[10px] text-zinc-500 mb-1 uppercase">Eski İsim</p>
-                        <p className="text-xs text-zinc-300 break-words">{log.eskiAdi}</p>
+                        <p className="text-[10px] text-zinc-500 mb-0.5 uppercase">Eski İsim</p>
+                        <p className="text-xs text-zinc-300 break-words line-clamp-2">{log.eskiAdi}</p>
                       </div>
-                      <ArrowRight className="w-4 h-4 text-zinc-600" />
+                      <ArrowRight className="w-4 h-4 text-zinc-600 shrink-0" />
                       <div className="bg-purple-500/10 p-2 rounded">
-                        <p className="text-[10px] text-purple-400 mb-1 uppercase">Yeni İsim (SEO)</p>
-                        <p className="text-xs text-zinc-100 break-words">{log.yeniAdi}</p>
+                        <p className="text-[10px] text-purple-400 mb-0.5 uppercase">Yeni İsim (SEO)</p>
+                        <p className="text-xs text-zinc-100 break-words line-clamp-2">{log.yeniAdi}</p>
                       </div>
                     </div>
                   </div>
@@ -470,12 +523,6 @@ export function NameProcessingPanel() {
           </ScrollArea>
         </CardContent>
       </Card>
-
-      {/* Global Image Preview */}
-      <ImagePreview
-        imageUrl={previewImage}
-        thumbRect={previewRect}
-      />
     </div>
   );
 }
